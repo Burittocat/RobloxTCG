@@ -1,0 +1,8 @@
+# Rojo 빌드 산출물 (소스에서 언제든 다시 만들 수 있다)
+build.rbxlx
+*.rbxl
+*.rbxlx.lock
+
+# 에디터
+.vscode/
+.DS_Store

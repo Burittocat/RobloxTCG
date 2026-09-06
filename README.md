@@ -1,15 +1,40 @@
 # RobloxTCG
 
-로블록스 스튜디오용 트레이딩 카드 게임. 현재 **룰 엔진 코어**까지 완성되어 있고,
-Studio 없이 돌아가는 테스트 75개가 전부 통과한다.
+로블록스 스튜디오용 트레이딩 카드 게임. 현재 **룰 엔진 코어 + PvE AI** 까지 완성되어 있고,
+Studio 없이 돌아가는 테스트 85개가 전부 통과한다.
 
 ---
 
-## 시작하기
+## 지금 바로 한 판 하기
+
+```powershell
+lune run play          # 사람(P1) vs AI(P2)
+```
+
+터미널에서 돌아가는 싱글플레이다. 아직 그래픽 UI 가 없어서 만든 것이지만,
+**서버가 쓸 룰 엔진과 완전히 같은 코드**를 호출하므로 여기서 이상하면 게임 안에서도 이상하다.
+
+```
+숫자      문맥에 맞는 기본 행동 (패 내기 / 공격 선언 / 방어 배정)
+h <번호>  손패에서 카드 내기 (어느 페이즈든)
+e         페이즈 종료
+p         스택 대응 패스
+l         최근 로그      ?  도움말      q  종료
+```
+
+번호가 가리키는 대상은 페이즈에 따라 바뀐다 — 메인이면 손패, 공격준비면 내 생물,
+수비준비면 방어할 생물. 화면 위에 항상 표시된다.
+
+```powershell
+lune run play -- --auto        # AI vs AI 자동 대전 (룰 구경용)
+lune run play -- --seed 42     # 시드 고정 (같은 시드 = 같은 전개)
+```
+
+## 개발
 
 ```powershell
 aftman install          # rojo 7.7.0 + lune 0.10.4
-lune run tests/run.luau # 룰 엔진 테스트 (75개)
+lune run tests/run.luau # 룰 엔진 테스트 (85개)
 rojo serve              # Studio 의 Rojo 플러그인에서 Connect
 ```
 
@@ -36,10 +61,22 @@ src/shared/Rules/        ← 룰 엔진. Roblox API 를 전혀 쓰지 않는 순
   init.luau              외부에 노출되는 액션 API
 
 src/shared/Cards/        ← 카드 DB. Core.luau 에 초기 19장
+src/shared/Decks/        ← 덱 프리셋 (스타터 60장)
+src/shared/AI/           ← 휴리스틱 AI. PvE 캠페인 상대이자 룰 스파링 상대
 src/server/              ← 부팅 + 연기 테스트 (매칭/매치러너는 다음 단계)
 src/client/              ← 자리표시자 (UI 는 다음 단계)
 tests/                   ← Lune 테스트. lib/RobloxEnv.luau 가 Roblox 트리를 흉내낸다
+play.luau                ← 터미널 싱글플레이 클라이언트
 ```
+
+### AI
+
+`AI.act(state, playerId)` 는 **한 번에 한 수**만 두고 돌려준다. 호출자가 루프를 돌리므로
+수와 수 사이에 연출/딜레이를 끼워넣을 수 있다. AI 는 상태를 직접 만지지 않고
+사람과 똑같이 `Rules` 액션만 호출한다 — **AI 가 룰을 어기는 것이 구조적으로 불가능하다.**
+
+테스트 스위트는 매번 AI 자기대국 5판을 끝까지 돌려 교착과 존 무결성을 확인한다.
+단위 테스트로는 안 잡히는 "아무도 둘 수 없는 상태"가 여기서 걸린다.
 
 ### 왜 Roblox 코드를 Studio 없이 테스트할 수 있는가
 
@@ -124,10 +161,18 @@ EndTurn→ 생물 피해·버프 정리 → 다음 턴                          
 기획서 순서(로비 → 매칭 → 로딩/메뉴 → 카드·덱·드로우 → 전투 → 캠페인 세이브) 기준으로,
 **카드·덱·드로우 시스템과 핵심 전투 시스템의 서버측 로직은 이미 끝났다.** 남은 것:
 
-1. **매치 러너 + 네트워크** — RemoteEvent 배선, 액션 검증, `Rules.viewFor` 로 상대 손패 숨기기
-2. **덱 빌더 + 저장** — DataStore, 60장/4장 제한은 `CardDef.validateDeck` 이 이미 처리
-3. **전투 UI** — `Rules.canPlayCard` / `Combat.legalAttackTargets` / `Phases.permissions` 를
-   그대로 불러 버튼을 켜고 끄면 서버 판정과 절대 어긋나지 않는다
+1. **전투 UI** — `Rules.canPlayCard` / `Combat.legalAttackTargets` / `Phases.permissions` 를
+   그대로 불러 버튼을 켜고 끄면 서버 판정과 절대 어긋나지 않는다.
+   `play.luau` 가 이미 그 방식으로 짜여 있어 화면만 바꾸면 된다
+2. **매치 러너 + 네트워크** — RemoteEvent 배선, 액션 검증, `Rules.viewFor` 로 상대 손패 숨기기
+3. **덱 빌더 + 저장** — DataStore, 60장/4장 제한은 `CardDef.validateDeck` 이 이미 처리
 4. **로비 + 매칭** — MatchmakingService 또는 자체 큐
-5. **PvE 캠페인** — `GameState.serialize/deserialize` + 결정론적 RNG 가 이미 준비됨. AI 만 붙이면 된다
+5. **PvE 캠페인** — AI 와 결정론적 세이브(`GameState.serialize/deserialize`)가 이미 있다.
+   난이도별 상대 덱과 스테이지 진행만 얹으면 된다
 6. **BM** — 카드팩(RNG 재사용), 테두리/스킨/이펙트는 카드 데이터와 분리된 코스메틱 레이어로
+
+### 지금 밸런스에서 보이는 것
+
+AI 자기대국을 돌려보면 판이 **60~70턴까지 늘어진다.** 원인은 `강철 방벽`(3코 1/6 도발)처럼
+방어 효율이 지나치게 높은 카드가 공격을 계속 막아내기 때문이다. 룰 버그가 아니라
+카드 밸런스 문제이므로 `Cards/Core.luau` 의 수치 조정으로 다룰 영역이다.

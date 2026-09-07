@@ -247,14 +247,19 @@ function CardView.fieldCard(state, instance, opts)
 	--[[
 		상태 표시. 예전에는 흐린 글자 한 줄이라 놓치기 쉬웠는데, 이 둘은
 		**놓치면 그대로 오조작으로 이어지는** 정보다 — 탭된 생물을 공격자로 고르려다
-		거부당하거나, 소환 멀미 중인 생물을 세어놓고 공격 계획을 세우게 된다.
+		거부당하거나, 이번 턴에 나온 생물을 세어놓고 공격 계획을 세우게 된다.
 		그래서 배경이 있는 칩으로 바꾸고 색을 나눴다.
+
+		둘은 다른 상태다. 탭된 생물은 공격도 방어도 못 하지만, 이번 턴에 소환된
+		생물은 **공격만** 못 하고 방어는 된다. 그래서 같은 글자를 쓰면 안 된다.
+		(룰 코드에서는 이 제한을 hasSummoningSickness 라고 부른다 — 화면에는
+		 매직 더 개더링 은어 대신 결과를 그대로 적는다)
 	]]
 	local status, statusColor = nil, Theme.color.textDim
 	if instance.tapped then
 		status, statusColor = "탭됨", Theme.color.textFaint
 	elseif instance.summonedOnTurn == state.turn and not Keywords.isHaste(instance) then
-		status, statusColor = "소환 멀미", Theme.color.accent
+		status, statusColor = "공격 불가", Theme.color.accent
 	end
 
 	local button = new("TextButton", {

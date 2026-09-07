@@ -136,6 +136,42 @@ t:describe("AI 연습", function()
 		t:eq(panelName(kim, "FoePanel"), "훈련용 AI")
 	end)
 
+	t:it("여러 턴을 진행해도 화면이 죽지 않는다", function()
+		--[[
+			판을 1턴에 세워두면 필드가 비어 있어서 CardView.fieldCard 가 **한 번도
+			실행되지 않는다.** 생물 카드 · 키워드 칩 · 탭 표시 · 공격/방어 배지가 전부
+			그 안에 있으므로, 여기 오타는 Studio 를 켜서 생물이 나올 때까지 안 잡힌다.
+
+			페이즈 종료를 반복해서 턴을 굴리면 AI 가 필드를 채운다.
+		]]
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "AI 연습"))
+		world:advance(3)
+
+		for turn = 1, 30 do
+			local button = Screen.findButton(guiOf(kim), "페이즈 종료")
+			if button and button.Active then
+				Screen.click(button)
+			end
+			world:advance(1.5)
+			assertNoErrors(world, ("%d 번째 페이즈 종료"):format(turn))
+
+			if Screen.countNamed(guiOf(kim), "Field_") > 0 then
+				break
+			end
+		end
+
+		t:truthy(
+			Screen.countNamed(guiOf(kim), "Field_") > 0,
+			"턴을 굴렸는데도 필드에 생물이 한 마리도 그려지지 않았습니다"
+		)
+		t:truthy(Screen.hasText(guiOf(kim), "♥ "), "라이프 표시가 살아 있어야 합니다")
+	end)
+
 	t:it("항복하면 결과 화면이 뜬다", function()
 		local world = Roblox.newWorld()
 		local lobby = world:newServer():boot()

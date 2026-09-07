@@ -489,7 +489,7 @@ function Server:service(name, vm)
 
 	if name == "TeleportService" then
 		return {
-			ReserveServer = function(_, _placeId)
+			ReserveServerAsync = function(_, _placeId)
 				local code = ("access-%d"):format(#world.servers + math.random(1000, 9999))
 				world.reserved[code] = false -- 아직 서버가 안 생겼다
 				return code, "private-" .. code
@@ -898,6 +898,33 @@ end
 	Widgets.setEnabled 가 끈 버튼을 테스트가 눌러버리면 "화면에선 못 누르는데
 	테스트는 통과" 가 된다.
 ]]
+--[[
+	이름이 prefix 로 시작하는 보이는 노드 개수. 카드처럼 이름이 id 로 끝나는 것들을 센다.
+]]
+function Screen.countNamed(root, prefix)
+	local count = 0
+
+	local function recurse(node, shown)
+		local visible = shown
+		if rawget(node, "ClassName") == "ScreenGui" then
+			visible = shown and node.Enabled ~= false
+		end
+		if node:IsA("GuiObject") then
+			visible = visible and node.Visible ~= false
+		end
+
+		if visible and node.Name:sub(1, #prefix) == prefix then
+			count += 1
+		end
+		for _, child in node:GetChildren() do
+			recurse(child, visible)
+		end
+	end
+
+	recurse(root, true)
+	return count
+end
+
 function Screen.click(button)
 	if button.Active == false then
 		error(("'%s' 버튼은 지금 꺼져 있습니다"):format(tostring(button.Text)), 2)

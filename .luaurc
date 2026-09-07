@@ -1,0 +1,10 @@
+{
+  "languageMode": "nonstrict",
+  "lint": {
+    "LocalShadow": true,
+    "UnknownGlobal": true,
+    "UnusedVariable": true,
+    "DuplicateFunction": true,
+    "TableOperations": true
+  }
+}

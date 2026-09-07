@@ -1,0 +1,19 @@
+#!/bin/sh
+#
+# 커밋 직전에 로컬 CI 를 돌린다. 세 단계 합쳐 0.5초쯤이라 체감되지 않는다.
+#
+#   켜기            git config core.hooksPath .githooks
+#   끄기            git config --unset core.hooksPath
+#   한 번만 건너뛰기  git commit --no-verify
+#
+# 한계: 검사 대상은 "작업 트리" 다. 일부 파일만 stage 한 커밋이라면 실제로 커밋되는
+#       내용과 검사한 내용이 다를 수 있다. 그래서 그런 상황이면 먼저 알려준다.
+#       (정확히 하려면 stash 를 써야 하는데, 훅이 실패할 때 작업물을 잃을 위험이
+#        생긴다. 혼자 쓰는 저장소에서는 알려주는 쪽이 낫다고 판단했다.)
+#
+
+if ! git diff --quiet; then
+	printf '\033[33m! 스테이지되지 않은 변경이 있습니다 — 검사는 작업 트리 기준입니다.\033[0m\n'
+fi
+
+exec sh "$(git rev-parse --show-toplevel)/scripts/ci.sh" --quiet

@@ -1,0 +1,79 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // 커밋 훅이 돌리는 것과 **같은 스크립트**. 검사 내용이 갈라지지 않는다.
+      "label": "로컬 CI (문법 · 테스트 · 빌드)",
+      "type": "shell",
+      "command": "sh scripts/ci.sh",
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      // 이 저장소에서 한 번만. 이후 커밋마다 로컬 CI 가 자동으로 돈다.
+      "label": "커밋 훅 켜기",
+      "type": "shell",
+      "command": "git config core.hooksPath .githooks",
+      "problemMatcher": []
+    },
+    {
+      // Studio 의 Rojo 플러그인에서 Connect 를 누르면 저장할 때마다 반영된다.
+      "label": "rojo: serve",
+      "type": "shell",
+      "command": "rojo serve",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated" }
+    },
+    {
+      // Studio 없이 플레이스 파일을 통째로 만든다. build.rbxlx 를 더블클릭하면 열린다.
+      "label": "rojo: build",
+      "type": "shell",
+      "command": "rojo build --output build.rbxlx",
+      "problemMatcher": []
+    },
+    {
+      // 검사를 전부 돌린 뒤 플레이스를 만들어 Studio 로 연다.
+      "label": "Studio 에서 열기 (검사 후)",
+      "type": "shell",
+      "command": "sh scripts/studio.sh",
+      "problemMatcher": []
+    },
+    {
+      // src/client · src/server 는 테스트가 로드하지 않는다. 오타는 여기서만 걸린다.
+      "label": "문법 검사",
+      "type": "shell",
+      "command": "lune run tests/check.luau",
+      "problemMatcher": []
+    },
+    {
+      "label": "테스트 (룰 엔진)",
+      "type": "shell",
+      "command": "lune run tests/run.luau",
+      "problemMatcher": [],
+      "group": { "kind": "test", "isDefault": true }
+    },
+    {
+      // 가짜 Roblox 위에서 서버와 클라이언트를 실제로 실행한다.
+      // Studio 를 켜야만 알 수 있던 런타임 오류가 여기서 잡힌다.
+      "label": "스모크 테스트 (서버+클라 실행)",
+      "type": "shell",
+      "command": "lune run tests/smoke.luau",
+      "problemMatcher": []
+    },
+    {
+      "label": "터미널 싱글플레이",
+      "type": "shell",
+      "command": "lune run play",
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated" }
+    },
+    {
+      "label": "AI 자동 대전",
+      "type": "shell",
+      "command": "lune run play -- --auto",
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated" }
+    }
+  ]
+}

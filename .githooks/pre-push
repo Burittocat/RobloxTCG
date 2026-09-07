@@ -1,0 +1,10 @@
+#!/bin/sh
+#
+# 푸시 직전 검사. 아직 원격이 없어서 지금은 거의 안 돌지만,
+# GitHub 에 올리기 시작하면 "CI 가 빨간 채로 올라가는 것" 을 여기서 막는다.
+#
+# 커밋마다 이미 pre-commit 이 돌았으므로 보통은 그냥 통과한다.
+# (rebase 나 --no-verify 로 지나간 커밋이 섞였을 때가 진짜 목적이다)
+#
+
+exec sh "$(git rev-parse --show-toplevel)/scripts/ci.sh"

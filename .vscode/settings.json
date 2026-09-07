@@ -1,0 +1,33 @@
+{
+  // ── luau-lsp ────────────────────────────────────────────────────────────
+  // sourcemap 은 "이 .luau 파일이 Studio 트리의 어디에 해당하는가" 를 담은 표다.
+  // 이게 있어야 require(script.Parent.UI.Battle) 같은 경로를 에디터가 따라간다.
+  // autogenerate 를 켜두면 rojo 가 파일 변화를 보고 알아서 갱신한다.
+  "luau-lsp.sourcemap.enabled": true,
+  "luau-lsp.sourcemap.autogenerate": true,
+  "luau-lsp.sourcemap.rojoProjectFile": "default.project.json",
+  "luau-lsp.sourcemap.includeNonScripts": true,
+  "luau-lsp.types.roblox": true,
+  "luau-lsp.completion.imports.enabled": true,
+  "luau-lsp.inlayHints.parameterNames": "literals",
+
+  // ── 파일 ────────────────────────────────────────────────────────────────
+  "files.associations": {
+    "*.luau": "luau",
+    "*.project.json": "jsonc"
+  },
+  "files.exclude": {
+    "sourcemap.json": true,
+    "build.rbxlx": true
+  },
+
+  // ── 서식 ────────────────────────────────────────────────────────────────
+  // 룰 엔진 코드가 전부 탭 들여쓰기다. 섞이면 diff 가 지저분해진다.
+  "editor.insertSpaces": false,
+  "editor.tabSize": 4,
+  "editor.rulers": [110],
+  "[luau]": {
+    "editor.defaultFormatter": "JohnnyMorganz.stylua",
+    "editor.formatOnSave": true
+  }
+}

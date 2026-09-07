@@ -2,7 +2,11 @@
 build.rbxlx
 *.rbxl
 *.rbxlx.lock
+*.rbxm
+
+# luau-lsp 가 자동 생성한다. 커밋하면 매번 충돌만 난다.
+sourcemap.json
 
 # 에디터
-.vscode/
+#   .vscode/ 는 일부러 커밋한다 — 클론하고 바로 같은 환경이 되도록.
 .DS_Store

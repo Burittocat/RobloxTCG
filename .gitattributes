@@ -1,0 +1,11 @@
+# 훅과 스크립트는 sh 가 읽는다. CRLF 가 섞이면 Windows 에서 실행이 깨진다.
+# core.autocrlf=true 인 환경에서도 이 파일들은 LF 로 체크아웃되도록 못 박는다.
+.githooks/** text eol=lf
+scripts/** text eol=lf
+
+# 소스도 LF 로 통일한다. stylua.toml 이 line_endings = "Unix" 라서
+# 맞춰두지 않으면 서식 도구와 git 이 서로 다른 줄바꿈을 고집한다.
+*.luau text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.toml text eol=lf

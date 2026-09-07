@@ -1,0 +1,11 @@
+{
+  // VS Code 가 이 폴더를 열면 설치를 권한다.
+  //   luau-lsp  자동완성 · 타입체크 · Roblox API 정의
+  //   rojo      Studio 연결(Serve/Build)을 명령 팔레트에서
+  //   stylua    저장할 때 코드 정렬
+  "recommendations": [
+    "JohnnyMorganz.luau-lsp",
+    "evaera.vscode-rojo",
+    "JohnnyMorganz.stylua"
+  ]
+}

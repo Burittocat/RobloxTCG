@@ -1,0 +1,7 @@
+# 룰 엔진 코드가 이미 이 서식이다. VS Code 에서 저장하면 자동으로 맞춰진다.
+column_width = 110
+line_endings = "Unix"
+indent_type = "Tabs"
+indent_width = 4
+quote_style = "AutoPreferDouble"
+call_parentheses = "Always"

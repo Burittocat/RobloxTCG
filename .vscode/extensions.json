@@ -7,5 +7,18 @@
     "JohnnyMorganz.luau-lsp",
     "evaera.vscode-rojo",
     "JohnnyMorganz.stylua"
+  ],
+
+  // 아래 둘은 .luau 를 두고 luau-lsp 와 다툰다.
+  //
+  //   undermywheel.roblox-lua  .luau 를 `lua` 언어로 등록한다 (luau-lsp 이전 시절 확장)
+  //   sumneko.lua              `lua` 언어가 잡히면 따라 붙는다
+  //
+  // settings.json 의 files.associations 가 이 폴더에서는 .luau 를 `luau` 로 못 박아서
+  // 지금은 luau-lsp 가 이긴다. 그래도 켜두면 언젠가 헷갈리므로, 이 워크스페이스에서는
+  // 꺼두는 편이 낫다 (확장 탭 → 톱니바퀴 → "사용 안 함(작업 영역)").
+  "unwantedRecommendations": [
+    "undermywheel.roblox-lua",
+    "sumneko.lua"
   ]
 }

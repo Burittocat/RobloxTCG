@@ -23,8 +23,6 @@ local CardDef = Rules.CardDef
 local Stack = Rules.Stack
 
 local Phase = Enums.Phase
-local CardType = Enums.CardType
-local Zone = Enums.Zone
 
 local AI = {}
 

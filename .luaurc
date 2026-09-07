@@ -3,8 +3,15 @@
   "lint": {
     "LocalShadow": true,
     "UnknownGlobal": true,
-    "UnusedVariable": true,
+    "LocalUnused": true,
+    "FunctionUnused": true,
+    "ImportUnused": true,
     "DuplicateFunction": true,
-    "TableOperations": true
+    "DuplicateLocal": true,
+    "TableOperations": true,
+    "UnreachableCode": true
+  },
+  "aliases": {
+    "lune": "~/.lune/.typedefs/0.10.4/"
   }
 }

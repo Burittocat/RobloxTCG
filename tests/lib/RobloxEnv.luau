@@ -1,3 +1,8 @@
+--!nolint DeprecatedApi
+-- getfenv / setfenv 는 deprecated 로 표시돼 있지만, 이 파일의 존재 이유가
+-- "모듈에 script 와 require 를 주입한 환경에서 실행하는 것" 이라 대체 수단이 없다.
+-- (debug.info 는 환경을 읽을 뿐 바꾸지 못한다)
+
 --[[
 	Lune에서 Roblox ModuleScript 트리를 흉내내는 로더.
 
@@ -159,10 +164,8 @@ local function makeRequire(cache)
 		cache[target] = LOADING
 
 		local chunk = assert(loadstring(fs.readFile(path), "@" .. path))
-		setfenv(
-			chunk,
-			setmetatable({ script = target, require = requireNode }, { __index = GLOBALS })
-		)
+		local env = setmetatable({ script = target, require = requireNode }, { __index = GLOBALS })
+		setfenv(chunk :: any, env :: any)
 
 		local value = chunk()
 		if value == nil then

@@ -1,3 +1,8 @@
+--!nolint DeprecatedApi
+-- getfenv / setfenv 는 deprecated 로 표시돼 있지만, 이 파일의 존재 이유가
+-- "모듈에 script 와 require 를 주입한 환경에서 실행하는 것" 이라 대체 수단이 없다.
+-- (debug.info 는 환경을 읽을 뿐 바꾸지 못한다)
+
 --[[
 	Studio 없이 **서버와 클라이언트를 실제로 실행**하는 하네스.
 
@@ -33,10 +38,10 @@
 
 local fs = require("@lune/fs")
 
-local Datatypes = require("./Roblox/Datatypes")
-local RobloxInstance = require("./Roblox/Instance")
-local Scheduler = require("./Roblox/Scheduler")
-local Signal = require("./Roblox/Signal")
+local Datatypes = require("@self/Datatypes")
+local RobloxInstance = require("@self/Instance")
+local Scheduler = require("@self/Scheduler")
+local Signal = require("@self/Signal")
 
 local Roblox = {}
 
@@ -627,9 +632,9 @@ function Server:newVm(kind, player)
 		for _, remote in self.remotes:GetChildren() do
 			proxies[remote.Name] = {
 				Name = remote.Name,
-				OnClientEvent = rawget(remote, "_clientSignalFor")(player),
+				OnClientEvent = assert(rawget(remote, "_clientSignalFor"))(player),
 				FireServer = function(_, ...)
-					rawget(remote, "_serverSignal"):Fire(player, ...)
+					assert(rawget(remote, "_serverSignal")):Fire(player, ...)
 				end,
 			}
 		end
@@ -738,7 +743,7 @@ function Server:execute(node, path, vm, requireNode)
 
 	local source = SOURCE[path] or error("소스를 캐시하지 못했습니다: " .. tostring(path))
 	local chunk = assert(loadstring(source, "@" .. path))
-	setfenv(chunk, setmetatable(env, { __index = GLOBALS }))
+	setfenv(chunk :: any, setmetatable(env, { __index = GLOBALS }) :: any)
 	return chunk()
 end
 
@@ -929,7 +934,7 @@ function Screen.click(button)
 	if button.Active == false then
 		error(("'%s' 버튼은 지금 꺼져 있습니다"):format(tostring(button.Text)), 2)
 	end
-	rawget(button, "_signals").Activated:Fire()
+	assert(rawget(button, "_signals")).Activated:Fire()
 end
 
 function Screen.dump(root)

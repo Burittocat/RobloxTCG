@@ -15,6 +15,7 @@
 
 ```powershell
 aftman install          # rojo 7.7.0 + lune 0.10.4 설치
+lune setup              # 에디터용 Lune 타입 정의 (tests/ 의 @lune/* 를 알아보게 한다)
 ```
 
 플레이스 파일을 만들어 여는 방법 (가장 빠름):
@@ -247,6 +248,23 @@ MemoryStoreQueue 는 개별 항목 삭제를 지원하지 않는다(읽은 배�
 sourcemap 은 "이 `.luau` 파일이 Studio 트리의 어디인가" 를 담은 표이고,
 이게 있어야 `require(script.Parent.UI.Battle)` 같은 경로를 에디터가 따라간다.
 `rojo` 가 PATH 에 있으면(= `aftman install` 을 했으면) 알아서 만들어진다.
+
+`tests/` 는 Roblox 가 아니라 Lune 위에서 돈다. `lune setup` 이 만든 타입 정의를
+`.luaurc` 의 `aliases` 가 가리키고 있어서 `require("@lune/fs")` 같은 줄에 빨간 줄이
+뜨지 않는다. **클론 직후 한 번은 `lune setup` 을 돌려야 한다** — 정의가 저장소가 아니라
+홈 디렉터리(`~/.lune/.typedefs/`)에 깔리기 때문이다.
+
+`.luaurc` 의 `lint` 이름은 **Luau 가 아는 것만** 써야 한다. 없는 이름을 하나라도 적으면
+`.luaurc` 전체가 거부돼서 타입 검사와 린트가 통째로 꺼진다 (에디터는 조용히 아무것도
+지적하지 않게 된다). 유효한 이름 목록은 luau-lsp 확장의 `schemas/luaurc.json` 에 있다.
+
+명령줄에서 에디터와 같은 검사를 돌려볼 수도 있다. luau-lsp 확장이 들고 있는 실행
+파일을 쓴다 — CI 에는 안 넣었다. 확장 경로가 사람마다 다르고 버전마다 바뀌기 때문이다.
+
+```powershell
+$srv = "$env:USERPROFILE\.vscode\extensions\johnnymorganz.luau-lsp-*in\server.exe"
+& (Resolve-Path $srv)[0] analyze --sourcemap sourcemap.json --base-luaurc .luaurc (Get-ChildItem src -Recurse -Filter *.luau)
+```
 
 `Ctrl+Shift+B` / 작업 실행에 미리 넣어둔 것들 (`.vscode/tasks.json`):
 

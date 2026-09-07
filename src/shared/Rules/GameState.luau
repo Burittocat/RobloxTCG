@@ -117,7 +117,9 @@ end
 --==========================================================================
 
 function GameState.createCard(state, cardId, ownerId)
-	local def = Registry.mustGet(cardId)
+	-- 결과를 쓰지 않는 호출이지만 지우면 안 된다 — mustGet 은 등록되지 않은 카드 id 면
+	-- 여기서 에러를 낸다. 이 줄이 없으면 오타난 id 가 필드에 올라간 뒤에야 터진다.
+	Registry.mustGet(cardId)
 
 	local instance = {
 		id = state.nextInstanceId,

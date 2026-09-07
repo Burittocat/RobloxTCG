@@ -417,7 +417,7 @@ t:describe("크로스서버 매칭", function()
 		world:newServer({ jobId = "job-alpha" }):boot() -- 돌아갈 공개 서버
 
 		local arena = world:newServer({ reserved = true, jobId = "job-arena" }):boot()
-		local stranger = arena:addPlayer("Stranger")
+		arena:addPlayer("Stranger")
 		world:advance(2)
 		assertNoErrors(world, "예약 서버 직접 입장")
 

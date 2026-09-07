@@ -362,7 +362,7 @@ NodeMeta.__newindex = function(self, key, value)
 	fields(self)[key] = value
 
 	if previous ~= value then
-		local signal = rawget(self, "_propertySignals")[key]
+		local signal = assert(rawget(self, "_propertySignals"))[key]
 		if signal then
 			signal:Fire()
 		end
@@ -408,7 +408,7 @@ local function attachRemote(node)
 	end)
 
 	rawset(node, "FireAllClients", function(_, ...)
-		for _, signal in rawget(node, "_clientSignals") do
+		for _, signal in assert(rawget(node, "_clientSignals")) do
 			signal:Fire(...)
 		end
 	end)
@@ -433,7 +433,7 @@ function RobloxInstance.new(className, parent)
 	}, NodeMeta)
 
 	for _, signalName in SIGNALS[className] or {} do
-		rawget(node, "_signals")[signalName] = Signal.new()
+		assert(rawget(node, "_signals"))[signalName] = Signal.new()
 	end
 
 	if className == "RemoteEvent" then

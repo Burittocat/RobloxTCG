@@ -8,7 +8,7 @@
 
 	플레이스를 둘로 나누지 않은 이유: 나누면 카드 DB·룰 엔진·UI 를 두 곳에 배포해야 하고,
 	둘의 버전이 어긋나는 순간을 막을 방법이 없다. 예약 서버는 같은 플레이스를
-	ReserveServer 로 잡은 것이라 언제나 같은 코드가 돈다.
+	ReserveServerAsync 로 잡은 것이라 언제나 같은 코드가 돈다.
 
 	  game.PrivateServerId ~= ""  → 비공개 서버
 	  game.PrivateServerOwnerId == 0 → 그중 "예약 서버"(사람이 산 프라이빗 서버가 아니라

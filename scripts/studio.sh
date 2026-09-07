@@ -16,7 +16,21 @@ export PATH
 
 sh scripts/ci.sh --quiet || exit 1
 
-printf "\033[2m› Studio 로 여는 중 (build.rbxlx)\033[0m\n"
+#
+# 지금 여는 것이 어느 코드인지 찍어둔다.
+#
+# Studio 에서 Ctrl+S 를 누르면 build.rbxlx 를 Studio 가 저장한 파일로 덮어쓴다.
+# 그 창에서 그대로 게시하면 그때 열려 있던(= 낡았을 수 있는) 코드가 올라간다.
+# 화면에 커밋 해시가 찍혀 있으면 "내가 지금 무엇을 게시하는지" 를 확인할 수 있다.
+#
+commit=$(git rev-parse --short HEAD 2>/dev/null || echo "커밋 없음")
+dirty=""
+if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+	dirty=" + 커밋 안 된 변경"
+fi
+
+printf "\033[2m› Studio 로 여는 중 — %s%s\033[0m\n" "$commit" "$dirty"
+printf "\033[2m  (Studio 에서 저장하지 마세요. build.rbxlx 는 rojo 가 만드는 산출물입니다)\033[0m\n"
 
 case "$(uname -s)" in
 	MINGW* | MSYS* | CYGWIN*) cmd //c start "" build.rbxlx ;;

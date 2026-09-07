@@ -14,7 +14,7 @@
 	    A서버(김) ─AddAsync─┐
 	                        ├─→ [MemoryStore 큐] ←─ 아무 서버나 ReadAsync 로 훑는다
 	    B서버(이) ─AddAsync─┘                          │
-	                                                   ├ 짝이 나오면 ReserveServer
+	                                                   ├ 짝이 나오면 ReserveServerAsync
 	                                                   └ PublishAsync {accessCode, seats}
 	                                                        │
 	                                        A서버 ─────────┴──────── B서버
@@ -216,7 +216,8 @@ function CrossServer:poll()
 	for _, match in plan.matches do
 		local accessCode
 		local ok, err = pcall(function()
-			accessCode = TeleportService:ReserveServer(game.PlaceId)
+			-- ReserveServer(비Async) 는 deprecated 다. 같은 일을 하지만 이름이 다르다.
+			accessCode = TeleportService:ReserveServerAsync(game.PlaceId)
 		end)
 
 		if ok and accessCode then

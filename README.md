@@ -32,6 +32,15 @@ scripts\studio.cmd      # 검사를 전부 돌린 뒤 Studio 로 연다
 - 확장자를 빼고 `scripts\studio` 라고만 치면 **PowerShell 이 `.cmd` 가 아니라 `.ps1` 을
   먼저 고른다.** 그러면 위의 실행 정책에 그대로 막힌다.
 
+`scripts/` 안의 윈도우 스크립트는 인코딩 규칙이 나머지와 다르다. `.gitattributes` 가
+못 박아두고 있으니 새로 만들 때 맞춰야 한다.
+
+| | 인코딩 | 줄바꿈 | 왜 |
+|---|---|---|---|
+| `*.cmd` | **ASCII 만** | CRLF | cmd.exe 는 OEM 코드페이지로 읽고 CRLF 를 요구한다. 한글 주석을 넣으면 깨지면서 그 줄을 명령으로 실행하려 든다 |
+| `*.ps1` | **UTF-8 + BOM** | CRLF | Windows PowerShell 5.1 은 BOM 이 없으면 CP949 로 읽는다. 한글이 깨지며 따옴표가 어긋나 파일 전체가 파싱 실패한다 |
+| `*.sh` · `*.luau` | UTF-8 (BOM 없이) | LF | sh 와 Lune 은 BOM 을 문법 오류로 본다 |
+
 검사를 건너뛰고 바로 열려면:
 
 ```powershell

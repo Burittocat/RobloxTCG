@@ -1,4 +1,4 @@
-# 로컬 CI. (PowerShell 용)
+﻿# 로컬 CI. (PowerShell 용)
 #
 #   .\scripts\ci.ps1
 #   .\scripts\ci.ps1 -Quiet

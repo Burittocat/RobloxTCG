@@ -1,7 +1,8 @@
 @echo off
-rem 로컬 CI 를 돌린다.
+rem Run the local CI checks.
 rem
-rem   scripts\ci
+rem   scripts\ci.cmd
 rem
-rem 윈도우 기본 실행 정책(Restricted)에 막히지 않도록 이번 실행에만 Bypass 를 준다.
+rem ASCII + CRLF on purpose, and -ExecutionPolicy Bypass so the default
+rem Restricted policy does not block the .ps1 it calls. See scripts\studio.cmd.
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0ci.ps1" %*

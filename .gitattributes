@@ -3,6 +3,14 @@
 .githooks/** text eol=lf
 scripts/** text eol=lf
 
+# 윈도우 쪽 스크립트만 예외다. (뒤에 오는 규칙이 이긴다)
+#   .cmd  cmd.exe 는 CRLF 를 요구한다. LF 로 체크아웃되면 줄이 붙어 파싱이 깨진다.
+#         내용도 ASCII 로만 쓴다 — cmd 는 OEM 코드페이지로 읽어서 한글이 깨진다.
+#   .ps1  Windows PowerShell 5.1 은 BOM 없는 UTF-8 을 CP949 로 읽는다.
+#         그래서 이 파일들은 BOM 을 달고 있고, git 이 그걸 건드리면 안 된다.
+scripts/*.cmd text eol=crlf
+scripts/*.ps1 text eol=crlf
+
 # 소스도 LF 로 통일한다. stylua.toml 이 line_endings = "Unix" 라서
 # 맞춰두지 않으면 서식 도구와 git 이 서로 다른 줄바꿈을 고집한다.
 *.luau text eol=lf

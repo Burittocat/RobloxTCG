@@ -1,4 +1,4 @@
-# 검사를 전부 돌린 뒤 플레이스를 만들어 Studio 로 연다. (PowerShell 용)
+﻿# 검사를 전부 돌린 뒤 플레이스를 만들어 Studio 로 연다. (PowerShell 용)
 #
 #   .\scripts\studio.ps1
 #

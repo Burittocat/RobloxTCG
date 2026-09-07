@@ -193,11 +193,21 @@ local function readBatch(self)
 	return items, readId
 end
 
+--[[
+	짝이 안 지어진 엔트리를 큐에 되돌린다.
+
+	남은 수명은 **마지막으로 살아 있다고 알린 시각(refreshedAt)** 에서 잰다.
+	joinedAt 에서 재면 오래 기다린 사람일수록 수명이 짧아지다 결국 0 이 되어,
+	큐에서 조용히 사라진 채 "상대를 찾는 중" 화면만 남는다.
+
+	수명을 매번 가득 채우지 않는 것도 중요하다 — 주인 서버가 죽은 엔트리는 아무도
+	refreshedAt 을 올려주지 않으므로 이 계산을 타고 결국 만료된다. 그게 유일한 청소부다.
+]]
 local function putBack(self, entries)
+	local now = os.time()
+
 	for _, entry in entries do
-		-- 남은 수명만큼만 다시 넣는다. 그러지 않으면 되돌릴 때마다 수명이 갱신돼
-		-- 주인 없는 엔트리가 영원히 큐를 맴돈다.
-		local remaining = Settings.entryTtl - (os.time() - entry.joinedAt)
+		local remaining = Settings.entryTtl - (now - (entry.refreshedAt or entry.joinedAt))
 		if remaining > 1 then
 			pcall(function()
 				self.queue:AddAsync(entry, math.floor(remaining))
@@ -206,10 +216,60 @@ local function putBack(self, entries)
 	end
 end
 
+--[[
+	큐에 서 있는 사람의 엔트리를 다시 넣는다.
+
+	MemoryStore 엔트리는 TTL 이 지나면 물리적으로 사라진다. 갱신하지 않으면 90초 넘게
+	기다린 사람은 큐에서 증발하는데, 화면에는 여전히 "상대를 찾는 중" 이 떠 있다.
+	영원히 매칭되지 않고, 본인은 이유를 알 수 없다.
+
+	joinedAt 은 그대로 둔다 — 갱신할 때마다 뒤로 밀리면 오래 기다린 사람이 영영 못 붙는다.
+	같은 token 으로 다시 넣으므로 옛 사본과 겹쳐도 plan 의 중복 거르기가 정리한다.
+]]
+function CrossServer:refreshQueued()
+	local now = os.time()
+
+	for player, entry in self.queued do
+		if player.Parent ~= Players then
+			self.queued[player] = nil
+		elseif now - (entry.refreshedAt or entry.joinedAt) >= Settings.refreshInterval then
+			entry.refreshedAt = now
+			local ok, err = pcall(function()
+				self.queue:AddAsync(entry, Settings.entryTtl)
+			end)
+			if not ok then
+				warn(("[TCG] 큐 갱신 실패 (%s): %s"):format(player.Name, tostring(err)))
+			end
+		end
+	end
+end
+
 function CrossServer:poll()
+	self:refreshQueued()
+
 	local items, readId = readBatch(self)
-	if not items or #items < 2 then
-		return -- 배치를 지우지 않는다. 안 보이는 시간이 지나면 다시 나타난다.
+	if not items or #items == 0 then
+		return
+	end
+
+	--[[
+		짝을 지을 수 없어도 **읽은 것은 반드시 되돌려 놓는다.**
+
+		ReadAsync 한 항목은 invisibilityTimeout 동안 모든 서버에게 안 보인다. 그대로 두면
+		두 사람의 "안 보이는 창" 이 어긋난 채로 계속 어긋난다 — 한 명이 보일 때 다른 한 명은
+		숨어 있고, 그 사람이 나타나면 이번엔 앞사람이 숨는다. 폴링 주기와 숨김 시간이
+		맞물리면 **둘이 영영 같은 읽기에 안 잡힌다.** 각자 화면에는 "상대를 찾는 중" 만 뜬다.
+
+		지우고 다시 넣으면 즉시 다시 보이게 되므로 그 어긋남 자체가 생기지 않는다.
+	]]
+	if #items < 2 then
+		local ok = pcall(function()
+			self.queue:RemoveAsync(readId)
+		end)
+		if ok then
+			putBack(self, items)
+		end
+		return
 	end
 
 	local plan = Matchmaking.plan(items, {

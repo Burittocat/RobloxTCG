@@ -118,6 +118,47 @@ return function(t, ctx)
 			t:eq(#result.matches, 1)
 		end)
 
+		t:it("갱신된 엔트리는 오래 기다려도 만료가 아니다", function()
+			-- TTL 은 "주인이 살아 있는가" 를 재는 값이지 "얼마나 기다렸는가" 가 아니다.
+			-- 이걸 안 나누면 오래 기다린 사람이 큐에서 조용히 사라진다.
+			local old = entry(1, 300) -- 5분 전에 줄 섰지만
+			old.refreshedAt = NOW - 10 -- 10초 전에 살아 있다고 알렸다
+
+			local result = plan({ old, entry(2, 20) })
+
+			t:eq(#result.expired, 0)
+			t:eq(#result.matches, 1)
+		end)
+
+		t:it("갱신이 끊긴 엔트리는 만료된다", function()
+			-- 주인 서버가 죽으면 아무도 갱신해주지 않는다. 그게 유일한 청소부다.
+			local dead = entry(1, 300)
+			dead.refreshedAt = NOW - (TTL + 1)
+
+			local result = plan({ dead, entry(2, 20) })
+
+			t:eq(#result.expired, 1)
+			t:eq(#result.matches, 0)
+		end)
+
+		t:it("같은 사람의 사본이 오면 살아 있다는 소식을 합친다", function()
+			--[[
+				주인 서버가 "아직 큐에 있다" 며 다시 넣은 사본이 낡은 사본과 함께 읽힌다.
+				갱신본을 그냥 버리면 낡은 쪽만 남아 수명이 계속 줄다 만료된다.
+			]]
+			local stale = entry(7, 80)
+			stale.refreshedAt = NOW - 80
+			local fresh = entry(7, 80)
+			fresh.refreshedAt = NOW - 1
+
+			local result = plan({ stale, fresh })
+
+			t:eq(#result.duplicate, 1)
+			t:eq(#result.waiting, 1)
+			t:eq(result.waiting[1].refreshedAt, NOW - 1, "남은 쪽이 최신 갱신 시각을 가져야 합니다")
+			t:eq(result.waiting[1].joinedAt, NOW - 80, "줄 선 순서는 그대로여야 합니다")
+		end)
+
 		t:it("시계가 앞선 서버의 엔트리를 만료로 보지 않는다", function()
 			-- 서버 간 시계 오차로 joinedAt 이 미래일 수 있다.
 			-- 이걸 만료로 처리하면 그 사람은 영원히 매칭되지 않는다.

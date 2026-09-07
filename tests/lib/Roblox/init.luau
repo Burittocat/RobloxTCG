@@ -47,6 +47,10 @@ local Roblox = {}
 
 local GLOBALS = getfenv(0)
 
+-- 가상 os.time 의 기준점. 실제 값이 중요한 곳은 없고, 사람이 로그에서 알아보기 좋게
+-- 그럴듯한 시각 하나를 고정해 둔다.
+local VIRTUAL_EPOCH = 1_800_000_000
+
 --==========================================================================
 -- 파일 트리 → 인스턴스 트리
 --==========================================================================
@@ -532,6 +536,13 @@ end
 ]]
 function World:performTeleport(fromServer, player, accessCode, data)
 	self.scheduler:delay(0.2, function()
+		-- 그 사이에 나간 사람은 태우지 않는다. 진짜 TeleportAsync 도 이미 떠난 플레이어를
+		-- 옮기지 못한다 — 이 검사가 없으면 하네스가 "나갔는데도 대전이 시작되는" 거짓
+		-- 결과를 준다.
+		if player.Parent ~= fromServer.playersService then
+			return
+		end
+
 		fromServer:removePlayer(player)
 
 		local target
@@ -727,6 +738,23 @@ function Server:execute(node, path, vm, requireNode)
 		workspace = vm.workspace,
 		Instance = RobloxInstance,
 		task = world.scheduler:library(),
+
+		--[[
+			os.time 도 가상 시계를 따라야 한다.
+
+			게임 코드는 큐 TTL · 엔트리 갱신 · 대기 시간 표시를 전부 os.time 으로 잰다.
+			그게 실제 시계를 보면 world:advance(120) 을 해도 게임 입장에서는 0초라,
+			시간에 얽힌 로직이 **테스트에서 아예 실행되지 않는다** — 실제로 그 때문에
+			"90초 넘게 기다리면 큐에서 증발" 하는 버그를 하네스가 못 잡았다.
+		]]
+		os = setmetatable({
+			time = function()
+				return VIRTUAL_EPOCH + math.floor(world.scheduler.clock)
+			end,
+			clock = function()
+				return world.scheduler.clock
+			end,
+		}, { __index = os }),
 
 		warn = function(...)
 			local parts = {}

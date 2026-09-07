@@ -9,6 +9,8 @@
 	  1. 같은 사람이 두 번 큐에 들어가 자기 자신과 매칭된다
 	     (취소 → 재등록이 크로스서버에서는 즉시 반영되지 않는다)
 	  2. 서버가 죽어 주인이 사라진 엔트리가 큐에 영원히 남는다      → TTL
+	     (TTL 은 "죽었는가" 를 재는 것이지 "얼마나 기다렸는가" 가 아니다. 살아 있는 서버는
+	      자기 엔트리를 계속 갱신하므로, 오래 기다린 사람이 큐에서 빠지지 않는다)
 	  3. 한 배치에서 같은 엔트리를 두 매치에 넣는다                 → 소비 표시
 	  4. 취소한 사람의 유령 엔트리가 **상대를** 아무도 오지 않는 대전 서버로 끌고 간다
 	     (MemoryStore 큐는 개별 항목 삭제가 없어서 취소해도 엔트리가 남는다) → blockedTokens
@@ -44,7 +46,14 @@ function Matchmaking.newEntry(userId, name, serverId, now, token)
 		userId = userId,
 		name = name,
 		serverId = serverId,
+
+		-- 줄 선 시각. 순서를 정할 때만 쓴다. 갱신해도 뒤로 밀리지 않도록 그대로 둔다.
 		joinedAt = now,
+
+		-- 마지막으로 "아직 살아 있다" 를 알린 시각. 만료 판정은 이쪽을 본다.
+		-- 둘을 나누지 않으면, 오래 기다린 사람이 죽은 엔트리로 오해받아 큐에서 빠진다.
+		refreshedAt = now,
+
 		token = token,
 	}
 end
@@ -56,7 +65,7 @@ end
 	사람을 버리면 그 사람은 영원히 매칭되지 않는다 — 오차는 관대하게, 노화는 엄격하게.
 ]]
 function Matchmaking.isExpired(entry, now, ttl)
-	return (now - entry.joinedAt) > ttl
+	return (now - (entry.refreshedAt or entry.joinedAt)) > ttl
 end
 
 --==========================================================================
@@ -118,10 +127,23 @@ function Matchmaking.plan(entries, opts)
 			-- 취소된 등록. 이 한 줄이 없으면 그 유령이 상대를 빈 대전 서버로 끌고 간다.
 			table.insert(result.cancelled, entry)
 		elseif seen[entry.userId] then
-			-- 먼저 온 엔트리가 이미 채택됐다. 나중 것은 유령이다.
+			--[[
+				같은 사람의 사본이다. 하나만 남기되, **살아 있다는 소식은 합친다.**
+
+				주인 서버가 "아직 큐에 있다" 를 알리려고 다시 넣은 사본이 여기로 들어온다.
+				그냥 버리면 낡은 사본만 남아 수명이 계속 줄어들다 만료된다 —
+				오래 기다린 사람이 큐에서 증발하는 경로가 정확히 이것이었다.
+
+				줄 선 순서(joinedAt)는 먼저 온 것을 지킨다. 갱신했다고 뒤로 밀리면 안 된다.
+			]]
+			local kept = seen[entry.userId]
+			local mine = entry.refreshedAt or entry.joinedAt
+			if mine > (kept.refreshedAt or kept.joinedAt) then
+				kept.refreshedAt = mine
+			end
 			table.insert(result.duplicate, entry)
 		else
-			seen[entry.userId] = true
+			seen[entry.userId] = entry
 			table.insert(live, entry)
 		end
 	end

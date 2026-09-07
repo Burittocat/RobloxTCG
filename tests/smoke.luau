@@ -412,6 +412,60 @@ t:describe("크로스서버 매칭", function()
 		t:truthy(Screen.hasText(guiOf(lee), "턴 "), "Lee 에게 전투 화면이 떠야 합니다")
 	end)
 
+	t:it("오래 기다려도 큐에서 사라지지 않는다", function()
+		--[[
+			엔트리 TTL(90초)은 "주인 서버가 죽었는가" 를 재는 값이지 "얼마나 기다렸는가" 가
+			아니다. 그 둘을 안 나눴을 때, 90초 넘게 기다린 사람은 큐에서 조용히 증발하고
+			화면에는 "상대를 찾는 중" 만 남았다 — 본인은 이유를 알 수 없고, 나중에 들어온
+			상대와도 영영 안 붙는다.
+
+			친구가 먼저 큐를 누르고 내가 2분 뒤에 들어오면 바로 이 상황이다.
+		]]
+		local world = Roblox.newWorld({ studio = false })
+
+		local alpha = world:newServer({ jobId = "job-alpha" }):boot()
+		local kim = alpha:addPlayer("Kim")
+		world:advance(2)
+
+		clickQueue(kim)
+		world:advance(150) -- TTL 의 한참 뒤
+
+		local beta = world:newServer({ jobId = "job-beta" }):boot()
+		local lee = beta:addPlayer("Lee")
+		world:advance(2)
+		clickQueue(lee)
+		world:advance(10)
+		assertNoErrors(world, "오래 기다린 뒤 매칭")
+
+		t:eq(#world.teleports, 2, "먼저 와서 오래 기다린 사람이 매칭돼야 합니다")
+		t:truthy(Screen.hasText(guiOf(kim), "턴 "), "Kim 에게 전투 화면이 떠야 합니다")
+		t:truthy(Screen.hasText(guiOf(lee), "턴 "), "Lee 에게 전투 화면이 떠야 합니다")
+	end)
+
+	t:it("짝이 성사된 직후 한 명이 나가면 남은 쪽은 큐로 돌아온다", function()
+		local world = Roblox.newWorld({ studio = false })
+
+		local alpha = world:newServer({ jobId = "job-alpha" }):boot()
+		local beta = world:newServer({ jobId = "job-beta" }):boot()
+
+		local kim = alpha:addPlayer("Kim")
+		local lee = beta:addPlayer("Lee")
+		world:advance(2)
+
+		clickQueue(kim)
+		clickQueue(lee)
+
+		world:advance(2.1) -- 짝은 지어졌고 텔레포트가 걸리기 직전
+		alpha:removePlayer(kim)
+
+		world:advance(40) -- 대전 서버 대기 한도(30초)를 넘긴다
+		assertNoErrors(world, "짝 상대 이탈")
+
+		-- 부전승을 주지 않는다. 텔레포트 실패와 구분할 방법이 없기 때문이다.
+		t:falsy(Screen.hasText(guiOf(lee), "승리"), "안 온 상대에게 이겼다고 하면 안 됩니다")
+		t:truthy(Screen.hasText(guiOf(lee), "상대를 찾는 중"), "다시 큐에 서 있어야 합니다")
+	end)
+
 	t:it("대전 서버는 매칭 없이 들어온 사람을 돌려보낸다", function()
 		local world = Roblox.newWorld({ studio = false })
 		world:newServer({ jobId = "job-alpha" }):boot() -- 돌아갈 공개 서버

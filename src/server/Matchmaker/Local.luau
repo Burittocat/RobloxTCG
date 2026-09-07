@@ -78,6 +78,9 @@ function Local:poll()
 
 	for player, entry in self.entries do
 		if player.Parent == Players then
+			-- 접속해 있는 동안은 계속 살아 있다고 표시한다. 이게 없으면 TTL 이 지난 뒤
+			-- 큐에서 조용히 빠지는데 화면은 "상대를 찾는 중" 그대로다.
+			entry.refreshedAt = os.time()
 			byUserId[entry.userId] = player
 			table.insert(entries, entry)
 		else

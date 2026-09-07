@@ -734,6 +734,30 @@ PvP 빠른 매칭까지 끝났다. 남은 것:
 4. **연출** — 지금 UI 는 매 갱신마다 화면을 다시 그린다. 카드가 날아가는 애니메이션을
    붙이려면 `Battle:render` 를 diff 방식으로 바꿔야 한다
 
+### 코드 리뷰에서 나왔는데 아직 안 고친 것
+
+2026-09-08 브랜치 전체 리뷰(13건) 중 급한 것은 처리했고, 아래가 남았다.
+전부 게시를 막을 정도는 아니라고 판단해 남겨둔 것이지 "안 해도 되는" 것은 아니다.
+
+**게임 쪽**
+
+| 곳 | 무엇 |
+|---|---|
+| `client/Controller.luau` 하이라이트 | 수비준비에서 `Combat.canBlock` 을 안 본다. 비행 공격자만 있어도 지상 생물이 전부 초록으로 켜지고, 눌러 들어가면 고를 대상이 없어 "선택 취소" 로만 빠져나온다 |
+| `client/UI/Home.luau` 대기 타이머 | 서버가 준 `os.time()` 에서 클라이언트 시계를 뺀다. 시계가 어긋난 사람은 `0:00` 에 멈추거나 처음부터 몇 분이 찍힌다 |
+| `Rules/init.luau` · `GameState.luau` | `GameState.new` 의 선공 폴백이 `Config.randomFirstPlayer` 를 보지 않는다. 플래그가 모든 경로를 덮지 못하고, 그 폴백이 셔플 RNG 를 한 번 소모해 "같은 시드 → 같은 판" 이 `startingPlayerId` 전달 여부에 따라 갈린다 |
+
+**테스트 하네스** — 전부 "하네스가 실제와 다르게 답한다" 는 종류다.
+초록불을 잘못 주는 쪽이라 게임보다 덜 급해 보이지만, 실은 더 위험하다.
+
+| 곳 | 무엇 |
+|---|---|
+| `PublishAsync` | 발행한 서버 자신에게 배달하지 않는다(실제는 배달한다). 그래서 `CrossServer:announce` 의 `payload.origin` 에코 가드가 **한 번도 실행되지 않는다** — 그 가드를 지워도 테스트는 통과하지만 실제로는 모든 match/cancel 이 두 번 처리된다 |
+| `AddAsync` | 값을 참조로 저장한다. 실제 MemoryStore 는 직렬화한다. 그래서 "큐에 넣은 뒤 로컬 객체를 고치면 큐 안 값도 같이 바뀌는" 일이 하네스에서만 일어난다 |
+| `FireClient` | 첫 인자가 Player 인지 안 본다. 아무 값이나 키로 새 신호를 만들어 조용히 버린다. 이 저장소가 `Notice:FireClient(player, text, kind)` 와 `Lobby:FireClient(player, payload)` 두 모양을 섞어 쓰므로 player 를 빠뜨린 실수가 통과한다. `removePlayer` 가 `_clientSignals` 도 안 지운다 |
+| `removePlayer` | `player.Parent = nil` 을 먼저 하고 `PlayerRemoving` 을 쏜다. 실제로는 아직 `Players` 의 자식인 상태에서 발생한다 |
+| `ReserveServerAsync` (하네스) | 접근 코드를 `math.random` 으로 만들어 한 월드에서 두 번 예약하면 드물게 충돌한다 |
+
 ### 매칭에서 아직 없는 것
 
 - **실력 기반 매칭** — 지금은 대기 시간 순으로만 붙인다. 레이팅을 넣으려면

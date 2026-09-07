@@ -18,6 +18,8 @@ local Rules = env.require(env.root.Rules)
 local Cards = env.require(env.root.Cards)
 local Decks = env.require(env.root.Decks)
 local AI = env.require(env.root.AI)
+local Net = env.require(env.root.Net)
+local Matchmaking = env.require(env.root.Matchmaking)
 
 Cards.load()
 print(("카드 %d 장 등록됨\n"):format(Rules.Registry.count()))
@@ -31,10 +33,20 @@ local SPECS = {
 	{ name = "stack", run = require("./specs/stack") },
 	{ name = "winloss", run = require("./specs/winloss") },
 	{ name = "ai", run = require("./specs/ai") },
+	{ name = "net", run = require("./specs/net") },
+	{ name = "matchmaking", run = require("./specs/matchmaking") },
 }
 
 local t = Test.new()
-local ctx = { Rules = Rules, Cards = Cards, Decks = Decks, AI = AI, Fixture = Fixture }
+local ctx = {
+	Rules = Rules,
+	Cards = Cards,
+	Decks = Decks,
+	AI = AI,
+	Net = Net,
+	Matchmaking = Matchmaking,
+	Fixture = Fixture,
+}
 
 for _, spec in SPECS do
 	print(("[%s]"):format(spec.name))

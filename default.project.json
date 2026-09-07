@@ -5,8 +5,18 @@
 
     "ReplicatedStorage": {
       "$className": "ReplicatedStorage",
+
       "Shared": {
         "$path": "src/shared"
+      },
+
+      "Remotes": {
+        "$className": "Folder",
+
+        "Sync": { "$className": "RemoteEvent" },
+        "Action": { "$className": "RemoteEvent" },
+        "Notice": { "$className": "RemoteEvent" },
+        "Lobby": { "$className": "RemoteEvent" }
       }
     },
 
@@ -24,6 +34,20 @@
         "Client": {
           "$path": "src/client"
         }
+      }
+    },
+
+    "Players": {
+      "$className": "Players",
+      "$properties": {
+        "CharacterAutoLoads": false
+      }
+    },
+
+    "StarterGui": {
+      "$className": "StarterGui",
+      "$properties": {
+        "ResetPlayerGuiOnSpawn": false
       }
     },
 

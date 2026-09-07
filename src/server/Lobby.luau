@@ -1,0 +1,214 @@
+--[[
+	공개 서버(= 로비)에서 도는 것.
+
+	여기서는 카드를 한 장도 내지 않는다. 하는 일은 셋이다.
+	  1. 시작 화면 상태를 클라이언트에 알려준다        (Lobby 리모트)
+	  2. 빠른 대전 큐 등록/취소                        (Matchmaker)
+	  3. AI 연습은 큐를 타지 않고 이 자리에서 한 판 띄운다
+
+	PvP 매치는 여기서 굴리지 않는다. 짝이 지어지면 두 사람은 예약 서버로 텔레포트되고
+	거기서 Arena 가 판을 연다. 로비 서버가 대전까지 맡으면 인원이 많은 서버일수록
+	느려져서, 매칭 운이 곧 플레이 품질이 된다.
+
+	(예외: Studio 의 같은 서버 백엔드는 텔레포트가 없으므로 여기서 바로 시작한다.
+	 accessCode 가 없는 매치가 그 경우다.)
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local AI = require(Shared.AI)
+local Net = require(Shared.Net)
+
+local MatchRunner = require(script.Parent.MatchRunner)
+local Matchmaker = require(script.Parent.Matchmaker)
+
+local Screen = Net.LobbyScreen
+
+local Lobby = {}
+Lobby.__index = Lobby
+
+function Lobby.new(remotes, host)
+	local self = setmetatable({}, Lobby)
+
+	self.remotes = remotes
+	self.host = host
+	self.screens = {} :: { [Player]: any }
+
+	self.matchmaker = Matchmaker.new({
+		onMatchFound = function(player, opponentName)
+			self:setScreen(player, { screen = Screen.Found, opponent = opponentName })
+		end,
+
+		onMatchReady = function(match, players)
+			self:startLocalMatch(match, players)
+		end,
+
+		onTeleportFail = function(player)
+			self:setScreen(player, {
+				screen = Screen.Error,
+				text = "대전 서버로 이동하지 못했습니다. 다시 시도해 주세요.",
+			})
+		end,
+	})
+
+	remotes.Lobby.OnServerEvent:Connect(function(player, payload)
+		local ok, err = pcall(function()
+			self:onMessage(player, payload)
+		end)
+		if not ok then
+			warn(("[TCG] 로비 요청 처리 실패: %s"):format(tostring(err)))
+		end
+	end)
+
+	Players.PlayerAdded:Connect(function(player)
+		self:onPlayerAdded(player)
+	end)
+	Players.PlayerRemoving:Connect(function(player)
+		self.matchmaker:cancel(player)
+		self.screens[player] = nil
+	end)
+
+	for _, player in Players:GetPlayers() do
+		self:onPlayerAdded(player)
+	end
+
+	self.matchmaker:start()
+	return self
+end
+
+--==========================================================================
+-- 화면 상태
+--==========================================================================
+
+--[[
+	화면 전환의 주인은 서버다. 클라이언트가 자기 판단으로 화면을 바꾸면
+	"큐에 서 있는데 시작 화면이 보이는" 상태가 만들어진다.
+]]
+function Lobby:setScreen(player, payload)
+	self.screens[player] = payload
+	self.remotes.Lobby:FireClient(player, payload)
+end
+
+function Lobby:home(player, text)
+	self:setScreen(player, { screen = Screen.Home, text = text })
+end
+
+--==========================================================================
+-- 접속
+--==========================================================================
+
+--[[
+	대전이 끝나고 "다시 매칭" 을 누른 사람은 로비로 돌아오면서 autoQueue 를 달고 온다.
+	도착하자마자 큐에 넣어주지 않으면 버튼을 한 번 더 눌러야 한다.
+]]
+function Lobby:onPlayerAdded(player)
+	self:home(player)
+
+	local joinData = player:GetJoinData()
+	local teleportData = joinData and joinData.TeleportData
+
+	if type(teleportData) == "table" and teleportData.autoQueue then
+		self:enqueue(player)
+	end
+end
+
+--==========================================================================
+-- 요청 처리
+--==========================================================================
+
+function Lobby:onMessage(player, payload)
+	if type(payload) ~= "table" or type(payload.kind) ~= "string" then
+		return
+	end
+
+	if payload.kind == "hello" then
+		local current = self.screens[player] or { screen = Screen.Home }
+		self.remotes.Lobby:FireClient(player, current)
+	elseif payload.kind == "queue" then
+		self:enqueue(player)
+	elseif payload.kind == "cancel" then
+		self.matchmaker:cancel(player)
+		self:home(player)
+	elseif payload.kind == "practice" then
+		self:startPractice(player)
+	elseif payload.kind == "leave" then
+		self:leaveMatch(player)
+	elseif payload.kind == "requeue" then
+		self:leaveMatch(player)
+		self:enqueue(player)
+	end
+end
+
+function Lobby:enqueue(player)
+	-- 판을 두는 중에 큐에 서면 두 판이 겹친다.
+	if self.host:runnerFor(player) then
+		return
+	end
+
+	local ok, reason = self.matchmaker:enqueue(player)
+	if not ok then
+		self:setScreen(player, { screen = Screen.Error, text = reason or "큐에 등록하지 못했습니다" })
+		return
+	end
+
+	self:setScreen(player, { screen = Screen.Queued, since = os.time() })
+end
+
+--==========================================================================
+-- AI 연습
+--==========================================================================
+
+function Lobby:startPractice(player)
+	if self.host:runnerFor(player) then
+		return
+	end
+	self.matchmaker:cancel(player)
+
+	local runner = MatchRunner.new(self.remotes, {
+		seats = {
+			[1] = { player = player },
+			[2] = { ai = AI.Difficulty.Normal, name = "훈련용 AI" },
+		},
+		allowRestart = true, -- 연습이니까 R 로 계속 새 판을 열 수 있다
+	})
+
+	self.host:attach(runner)
+	self:setScreen(player, { screen = Screen.Battle, mode = "practice" })
+end
+
+--==========================================================================
+-- 같은 서버 매칭 (Studio 전용 경로)
+--==========================================================================
+
+function Lobby:startLocalMatch(match, players)
+	local seats = {}
+	for seat = 1, 2 do
+		seats[seat] = { player = players[seat] }
+	end
+
+	local runner = MatchRunner.new(self.remotes, {
+		seats = seats,
+		seed = match.seed,
+		startingPlayerId = match.startingPlayerId,
+	})
+
+	self.host:attach(runner)
+
+	for _, player in players do
+		self:setScreen(player, { screen = Screen.Battle, mode = "pvp" })
+	end
+end
+
+--==========================================================================
+-- 대전에서 나오기
+--==========================================================================
+
+function Lobby:leaveMatch(player)
+	-- 진행 중인 판을 두고 나가면 항복과 같다. 끝난 판이면 아무 일도 일어나지 않는다.
+	self.host:release(player)
+	self:home(player)
+end
+
+return Lobby

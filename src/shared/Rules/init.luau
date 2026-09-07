@@ -50,6 +50,22 @@ function Rules.newMatch(opts)
 	return state
 end
 
+--[[
+	선공 좌석. -> 1 | 2
+
+	같은 시드면 항상 같은 결과다. 서버가 정하고 클라이언트에 결과만 내려보내지만,
+	분쟁이 생기면 시드로 재현해 검증할 수 있다.
+
+	여기서 쓰는 RNG 인스턴스는 매치의 셔플 RNG 와 별개다 — 동전을 던지느라
+	셔플 결과가 달라지면 "같은 시드 → 같은 판" 이 깨진다.
+]]
+function Rules.startingPlayerFor(seed)
+	if not Config.randomFirstPlayer then
+		return 1
+	end
+	return RNG.new((tonumber(seed) or 0) + 1):nextInteger(1, 2)
+end
+
 function Rules.concede(state, playerId)
 	GameState.setLoser(state, playerId, Enums.LossReason.Concede)
 	return true

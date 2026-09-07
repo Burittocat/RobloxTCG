@@ -21,8 +21,13 @@ lune setup              # 에디터용 Lune 타입 정의 (tests/ 의 @lune/* �
 플레이스 파일을 만들어 여는 방법 (가장 빠름):
 
 ```powershell
-.\scripts\studio.ps1    # 검사를 전부 돌린 뒤 Studio 로 연다
+scripts\studio          # 검사를 전부 돌린 뒤 Studio 로 연다
 ```
+
+`.ps1` 을 직접 부르지 않는다. 윈도우의 기본 실행 정책이 `Restricted` 라
+`.\scripts\studio.ps1` 은 "스크립트를 실행할 수 없으므로" 로 막힌다.
+`scripts\studio.cmd` 이 이번 실행에만 Bypass 를 주고 `.ps1` 을 부르므로,
+컴퓨터 설정을 바꾸지 않아도 된다.
 
 검사를 건너뛰고 바로 열려면:
 
@@ -41,7 +46,7 @@ start build.rbxlx       # Studio 가 열린다 → F5(Play)
 > Studio 에서 `Ctrl+S` 를 누르면 그 파일을 Studio 가 저장한 버전으로 덮어쓰고, 그 창에서
 > 그대로 게시하면 **그때 열려 있던 낡은 코드가 올라간다.** (Studio 가 저장한 파일은
 > 지형·카메라 같은 걸 덧붙여서 rojo 산출물보다 눈에 띄게 커진다 — 구분하는 단서다)
-> 고친 걸 반영하려면 창을 닫고 `.\scripts\studio.ps1` 을 다시 돌린다.
+> 고친 걸 반영하려면 창을 닫고 `scripts\studio` 를 다시 돌린다.
 
 VS Code 에서 고치면서 Studio 에 실시간 반영하는 방법 (개발할 때 이쪽):
 
@@ -309,7 +314,7 @@ rojo: build                     build.rbxlx 생성
 문법 검사                       lune run tests/check.luau
 테스트 (룰 엔진)                lune run tests/run.luau   ← 기본 테스트 작업
 스모크 테스트                    lune run tests/smoke.luau
-Studio 에서 열기 (검사 후)       .\scripts\studio.ps1
+Studio 에서 열기 (검사 후)       scripts\studio
 터미널 싱글플레이                lune run play
 AI 자동 대전                    lune run play -- --auto
 ```
@@ -361,7 +366,7 @@ git config core.hooksPath .githooks   # 이 저장소에서 한 번만
 통과하면 아무 말 없이 커밋되고, 실패하면 커밋이 막히면서 실패한 검사만 출력된다.
 
 ```powershell
-.\scripts\ci.ps1          # 직접 돌려보기 (결과 전부 출력)
+scripts\ci                # 직접 돌려보기 (결과 전부 출력)
 git commit --no-verify    # 한 번만 건너뛰기
 git config --unset core.hooksPath   # 훅 끄기
 ```

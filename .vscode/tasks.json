@@ -5,7 +5,7 @@
       // 커밋 훅이 돌리는 것과 **같은 스크립트**. 검사 내용이 갈라지지 않는다.
       "label": "로컬 CI (문법 · 테스트 · 빌드)",
       "type": "shell",
-      "command": "./scripts/ci.ps1",
+      "command": "scripts\ci.cmd",
       "problemMatcher": [],
       "group": { "kind": "build", "isDefault": true }
     },
@@ -36,7 +36,7 @@
       // 검사를 전부 돌린 뒤 플레이스를 만들어 Studio 로 연다.
       "label": "Studio 에서 열기 (검사 후)",
       "type": "shell",
-      "command": "./scripts/studio.ps1",
+      "command": "scripts\studio.cmd",
       "problemMatcher": []
     },
     {

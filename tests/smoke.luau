@@ -382,6 +382,36 @@ t:describe("크로스서버 매칭", function()
 		t:truthy(Screen.hasText(guiOf(lee), "상대를 찾는 중"), "Lee 는 계속 기다려야 합니다")
 	end)
 
+	t:it("취소하고 다시 큐에 서면 정상 매칭된다", function()
+		--[[
+			취소를 사람 단위로 기억했더니 재등록이 TTL(90초) 동안 통째로 막혔다.
+			플레이 테스트에서 제일 먼저 해보는 동작이라, 여기서 못 잡으면
+			게시하고 나서 "큐가 안 잡힌다" 로 만나게 된다.
+		]]
+		local world = Roblox.newWorld({ studio = false })
+
+		local alpha = world:newServer({ jobId = "job-alpha" }):boot()
+		local beta = world:newServer({ jobId = "job-beta" }):boot()
+
+		local kim = alpha:addPlayer("Kim")
+		local lee = beta:addPlayer("Lee")
+		world:advance(2)
+
+		clickQueue(kim)
+		world:advance(1)
+		Screen.click(Screen.findButton(guiOf(kim), "취소"))
+		world:advance(1)
+
+		clickQueue(kim) -- 마음이 바뀌었다
+		clickQueue(lee)
+		world:advance(10)
+		assertNoErrors(world, "취소 후 재등록")
+
+		t:eq(#world.teleports, 2, "다시 선 사람도 매칭돼야 합니다")
+		t:truthy(Screen.hasText(guiOf(kim), "턴 "), "Kim 에게 전투 화면이 떠야 합니다")
+		t:truthy(Screen.hasText(guiOf(lee), "턴 "), "Lee 에게 전투 화면이 떠야 합니다")
+	end)
+
 	t:it("대전 서버는 매칭 없이 들어온 사람을 돌려보낸다", function()
 		local world = Roblox.newWorld({ studio = false })
 		world:newServer({ jobId = "job-alpha" }):boot() -- 돌아갈 공개 서버

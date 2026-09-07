@@ -45,8 +45,14 @@ function Local:enqueue(player)
 	if self.entries[player] then
 		return true
 	end
-	self.entries[player] =
-		Matchmaking.newEntry(player.UserId, player.DisplayName, game.JobId, os.time())
+	self.tokenCount = (self.tokenCount or 0) + 1
+	self.entries[player] = Matchmaking.newEntry(
+		player.UserId,
+		player.DisplayName,
+		game.JobId,
+		os.time(),
+		("local-%d"):format(self.tokenCount)
+	)
 	return true
 end
 

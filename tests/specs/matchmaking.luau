@@ -19,12 +19,15 @@ return function(t, ctx)
 	local NOW = 1_000_000
 	local TTL = 90
 
+	local nextToken = 0
 	local function entry(userId, secondsAgo, serverId)
+		nextToken += 1
 		return Matchmaking.newEntry(
 			userId,
 			("P%d"):format(userId),
 			serverId or "job-a",
-			NOW - (secondsAgo or 0)
+			NOW - (secondsAgo or 0),
+			("t%d"):format(nextToken)
 		)
 	end
 
@@ -34,7 +37,7 @@ return function(t, ctx)
 			now = opts.now or NOW,
 			ttl = opts.ttl or TTL,
 			seed = opts.seed or 1234,
-			blocked = opts.blocked,
+			blockedTokens = opts.blockedTokens,
 			maxMatches = opts.maxMatches,
 			startingPlayerFor = opts.startingPlayerFor,
 		})
@@ -155,8 +158,9 @@ return function(t, ctx)
 
 	--==================================================================
 	t:describe("큐 취소", function()
-		t:it("취소한 사람은 짝짓기에서 빠진다", function()
-			local result = plan({ entry(1, 30), entry(2, 20) }, { blocked = { [1] = true } })
+		t:it("취소한 등록은 짝짓기에서 빠진다", function()
+			local ghost, other = entry(1, 30), entry(2, 20)
+			local result = plan({ ghost, other }, { blockedTokens = { [ghost.token] = true } })
 
 			t:eq(#result.matches, 0)
 			t:eq(#result.cancelled, 1)
@@ -166,15 +170,40 @@ return function(t, ctx)
 		t:it("취소한 사람의 상대는 큐에 남는다", function()
 			-- 이게 이 기능의 존재 이유다. 걸러내지 않으면 짝이 성립해버려서,
 			-- 취소하지 않은 **상대가** 아무도 오지 않는 대전 서버로 끌려간다.
-			local result = plan({ entry(1, 30), entry(2, 20) }, { blocked = { [1] = true } })
+			local ghost, other = entry(1, 30), entry(2, 20)
+			local result = plan({ ghost, other }, { blockedTokens = { [ghost.token] = true } })
 
 			t:eq(#result.waiting, 1)
 			t:eq(result.waiting[1].userId, 2, "남은 사람은 계속 기다려야 합니다")
 		end)
 
-		t:it("취소하지 않은 셋이면 둘은 정상 매칭된다", function()
+		t:it("취소하고 다시 큐에 서면 매칭된다", function()
+			--[[
+				차단이 사람 단위였을 때의 버그. 취소 → 재등록이 TTL(90초) 동안 통째로
+				막혀서, 플레이 테스트에서 제일 먼저 해보는 동작이 먹통이 됐다.
+				차단은 취소된 **등록** 만 가리켜야 한다.
+			]]
+			local ghost = entry(1, 30) -- 취소한 등록
+			local again = entry(1, 5) -- 같은 사람이 다시 등록
+			local other = entry(2, 20)
+
 			local result =
-				plan({ entry(1, 40), entry(2, 30), entry(3, 20) }, { blocked = { [1] = true } })
+				plan({ ghost, again, other }, { blockedTokens = { [ghost.token] = true } })
+
+			t:eq(#result.matches, 1, "다시 선 사람은 매칭돼야 합니다")
+			local ids = userIdsOf(result.matches[1])
+			table.sort(ids)
+			t:eq(ids[1], 1)
+			t:eq(ids[2], 2)
+			t:eq(#result.cancelled, 1, "옛 등록만 걸러져야 합니다")
+			t:eq(result.cancelled[1].token, ghost.token)
+		end)
+
+		t:it("취소하지 않은 셋이면 둘은 정상 매칭된다", function()
+			local ghost = entry(1, 40)
+			local result = plan({ ghost, entry(2, 30), entry(3, 20) }, {
+				blockedTokens = { [ghost.token] = true },
+			})
 
 			t:eq(#result.matches, 1)
 			local ids = userIdsOf(result.matches[1])
@@ -183,8 +212,8 @@ return function(t, ctx)
 			t:eq(ids[2], 3)
 		end)
 
-		t:it("빈 blocked 는 아무 영향이 없다", function()
-			local result = plan({ entry(1, 30), entry(2, 20) }, { blocked = {} })
+		t:it("빈 목록은 아무 영향이 없다", function()
+			local result = plan({ entry(1, 30), entry(2, 20) }, { blockedTokens = {} })
 
 			t:eq(#result.matches, 1)
 			t:eq(#result.cancelled, 0)

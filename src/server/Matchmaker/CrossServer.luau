@@ -28,8 +28,11 @@
 	1. MemoryStoreQueue 는 개별 항목 삭제를 지원하지 않는다(읽은 배치 단위로만 지운다).
 	   그래서 "큐 취소" 는 엔트리를 지우지 못한다. 거름망이 두 겹이다.
 
-	     · 취소를 전 서버에 뿌려 blocked 목록에 넣는다 → 짝짓기 단계에서 걸러진다
+	     · 취소된 **등록의 token** 을 전 서버에 뿌린다 → 짝짓기 단계에서 걸러진다
 	     · 그래도 짝지어졌다면 태우기 직전의 isQueued 검사에서 막는다
+
+	   차단이 사람(userId)이 아니라 등록(token) 단위인 것이 중요하다. 사람으로 막으면
+	   "취소하고 다시 누르기" 가 TTL 이 지날 때까지 통째로 막힌다.
 
 	   두 번째만 있으면 **상대가** 아무도 오지 않는 대전 서버로 끌려간다.
 	   (취소한 사람 본인은 안 끌려가지만, 짝이 성립해버렸기 때문이다)
@@ -64,7 +67,8 @@ function CrossServer.new(onMatchFound)
 	self.onMatchFound = onMatchFound
 	self.queue = MemoryStoreService:GetQueue(Settings.queueName, Settings.invisibilityTimeout)
 	self.queued = {} :: { [Player]: any }
-	self.blocked = {} :: { [number]: number } -- userId -> 언제까지 거를지
+	self.blocked = {} :: { [string]: number } -- 취소된 token -> 언제까지 기억할지
+	self.tokenCount = 0
 	self.running = false
 
 	-- 매치 시드를 뽑는 난수. os.clock 을 섞어 서버마다 다른 수열에서 시작한다.
@@ -91,7 +95,12 @@ function CrossServer:enqueue(player)
 		return true
 	end
 
-	local entry = Matchmaking.newEntry(player.UserId, player.DisplayName, game.JobId, os.time())
+	-- token 은 이 등록 한 건의 이름표다. JobId 가 서버마다 다르므로 전역에서 겹치지 않는다.
+	self.tokenCount += 1
+	local token = ("%s-%d"):format(game.JobId, self.tokenCount)
+
+	local entry =
+		Matchmaking.newEntry(player.UserId, player.DisplayName, game.JobId, os.time(), token)
 
 	local ok, err = pcall(function()
 		self.queue:AddAsync(entry, Settings.entryTtl)
@@ -114,17 +123,19 @@ end
 	끌려가 30초를 기다렸다 돌아온다.
 ]]
 function CrossServer:cancel(player)
-	if not self.queued[player] then
+	local entry = self.queued[player]
+	if not entry then
 		return
 	end
+
 	self.queued[player] = nil
-	self:block(player.UserId)
+	self:block(entry.token)
 
 	local ok, err = pcall(function()
 		MessagingService:PublishAsync(Settings.messagingTopic, {
 			kind = "cancel",
 			origin = game.JobId,
-			userId = player.UserId,
+			token = entry.token,
 		})
 	end)
 	if not ok then
@@ -133,22 +144,24 @@ function CrossServer:cancel(player)
 end
 
 --[[
-	이 userId 를 짝짓기에서 뺀다. 엔트리 수명(TTL)만큼만 기억하면 된다 —
+	이 등록을 짝짓기에서 뺀다. 엔트리 수명(TTL)만큼만 기억하면 된다 —
 	그 뒤에는 유령 엔트리 자체가 큐에서 사라지므로 더 들고 있을 이유가 없다.
 ]]
-function CrossServer:block(userId)
-	self.blocked[userId] = os.time() + Settings.entryTtl
+function CrossServer:block(token)
+	if token then
+		self.blocked[token] = os.time() + Settings.entryTtl
+	end
 end
 
 function CrossServer:blockList()
 	local now = os.time()
 	local out = {}
 
-	for userId, expiresAt in self.blocked do
+	for token, expiresAt in self.blocked do
 		if expiresAt <= now then
-			self.blocked[userId] = nil
+			self.blocked[token] = nil
 		else
-			out[userId] = true
+			out[token] = true
 		end
 	end
 
@@ -203,7 +216,7 @@ function CrossServer:poll()
 		now = os.time(),
 		ttl = Settings.entryTtl,
 		seed = self.seedRng:nextInteger(1, 2147483646),
-		blocked = self:blockList(),
+		blockedTokens = self:blockList(),
 		startingPlayerFor = Rules.startingPlayerFor,
 	})
 
@@ -379,7 +392,7 @@ function CrossServer:start()
 			end
 
 			if payload.kind == "cancel" then
-				self:block(payload.userId)
+				self:block(payload.token)
 			elseif payload.kind == "match" then
 				self:dispatch(payload)
 			end

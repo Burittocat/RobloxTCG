@@ -11,7 +11,8 @@
 	  2. 서버가 죽어 주인이 사라진 엔트리가 큐에 영원히 남는다      → TTL
 	  3. 한 배치에서 같은 엔트리를 두 매치에 넣는다                 → 소비 표시
 	  4. 취소한 사람의 유령 엔트리가 **상대를** 아무도 오지 않는 대전 서버로 끌고 간다
-	     (MemoryStore 큐는 개별 항목 삭제가 없어서 취소해도 엔트리가 남는다) → blocked
+	     (MemoryStore 큐는 개별 항목 삭제가 없어서 취소해도 엔트리가 남는다) → blockedTokens
+	  5. 취소한 사람이 다시 큐에 섰는데 계속 걸러진다 → 차단은 **사람이 아니라 등록** 단위
 
 	엔트리 하나 = 큐에 서 있는 사람 하나.
 
@@ -32,12 +33,19 @@ local MAX_SEED = 2147483646
 -- 엔트리
 --==========================================================================
 
-function Matchmaking.newEntry(userId, name, serverId, now)
+--[[
+	token 은 이 **등록 한 건**의 식별자다. 사람(userId)이 아니라 등록을 가리킨다.
+
+	취소를 사람 단위로 기억하면 "취소 → 다시 큐" 가 막힌다. 같은 사람의 새 등록까지
+	같이 걸러지기 때문이다. 취소된 등록만 정확히 지목하려면 등록마다 이름표가 필요하다.
+]]
+function Matchmaking.newEntry(userId, name, serverId, now, token)
 	return {
 		userId = userId,
 		name = name,
 		serverId = serverId,
 		joinedAt = now,
+		token = token,
 	}
 end
 
@@ -65,7 +73,7 @@ end
 --[[
 	큐에서 꺼내온 엔트리 묶음을 어떻게 처리할지 계획한다.
 
-	    plan(entries, { now = , ttl = , seed = , blocked = , maxMatches = })
+	    plan(entries, { now = , ttl = , seed = , blockedTokens = , maxMatches = })
 	      -> {
 	           matches   = { { id, seed, startingPlayerId, seats = { entry, entry } }, ... }
 	           expired   = { entry, ... }   버린다 (큐에서 제거)
@@ -74,8 +82,10 @@ end
 	           waiting   = { entry, ... }   짝이 없다 (큐에 되돌린다)
 	         }
 
-	    blocked = { [userId] = true }  큐를 취소한 사람들. 큐에서 지울 수 없으니
-	                                   짝짓는 순간에 거른다.
+	    blockedTokens = { [token] = true }
+	        취소된 **등록**. 큐에서 지울 수 없으니 짝짓는 순간에 거른다.
+	        userId 가 아니라 token 인 것이 중요하다 — 같은 사람이 다시 큐에 서면
+	        새 token 이라 걸리지 않는다.
 
 	호출자는 matches/expired/duplicate 에 든 엔트리만 큐에서 지우고, waiting 은
 	그대로 둔다. 계획과 실행을 나눠둔 덕에 "무엇을 지울지" 를 테스트할 수 있다.
@@ -89,7 +99,7 @@ function Matchmaking.plan(entries, opts)
 	local rng = RNG.new(opts.seed)
 	local maxMatches = opts.maxMatches or math.huge
 
-	local blocked = opts.blocked or {}
+	local blockedTokens = opts.blockedTokens or {}
 	local result = { matches = {}, expired = {}, cancelled = {}, duplicate = {}, waiting = {} }
 
 	--------------------------------------------------------------------
@@ -104,8 +114,8 @@ function Matchmaking.plan(entries, opts)
 	for _, entry in sorted do
 		if Matchmaking.isExpired(entry, now, ttl) then
 			table.insert(result.expired, entry)
-		elseif blocked[entry.userId] then
-			-- 취소한 사람. 이 한 줄이 없으면 그 유령이 상대를 빈 대전 서버로 끌고 간다.
+		elseif entry.token ~= nil and blockedTokens[entry.token] then
+			-- 취소된 등록. 이 한 줄이 없으면 그 유령이 상대를 빈 대전 서버로 끌고 간다.
 			table.insert(result.cancelled, entry)
 		elseif seen[entry.userId] then
 			-- 먼저 온 엔트리가 이미 채택됐다. 나중 것은 유령이다.

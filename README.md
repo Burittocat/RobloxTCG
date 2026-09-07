@@ -20,7 +20,7 @@ aftman install          # rojo 7.7.0 + lune 0.10.4 설치
 플레이스 파일을 만들어 여는 방법 (가장 빠름):
 
 ```powershell
-sh scripts/studio.sh    # 검사를 전부 돌린 뒤 Studio 로 연다
+.\scripts\studio.ps1    # 검사를 전부 돌린 뒤 Studio 로 연다
 ```
 
 검사를 건너뛰고 바로 열려면:
@@ -30,6 +30,9 @@ rojo build --output build.rbxlx
 start build.rbxlx       # Studio 가 열린다 → F5(Play)
 ```
 
+`start` 가 "이 파일을 어떻게 열까요" 를 물으면 `.rbxlx` 파일 연결이 없는 것이다.
+`studio.ps1` 은 그 경우에도 되도록 Studio 실행 파일을 직접 찾아서 넘긴다.
+
 검사를 먼저 돌리는 편이 결국 빠르다 — Studio 는 스크립트가 죽어도 게임을 계속 돌리므로,
 출력창을 안 보고 있으면 "왜 버튼이 안 먹지" 를 화면만 보며 한참 헤매게 된다.
 
@@ -37,7 +40,7 @@ start build.rbxlx       # Studio 가 열린다 → F5(Play)
 > Studio 에서 `Ctrl+S` 를 누르면 그 파일을 Studio 가 저장한 버전으로 덮어쓰고, 그 창에서
 > 그대로 게시하면 **그때 열려 있던 낡은 코드가 올라간다.** (Studio 가 저장한 파일은
 > 지형·카메라 같은 걸 덧붙여서 rojo 산출물보다 눈에 띄게 커진다 — 구분하는 단서다)
-> 고친 걸 반영하려면 창을 닫고 `sh scripts/studio.sh` 를 다시 돌린다.
+> 고친 걸 반영하려면 창을 닫고 `.\scripts\studio.ps1` 을 다시 돌린다.
 
 VS Code 에서 고치면서 Studio 에 실시간 반영하는 방법 (개발할 때 이쪽):
 
@@ -255,7 +258,7 @@ rojo: build                     build.rbxlx 생성
 문법 검사                       lune run tests/check.luau
 테스트 (룰 엔진)                lune run tests/run.luau   ← 기본 테스트 작업
 스모크 테스트                    lune run tests/smoke.luau
-Studio 에서 열기 (검사 후)       sh scripts/studio.sh
+Studio 에서 열기 (검사 후)       .\scripts\studio.ps1
 터미널 싱글플레이                lune run play
 AI 자동 대전                    lune run play -- --auto
 ```
@@ -284,6 +287,19 @@ lune run play -- --seed 42
 
 넷 다 합쳐 2초쯤이다.
 
+### 왜 `.ps1` 과 `.sh` 가 둘 다 있나
+
+검사 목록은 `scripts/ci.sh` **하나뿐**이다. 사람도, 커밋 훅도, GitHub Actions 도 그걸
+돌린다 — 목록이 두 곳에 있으면 반드시 어긋난다.
+
+`.ps1` 은 그걸 부르기만 하는 껍데기다. 윈도우 PowerShell 에는 `sh` 가 없어서
+(Git 이 `sh.exe` 를 깔아두지만 PATH 에 올려주지 않는다) `sh scripts/ci.sh` 가
+"명령을 찾을 수 없음" 으로 끝나기 때문이다. `.ps1` 이 `sh.exe` 를 찾아서 넘긴다.
+
+`studio.ps1` 은 한 가지를 더 한다 — `.rbxlx` 파일 연결이 없는 환경에서는
+`start build.rbxlx` 도 실패하므로, Studio 실행 파일을 직접 찾아 넘긴다.
+(Git Bash 에서 작업한다면 `.sh` 쪽을 그대로 써도 된다)
+
 ### 로컬 (원격 없이도 된다)
 
 ```powershell
@@ -294,7 +310,7 @@ git config core.hooksPath .githooks   # 이 저장소에서 한 번만
 통과하면 아무 말 없이 커밋되고, 실패하면 커밋이 막히면서 실패한 검사만 출력된다.
 
 ```powershell
-sh scripts/ci.sh          # 직접 돌려보기 (결과 전부 출력)
+.\scripts\ci.ps1          # 직접 돌려보기 (결과 전부 출력)
 git commit --no-verify    # 한 번만 건너뛰기
 git config --unset core.hooksPath   # 훅 끄기
 ```

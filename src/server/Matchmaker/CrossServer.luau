@@ -372,6 +372,15 @@ function CrossServer:dispatch(payload)
 	local any = false
 
 	for seat, entry in payload.seats do
+		--[[
+			이 등록은 이 매치가 가져갔다. 모든 서버가 그렇게 기억해야 한다.
+
+			refreshQueued 가 30초마다 사본을 넣으므로, 매칭 배치에 함께 잡히지 않은 사본이
+			큐에 남아 있을 수 있다. 그걸 그대로 두면 **아무 상관 없는 제3자**가 그 유령과
+			짝지어져 혼자 예약 서버로 끌려갔다가 30초 뒤에 튕겨 나온다.
+		]]
+		self:block(entry.token)
+
 		if entry.serverId == game.JobId then
 			local player = Players:GetPlayerByUserId(entry.userId)
 			if player and self:isQueued(player) then
@@ -400,10 +409,19 @@ function CrossServer.teleport(player, match, seat)
 
 	local options = Instance.new("TeleportOptions")
 	options.ReservedServerAccessCode = match.accessCode
+	--[[
+		**시드를 실어 보내지 않는다.**
+
+		텔레포트 데이터는 클라이언트가 GetLocalPlayerTeleportData() 로 읽을 수 있다.
+		그런데 룰 엔진과 Decks.starter() 가 ReplicatedStorage 에 복제돼 있어서,
+		시드 하나만 있으면 Rules.newMatch 를 그대로 재현해 **양쪽 덱 순서와 상대 손패 전부**를
+		미리 계산할 수 있다. 카드 게임에서는 그게 곧 게임 종료다.
+
+		시드는 두 사람이 실제로 모이는 대전 서버(Arena)가 직접 뽑는다. 서버끼리 미리
+		합의할 필요가 없으므로, 여기서는 어느 판인지(matchId)와 자리(seat)만 넘긴다.
+	]]
 	options:SetTeleportData({
 		matchId = match.id,
-		seed = match.seed,
-		startingPlayerId = match.startingPlayerId,
 		seat = seat,
 		opponentName = opponentName,
 	})

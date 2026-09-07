@@ -52,7 +52,9 @@ function MatchRunner.new(remotes, opts)
 
 	self.remotes = remotes
 	self.seats = opts.seats
-	self.seed = opts.seed
+
+	-- 첫 판에만 쓰는 시드. 재시작하면 새로 뽑는다 (아래 start 참조).
+	self.pendingSeed = opts.seed
 	self.startingPlayerId = opts.startingPlayerId
 	self.allowRestart = opts.allowRestart == true
 	self.onFinish = opts.onFinish
@@ -135,7 +137,14 @@ function MatchRunner:start(seed)
 	self.thinking = false
 	self.finishReported = false
 
-	self.seed = seed or self.seed or (os.time() % 2147483647)
+	--[[
+		재시작(AI 연습의 "다시 하기")은 **새 시드로** 연다.
+
+		예전에는 `seed or self.seed` 라 직전 시드가 그대로 살아남았다. 그래서 R 을 눌러도
+		셔플·손패·선공이 완전히 같은 판이 다시 열렸다 — 연습의 의미가 없다.
+	]]
+	self.seed = seed or self.pendingSeed or Random.new():NextInteger(1, 2147483646)
+	self.pendingSeed = nil
 
 	local players = {}
 	for seatId = 1, 2 do

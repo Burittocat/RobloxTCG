@@ -269,6 +269,10 @@ return function(t, ctx)
 			local a = plan(entries, { seed = 999 })
 			local b = plan(entries, { seed = 999 })
 
+			-- 매치가 0 개면 아래 루프가 안 돌아 그냥 통과한다.
+			t:eq(#a.matches, 2, "네 명이면 두 판이 나와야 이 검사가 의미가 있습니다")
+			t:eq(#b.matches, #a.matches)
+
 			for index, match in a.matches do
 				t:eq(match.seed, b.matches[index].seed)
 				t:eq(match.seats[1].userId, b.matches[index].seats[1].userId)

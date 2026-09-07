@@ -169,6 +169,7 @@ function Roblox.newWorld(opts)
 		subscribers = {}, -- 토픽 -> { fn }
 		reserved = {}, -- accessCode -> 예약 서버(있으면)
 		teleports = {}, -- 기록. 테스트가 들여다본다
+		randomCount = 0,
 		warnings = {},
 
 		studio = opts.studio ~= false, -- 기본은 Studio (= 같은 서버 매칭)
@@ -747,6 +748,28 @@ function Server:execute(node, path, vm, requireNode)
 			시간에 얽힌 로직이 **테스트에서 아예 실행되지 않는다** — 실제로 그 때문에
 			"90초 넘게 기다리면 큐에서 증발" 하는 버그를 하네스가 못 잡았다.
 		]]
+		--[[
+			Random. Arena 가 매치 시드를 여기서 뽑는다 — 클라이언트가 볼 수 있는 값에서
+			유도하면 셔플이 예측되기 때문이다. 테스트는 값 자체를 보지 않고 "매번 다른가" 만
+			따지므로, 세계 안에서 겹치지 않는 수열이면 충분하다.
+		]]
+		Random = {
+			new = function(seed)
+				local counter = seed or 0
+				return {
+					NextInteger = function(_, min, max)
+						world.randomCount += 1
+						counter = (counter * 1103515245 + world.randomCount * 12345 + 1013904223) % 2147483647
+						return min + (counter % (max - min + 1))
+					end,
+					NextNumber = function(_, min, max)
+						world.randomCount += 1
+						return (min or 0) + ((max or 1) - (min or 0)) * ((world.randomCount * 37) % 1000) / 1000
+					end,
+				}
+			end,
+		},
+
 		os = setmetatable({
 			time = function()
 				return VIRTUAL_EPOCH + math.floor(world.scheduler.clock)

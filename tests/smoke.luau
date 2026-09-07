@@ -31,14 +31,30 @@ local t = Test.new()
 --==========================================================================
 
 --[[
-	Studio 라면 출력창에 빨간 줄로 떴을 오류를 테스트 실패로 바꾼다.
-	이게 이 파일의 존재 이유다.
+	Studio 라면 출력창에 떴을 것을 테스트 실패로 바꾼다. 이게 이 파일의 존재 이유다.
+
+	**warn 도 같이 본다.** 서버 코드는 거의 모든 실패를 pcall 로 잡아 warn 으로 흘린다 —
+	큐 등록 실패, 예약 서버 확보 실패, 텔레포트 실패, 행동 처리 예외가 전부 그렇다.
+	빨간 줄(error)만 보면 그 경로가 통째로 안 보여서, 실제로는 아무것도 동작하지 않는데
+	테스트는 초록불인 상태가 만들어진다.
 ]]
 local function assertNoErrors(world, label)
 	local errors = world:errors()
-	if #errors > 0 then
-		error(("%s — 런타임 오류 %d건:\n  %s"):format(label, #errors, table.concat(errors, "\n  ")), 2)
+	local warnings = world:takeWarnings()
+
+	if #errors == 0 and #warnings == 0 then
+		return
 	end
+
+	local parts = {}
+	for _, entry in errors do
+		table.insert(parts, "오류: " .. entry)
+	end
+	for _, entry in warnings do
+		table.insert(parts, "경고: " .. entry)
+	end
+
+	error(("%s — %d건\n  %s"):format(label, #parts, table.concat(parts, "\n  ")), 2)
 end
 
 local function guiOf(player)
@@ -347,15 +363,32 @@ t:describe("크로스서버 매칭", function()
 		t:eq(panelName(lee, "MyPanel"), "Lee")
 	end)
 
-	t:it("같은 매치 시드를 들고 도착한다", function()
+	t:it("같은 판을 가리키며 도착한다", function()
 		local world = select(1, matchAcrossServers())
 
-		t:eq(
-			world.teleports[1].data.seed,
-			world.teleports[2].data.seed,
-			"시드가 다르면 두 사람이 서로 다른 셔플을 보게 됩니다"
-		)
+		t:truthy(world.teleports[1].data.matchId, "어느 판인지는 실려야 합니다")
 		t:eq(world.teleports[1].data.matchId, world.teleports[2].data.matchId)
+	end)
+
+	t:it("매치 시드가 클라이언트로 새지 않는다", function()
+		--[[
+			텔레포트 데이터는 클라이언트가 GetLocalPlayerTeleportData() 로 읽는다.
+			룰 엔진과 Decks.starter() 가 ReplicatedStorage 에 복제돼 있으므로, 시드 하나면
+			Rules.newMatch 를 재현해 **양쪽 덱 순서와 상대 손패 전부**를 계산할 수 있다.
+			카드 게임에서 그건 곧 게임 종료다. 시드는 대전 서버가 직접 뽑아야 한다.
+		]]
+		local world = select(1, matchAcrossServers())
+
+		for index, teleport in world.teleports do
+			for key in teleport.data do
+				t:truthy(
+					key == "matchId" or key == "seat" or key == "opponentName",
+					("텔레포트 데이터 %d 에 예상 못 한 항목 '%s' 가 있습니다"):format(index, key)
+				)
+			end
+			t:falsy(teleport.data.seed, "시드가 실려 있습니다")
+			t:falsy(teleport.data.startingPlayerId, "선공은 시드에서 유도되므로 같이 새면 안 됩니다")
+		end
 	end)
 
 	t:it("취소한 사람은 태우지 않는다", function()

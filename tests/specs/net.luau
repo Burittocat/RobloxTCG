@@ -183,6 +183,9 @@ return function(t, ctx)
 			local serverPerms = Rules.Phases.permissions(state, 1)
 			local clientPerms = Rules.Phases.permissions(view, 1)
 
+			-- 권한 표가 비어 있으면 아래 루프가 한 번도 안 돌아 그냥 통과한다.
+			t:truthy(next(serverPerms), "권한 표가 비어 있으면 이 검사는 아무것도 안 봅니다")
+
 			for key, value in serverPerms do
 				t:eq(clientPerms[key], value, ("권한 '%s' 불일치"):format(key))
 			end

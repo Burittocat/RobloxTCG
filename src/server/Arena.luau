@@ -2,16 +2,19 @@
 	예약 서버(= 대전 서버)에서 도는 것. 한 서버에 한 판, 두 사람.
 
 	로비 서버가 짝을 짓고 예약 서버를 하나 잡아 두 사람을 이리로 보낸다. 각자는
-	텔레포트 데이터에 자기 좌석과 매치 시드를 달고 도착한다.
+	텔레포트 데이터에 어느 판인지와 자기 좌석을 달고 도착한다.
 
-	    { matchId, seed, startingPlayerId, seat, opponentName }
+	    { matchId, seat, opponentName }
+
+	시드는 여기 없다. 클라이언트가 읽을 수 있는 값이라 실어 보내면 셔플이 통째로 노출된다.
+	이 서버가 직접 뽑는다.
 
 	--------------------------------------------------------------------------
 	왜 도착 데이터를 그대로 믿지 않는가
 
 	텔레포트 데이터는 서버가 실어 보내지만, 판정에 쓰기 전에 **두 사람의 데이터가 서로
-	맞는지** 를 본다. 좌석이 겹치거나(둘 다 1번) 시드가 다르면 판을 열지 않고 둘 다
-	로비로 돌려보낸다. 큐 배치 제거가 실패해 같은 사람이 두 판에 배정되는 드문 경우가
+	맞는지** 를 본다. 같은 판을 가리키지 않거나 좌석이 겹치면(둘 다 1번) 판을 열지 않고
+	둘 다 로비로 돌려보낸다. 큐 배치 제거가 실패해 같은 사람이 두 판에 배정되는 드문 경우가
 	여기서 걸린다 — 어긋난 채로 시작하면 두 사람이 서로 다른 게임을 보게 된다.
 
 	--------------------------------------------------------------------------
@@ -63,7 +66,6 @@ function Arena.new(remotes, host)
 		self:onPlayerAdded(player)
 	end
 
-	self:startWaitTimer()
 	return self
 end
 
@@ -123,7 +125,7 @@ local function readArrival(player)
 	if type(data.seat) ~= "number" or (data.seat ~= 1 and data.seat ~= 2) then
 		return nil
 	end
-	if type(data.seed) ~= "number" or type(data.matchId) ~= "string" then
+	if type(data.matchId) ~= "string" then
 		return nil
 	end
 	return data
@@ -143,6 +145,8 @@ function Arena:onPlayerAdded(player)
 	end
 
 	self.arrivals[player] = arrival
+	self:startWaitTimer()
+
 	self.remotes.Lobby:FireClient(player, {
 		screen = Screen.Waiting,
 		text = ("%s 님을 기다리는 중"):format(arrival.opponentName or "상대"),
@@ -160,10 +164,7 @@ end
 	어긋나면 시작하지 않는다 — 두 사람이 서로 다른 게임을 보는 것보다 낫다.
 ]]
 local function agree(a, b)
-	return a.matchId == b.matchId
-		and a.seed == b.seed
-		and a.startingPlayerId == b.startingPlayerId
-		and a.seat ~= b.seat
+	return a.matchId == b.matchId and a.seat ~= b.seat
 end
 
 function Arena:tryStart()
@@ -196,10 +197,16 @@ function Arena:tryStart()
 	seats[a.arrival.seat] = { player = a.player }
 	seats[b.arrival.seat] = { player = b.player }
 
+	--[[
+		시드는 여기서 뽑는다. 두 사람이 이미 모였으므로 서버끼리 합의할 필요가 없고,
+		클라이언트가 볼 수 있는 어떤 값에서도 유도되지 않는다.
+		Random.new 는 예측 가능한 시각이 아니라 시스템 엔트로피에서 씨앗을 얻는다.
+	]]
+	local seed = Random.new():NextInteger(1, 2147483646)
+
 	self.runner = MatchRunner.new(self.remotes, {
 		seats = seats,
-		seed = a.arrival.seed,
-		startingPlayerId = a.arrival.startingPlayerId,
+		seed = seed,
 		onFinish = function()
 			self:onMatchFinished()
 		end,
@@ -218,7 +225,18 @@ end
 -- 대기 시간 초과
 --==========================================================================
 
+--[[
+	상대를 기다리는 시계. **첫 사람이 도착한 시점부터** 잰다.
+
+	서버가 뜬 시점부터 재면 안 된다 — 예약 서버 기동이 느려 첫 사람이 25초에 도착하면
+	5초만 기다리고 둘 다 쫓아내게 된다. 기다리는 사람이 생겼을 때 시작해야 맞다.
+]]
 function Arena:startWaitTimer()
+	if self.waitTimerStarted then
+		return
+	end
+	self.waitTimerStarted = true
+
 	task.spawn(function()
 		task.wait(Settings.arenaWaitTimeout)
 		if self.runner or self.closed then

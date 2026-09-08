@@ -355,6 +355,39 @@ lune run play -- --seed 42
 
 넷 다 합쳐 2초쯤이다.
 
+### 카드 수치 바꾸기
+
+**`src/shared/Cards/Sheet.luau` 한 파일에서 바꾼다.** 한 줄이 카드 한 장이고,
+이름·코스트·공격력·생명력·태그·설명이 그 줄에 다 있다.
+
+```luau
+--   id             이름          코스트 공격력 생명력  태그       설명
+{ "CRE_GUARD",   "성문 경비병",   2,     2,     3,   "",        "" },
+{ "CRE_HAWK",    "창공의 매",     2,     2,     1,   "비행",     "비행 — 지상 생물은 ..." },
+```
+
+태그는 한글로 쓴다(`신속`·`비행`·`도발`·`원거리`·`즉시시전`, 쉼표로 여러 개).
+마법은 효과 칸에 `damage(3, "생물또는플레이어")`, `draw(2)`, `destroy("적생물")` 처럼 적는다 —
+쓸 수 있는 것 전부가 그 파일 맨 위 주석에 있다.
+
+바꾼 뒤:
+
+```powershell
+lune run tests/cards.luau           # 지금 값이 표로 나온다. 잘못된 값도 여기서 잡힌다
+lune run tests/cards.luau -- GUARD  # 일부만 보기 (id 조각으로 거른다)
+lune run tests/balance.luau         # 판이 어떻게 달라졌는지 AI 자기대국으로 잰다
+```
+
+오타를 내면 게임이 뜬 뒤가 아니라 도구에서 한 줄로 잡힌다:
+
+```
+카드 표(src/shared/Cards/Sheet.luau)에 문제가 있습니다
+  CRE_GUARD: 모르는 태그 '비행행'
+```
+
+`Cards/Core.luau` 는 그 표를 엔진이 읽는 모양으로 펴는 변환기다 — 카드가 늘어도
+그 파일은 그대로이므로, 수치를 만질 때 열 일이 없다.
+
 ### 밸런스 계측 (테스트가 아니다)
 
 ```powershell
@@ -516,7 +549,7 @@ src/shared/Rules/        ← 룰 엔진. Roblox API 를 전혀 쓰지 않는 순
   Stack.luau             시전/소환 스택 (즉시시전 대응)
   init.luau              외부에 노출되는 액션 API
 
-src/shared/Cards/        ← 카드 DB. Core.luau 에 32장
+src/shared/Cards/        ← 카드 DB. Sheet.luau 가 표(수치는 여기서 바꾼다), Core.luau 는 변환기
 src/shared/Decks/        ← 덱 프리셋 (스타터 60장)
 src/shared/AI/           ← 휴리스틱 AI. PvE 캠페인 상대이자 룰 스파링 상대
 src/shared/Net/          ← 서버↔클라 스냅샷 직렬화 + 로비 프로토콜

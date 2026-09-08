@@ -1,445 +1,115 @@
 --[[
-	기본 카드셋 (Core).
+	기본 카드셋 — 표(Sheet.luau)를 카드 정의로 바꾼다.
 
-	5개 키워드(신속/비행/도발/원거리/즉시시전)를 전부 굴려보기 위한 초기 세트다.
-	이름은 자리표시자 — Roblox IP 를 붙이는 건 별도 작업이다.
+	**수치를 바꾸려면 이 파일이 아니라 `Sheet.luau` 를 연다.** 여기는 그 표를 엔진이
+	읽는 모양으로 펴는 곳이고, 카드 한 장이 늘어도 이 파일은 그대로다.
 
-	카드 스키마
-	  공통    id, name, type, cost, keywords?, text?, rarity?
-	  생물    power(공격력), toughness(체력)
-	  마법    speed("Normal"|"Instant"), effects[], noDefensePhase?
-	  코스트  produces? (기본 1)
+	왜 나눴나: 밸런스는 자주 만지고 변환 규칙은 거의 안 바뀐다. 한 파일에 두면
+	숫자 하나 고치러 들어갔다가 스키마 사이를 헤매게 된다.
 ]]
 
+local Sheet = require(script.Parent.Sheet)
+
 local CardType = { Cost = "Cost", Creature = "Creature", Spell = "Spell" }
-local KW = {
-	Haste = "Haste",
-	Flying = "Flying",
-	Taunt = "Taunt",
-	Ranged = "Ranged",
-	Instant = "Instant",
-}
+local INSTANT = "Instant"
 
-return {
-	--======================================================================
-	-- 코스트
-	--======================================================================
-	{
-		id = "COST_BASIC",
-		name = "에너지 코어",
+--[[
+	"비행,신속" → { "Flying", "Haste" }
+
+	빈 칸이면 nil 을 준다 — 빈 배열을 주면 "키워드가 없다" 와 "빈 목록" 이 달라 보인다.
+]]
+local function keywordsOf(text, cardId)
+	if text == nil or text == "" then
+		return nil
+	end
+
+	local out = {}
+	for name in tostring(text):gmatch("[^,]+") do
+		local trimmed = name:match("^%s*(.-)%s*$")
+		local keyword = Sheet.tags[trimmed]
+		if not keyword then
+			error(("%s: 모르는 태그 '%s'"):format(cardId, trimmed), 0)
+		end
+		table.insert(out, keyword)
+	end
+
+	return out
+end
+
+local function textOf(value)
+	if value == nil or value == "" then
+		return nil
+	end
+	return value
+end
+
+local defs = {}
+
+--------------------------------------------------------------------------
+-- 코스트 카드
+--------------------------------------------------------------------------
+for _, row in Sheet.costs do
+	local id, name, text = row[1], row[2], row[3]
+	table.insert(defs, {
+		id = id,
+		name = name,
 		type = CardType.Cost,
-		text = "탭하여 코스트 1 을 얻는다.",
+		text = textOf(text),
 		rarity = "Common",
-	},
+	})
+end
 
-	--======================================================================
-	-- 생물 — 바닐라 커브
-	--======================================================================
-	{
-		id = "CRE_SCOUT",
-		name = "신참 정찰병",
-		type = CardType.Creature,
-		cost = 1,
-		power = 1,
-		toughness = 2,
-		rarity = "Common",
-	},
-	{
-		id = "CRE_GUARD",
-		name = "성문 경비병",
-		type = CardType.Creature,
-		cost = 2,
-		power = 2,
-		toughness = 3,
-		rarity = "Common",
-	},
-	{
-		id = "CRE_BRUTE",
-		name = "돌주먹 거인",
-		type = CardType.Creature,
-		cost = 5,
-		power = 6,
-		toughness = 6,
-		rarity = "Rare",
-	},
+--------------------------------------------------------------------------
+-- 생물
+--------------------------------------------------------------------------
+for _, row in Sheet.creatures do
+	local id, name, cost, power, toughness, tags, text, extra = table.unpack(row, 1, 8)
+	extra = extra or {}
 
-	--======================================================================
-	-- 생물 — 신속
-	--======================================================================
-	{
-		id = "CRE_RAIDER",
-		name = "질풍 습격자",
+	table.insert(defs, {
+		id = id,
+		name = name,
 		type = CardType.Creature,
-		cost = 3,
-		power = 3,
-		toughness = 2,
-		keywords = { KW.Haste },
-		text = "신속 — 소환한 턴에 바로 공격할 수 있고, 수비준비 페이즈에도 언탭으로 등장한다.",
-		rarity = "Uncommon",
-	},
+		cost = cost,
+		power = power,
+		toughness = toughness,
+		keywords = keywordsOf(tags, id),
+		text = textOf(text),
+		onSummon = extra.onSummon,
+		rarity = extra.rare and "Rare" or "Common",
+	})
+end
 
-	--======================================================================
-	-- 생물 — 비행
-	--======================================================================
-	{
-		id = "CRE_HAWK",
-		name = "창공의 매",
-		type = CardType.Creature,
-		cost = 2,
-		power = 2,
-		toughness = 1,
-		keywords = { KW.Flying },
-		text = "비행 — 지상 생물은 이 생물을 공격하거나 방어할 수 없다.",
-		rarity = "Common",
-	},
-	{
-		id = "CRE_WYVERN",
-		name = "폭풍 비룡",
-		type = CardType.Creature,
-		cost = 5,
-		power = 4,
-		toughness = 4,
-		keywords = { KW.Flying, KW.Haste },
-		text = "비행, 신속",
-		rarity = "Epic",
-	},
+--------------------------------------------------------------------------
+-- 마법
+--------------------------------------------------------------------------
+for _, row in Sheet.spells do
+	local id, name, cost, tags, text, effects, extra = table.unpack(row, 1, 7)
+	extra = extra or {}
 
-	--======================================================================
-	-- 생물 — 도발
-	--======================================================================
-	{
-		id = "CRE_BULWARK",
-		name = "강철 방벽",
-		type = CardType.Creature,
-		cost = 3,
-		power = 1,
-		toughness = 6,
-		keywords = { KW.Taunt },
-		text = "도발 — 이 생물이 전장에 있는 한 상대는 플레이어를 직접 공격할 수 없다.",
-		rarity = "Uncommon",
-	},
+	local keywords = keywordsOf(tags, id)
 
-	--======================================================================
-	-- 생물 — 원거리
-	--======================================================================
-	{
-		id = "CRE_ARCHER",
-		name = "장궁 사수",
-		type = CardType.Creature,
-		cost = 3,
-		power = 4,
-		toughness = 2,
-		keywords = { KW.Ranged },
-		text = "원거리 — 비행을 상대할 수 있고 도발을 무시한다. 플레이어 직접 공격 시 데미지 절반.",
-		rarity = "Uncommon",
-	},
-	{
-		id = "CRE_SKYPIERCER",
-		name = "하늘꿰뚫이",
-		type = CardType.Creature,
-		cost = 4,
-		power = 3,
-		toughness = 4,
-		keywords = { KW.Ranged, KW.Taunt },
-		text = "원거리, 도발",
-		rarity = "Rare",
-	},
+	-- '즉시시전' 태그와 speed 는 같은 사실의 두 표현이다. 표에서는 태그만 적고
+	-- speed 는 여기서 맞춰준다 — 둘을 따로 적게 하면 어긋난 카드가 나온다.
+	local instant = false
+	for _, keyword in keywords or {} do
+		if keyword == INSTANT then
+			instant = true
+		end
+	end
 
-	--======================================================================
-	-- 마법 — 일반
-	--======================================================================
-	{
-		id = "SPL_FIREBOLT",
-		name = "화염 화살",
+	table.insert(defs, {
+		id = id,
+		name = name,
 		type = CardType.Spell,
-		cost = 2,
-		speed = "Normal",
-		text = "생물 하나 또는 플레이어에게 3 피해.",
-		effects = {
-			{ kind = "Damage", amount = 3, target = "CreatureOrPlayer" },
-		},
-		rarity = "Common",
-	},
-	{
-		id = "SPL_RALLY",
-		name = "전열 정비",
-		type = CardType.Spell,
-		cost = 2,
-		speed = "Normal",
-		text = "카드 2 장을 뽑는다.",
-		effects = {
-			{ kind = "Draw", amount = 2 },
-		},
-		rarity = "Common",
-	},
-	{
-		id = "SPL_WARCRY",
-		name = "돌격 나팔",
-		type = CardType.Spell,
-		cost = 1,
-		speed = "Normal",
-		text = "아군 생물 하나가 +2/+0 과 신속을 얻는다.",
-		effects = {
-			{ kind = "Buff", power = 2, toughness = 0, target = "AllyCreature" },
-			{ kind = "GrantKeyword", keyword = "Haste", target = "AllyCreature" },
-		},
-		rarity = "Common",
-	},
-	{
-		id = "SPL_EXECUTE",
-		name = "처형 명령",
-		type = CardType.Spell,
-		cost = 4,
-		speed = "Normal",
-		text = "적 생물 하나를 파괴한다.",
-		noDefensePhase = true,
-		effects = {
-			{ kind = "Destroy", target = "EnemyCreature" },
-		},
-		rarity = "Rare",
-	},
+		cost = cost,
+		speed = instant and "Instant" or "Normal",
+		keywords = keywords,
+		text = textOf(text),
+		effects = effects,
+		noDefensePhase = extra.noDefensePhase,
+		rarity = extra.rare and "Rare" or "Common",
+	})
+end
 
-	--======================================================================
-	-- 마법 — 즉시시전
-	--======================================================================
-	{
-		id = "SPL_NEGATE",
-		name = "주문 파쇄",
-		type = CardType.Spell,
-		cost = 2,
-		speed = "Instant",
-		keywords = { KW.Instant },
-		text = "즉시시전 — 시전 중인 마법이나 소환을 무효화한다.",
-		effects = {
-			{ kind = "Counter", target = "StackItem" },
-		},
-		rarity = "Rare",
-	},
-	{
-		id = "SPL_RECALL",
-		name = "귀환의 소용돌이",
-		type = CardType.Spell,
-		cost = 3,
-		speed = "Instant",
-		keywords = { KW.Instant },
-		text = "즉시시전 — 소환 중인 생물을 덱 맨 위로 되돌린다.",
-		effects = {
-			{ kind = "ToDeck", position = "top", target = "StackItem" },
-		},
-		rarity = "Epic",
-	},
-	{
-		id = "SPL_SHOCK",
-		name = "감전",
-		type = CardType.Spell,
-		cost = 1,
-		speed = "Instant",
-		keywords = { KW.Instant },
-		text = "즉시시전 — 생물 하나 또는 플레이어에게 2 피해.",
-		effects = {
-			{ kind = "Damage", amount = 2, target = "CreatureOrPlayer" },
-		},
-		rarity = "Common",
-	},
-	{
-		id = "SPL_BULWARK_UP",
-		name = "긴급 방벽",
-		type = CardType.Spell,
-		cost = 1,
-		speed = "Instant",
-		keywords = { KW.Instant },
-		text = "즉시시전 — 아군 생물 하나가 +0/+3 을 얻는다.",
-		effects = {
-			{ kind = "Buff", power = 0, toughness = 3, target = "AllyCreature" },
-		},
-		rarity = "Common",
-	},
-	{
-		id = "SPL_MEND",
-		name = "응급 치료",
-		type = CardType.Spell,
-		cost = 2,
-		speed = "Instant",
-		keywords = { KW.Instant },
-		text = "즉시시전 — 라이프 5 회복.",
-		effects = {
-			{ kind = "Heal", amount = 5, target = "SelfPlayer" },
-		},
-		rarity = "Common",
-	},
-	--======================================================================
-	-- 2026-09-09 확충 — 덱 순환(드로우) 축과 코스트 곡선 메우기
-	--
-	-- 왜 드로우 축을 먼저 세웠나: AI 자기대국 60판에서 판이 평균 30턴인데
-	-- 덱은 1/3(21장)밖에 쓰이지 않았다. 카드를 더 못 봐서 길어지는 판이라,
-	-- 카드 종류를 늘리는 것보다 "덱이 도는 속도" 를 먼저 올려야 했다.
-	--======================================================================
-
-	--======================================================================
-	-- 드로우 / 순환
-	--======================================================================
-	{
-		id = "SPL_INSIGHT",
-		name = "통찰",
-		type = CardType.Spell,
-		cost = 1,
-		speed = "Normal",
-		--[[
-			일부러 즉시시전이 아니다. 즉시시전으로 두면 "대응용으로 쥐고 있는 카드" 가
-			되어 손에서 안 나가고, 그러면 덱이 도는 데 전혀 기여하지 않는다.
-			(실제로 그렇게 만들었다가 계측에서 그대로 드러났다)
-		]]
-		text = "카드 1 장을 뽑는다.",
-		effects = {
-			{ kind = "Draw", amount = 1 },
-		},
-		rarity = "Common",
-	},
-	{
-		id = "SPL_ARCHIVE",
-		name = "서고 개방",
-		type = CardType.Spell,
-		cost = 4,
-		speed = "Normal",
-		text = "카드 3 장을 뽑는다.",
-		effects = {
-			{ kind = "Draw", amount = 3 },
-		},
-		rarity = "Rare",
-	},
-	{
-		id = "CRE_SCRIBE",
-		name = "종군 서기",
-		type = CardType.Creature,
-		cost = 2,
-		power = 1,
-		toughness = 2,
-		text = "소환하면 카드 1 장을 뽑는다.",
-		onSummon = {
-			{ kind = "Draw", amount = 1 },
-		},
-		rarity = "Common",
-	},
-	{
-		id = "CRE_HERALD",
-		name = "전령",
-		type = CardType.Creature,
-		cost = 4,
-		power = 3,
-		toughness = 3,
-		keywords = { KW.Haste },
-		text = "신속. 소환하면 카드 1 장을 뽑는다.",
-		onSummon = {
-			{ kind = "Draw", amount = 1 },
-		},
-		rarity = "Rare",
-	},
-
-	--======================================================================
-	-- 생물 — 곡선 메우기
-	--======================================================================
-	{
-		id = "CRE_SQUIRE",
-		name = "종자",
-		type = CardType.Creature,
-		cost = 1,
-		power = 2,
-		toughness = 1,
-		text = "먼저 나가서 먼저 때린다.",
-		rarity = "Common",
-	},
-	{
-		id = "CRE_SENTRY",
-		name = "초소병",
-		type = CardType.Creature,
-		cost = 2,
-		power = 1,
-		toughness = 4,
-		keywords = { KW.Taunt },
-		text = "도발 — 이 생물이 있으면 플레이어를 직접 공격할 수 없다.",
-		rarity = "Common",
-	},
-	{
-		id = "CRE_FALCONER",
-		name = "매부리",
-		type = CardType.Creature,
-		cost = 3,
-		power = 2,
-		toughness = 3,
-		keywords = { KW.Flying },
-		text = "비행 — 지상 생물은 이 생물을 공격하거나 방어할 수 없다.",
-		rarity = "Common",
-	},
-	{
-		id = "CRE_LANCER",
-		name = "창기병",
-		type = CardType.Creature,
-		cost = 4,
-		power = 4,
-		toughness = 4,
-		text = "중반을 버티는 몸값.",
-		rarity = "Common",
-	},
-	{
-		id = "CRE_BERSERKER",
-		name = "광전사",
-		type = CardType.Creature,
-		cost = 4,
-		power = 5,
-		toughness = 3,
-		keywords = { KW.Haste },
-		text = "신속 — 소환한 턴에 바로 공격할 수 있다.",
-		rarity = "Rare",
-	},
-	{
-		id = "CRE_TITAN",
-		name = "태고의 거석",
-		type = CardType.Creature,
-		cost = 6,
-		power = 7,
-		toughness = 7,
-		text = "여기까지 끌고 왔다면 이길 자격이 있다.",
-		rarity = "Rare",
-	},
-
-	--======================================================================
-	-- 마법 — 제거와 보강
-	--======================================================================
-	{
-		id = "SPL_SNIPE",
-		name = "저격",
-		type = CardType.Spell,
-		cost = 2,
-		speed = "Instant",
-		keywords = { KW.Instant },
-		text = "즉시시전 — 생물 하나에게 2 피해.",
-		effects = {
-			{ kind = "Damage", amount = 2, target = "AnyCreature" },
-		},
-		rarity = "Common",
-	},
-	{
-		id = "SPL_BANISH",
-		name = "추방",
-		type = CardType.Spell,
-		cost = 3,
-		speed = "Normal",
-		text = "적 생물 하나를 덱으로 돌려보낸다.",
-		effects = {
-			{ kind = "ToDeck", target = "EnemyCreature" },
-		},
-		rarity = "Common",
-	},
-	{
-		id = "SPL_REINFORCE",
-		name = "증원",
-		type = CardType.Spell,
-		cost = 3,
-		speed = "Normal",
-		text = "아군 생물 하나가 +2/+2 를 얻는다.",
-		effects = {
-			{ kind = "Buff", power = 2, toughness = 2, target = "AllyCreature" },
-		},
-		rarity = "Common",
-	},
-}
+return defs

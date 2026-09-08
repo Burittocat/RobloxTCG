@@ -28,8 +28,16 @@
   "editor.insertSpaces": false,
   "editor.tabSize": 4,
   "editor.rulers": [140],
+  // 저장할 때 자동 정렬은 **끈다.**
+  //
+  // stylua 는 줄 길이를 바이트로 세는데 한글은 글자당 3바이트다. 그래서 화면에서
+  // 짧은 줄도 길다고 보고 한글 문자열을 쪼개고, 폭을 넓히면 이번엔 여러 줄로
+  // 나눠 쓴 조건문을 한 줄로 합친다. 이 저장소는 한글 표시 폭 기준으로 손으로
+  // 맞춰 왔고, stylua 는 그 기준을 모델링하지 못한다.
+  //
+  // 포매터 지정은 남겨둔다 — 필요할 때 Shift+Alt+F 로 그 파일만 정렬할 수 있다.
   "[luau]": {
     "editor.defaultFormatter": "JohnnyMorganz.stylua",
-    "editor.formatOnSave": true
+    "editor.formatOnSave": false
   }
 }

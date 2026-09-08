@@ -292,7 +292,7 @@ TTL 은 **"주인 서버가 살아 있는가"** 를 재는 값이지 "얼마나 
 |---|---|
 | **luau-lsp** | 자동완성 · 타입체크 · Roblox API 정의 |
 | **Rojo** | 명령 팔레트에서 Serve/Build |
-| **StyLua** | 저장할 때 코드 정렬 (`stylua.toml` 규칙) |
+| **StyLua** | 코드 정렬 (`stylua.toml` 규칙). **저장할 때 자동 정렬은 꺼져 있다** — 아래 "왜 자동 정렬을 껐나" 참조 |
 
 `.vscode/settings.json` 이 luau-lsp 의 **sourcemap 자동 생성**을 켜둔다.
 sourcemap 은 "이 `.luau` 파일이 Studio 트리의 어디인가" 를 담은 표이고,
@@ -454,9 +454,36 @@ git config --unset core.hooksPath   # 훅 끄기
 - **툴체인**을 `aftman.toml` 그대로 설치한다 → 로컬과 CI 가 같은 rojo/lune 을 쓴다
 - 나온 `build.rbxlx` 를 **아티팩트로 올린다** → 받아서 더블클릭하면 그 커밋의 게임이 열린다
 
-서식 검사(StyLua)는 별도 잡이고 지금은 `continue-on-error: true` 다.
-아직 한 번도 정렬을 안 돌린 코드베이스라 처음엔 빨간 줄이 뜬다.
-한 번 `stylua src tests play.luau` 로 정렬해 커밋한 뒤 그 줄을 지우면 서식도 강제된다.
+서식 검사(StyLua)는 별도 잡이고 `continue-on-error: true` 다. 아래 이유로 앞으로도 그렇다.
+
+### 왜 자동 정렬을 껐나
+
+`stylua` 는 줄 길이를 **바이트로 센다.** 한글은 글자당 3바이트라, 화면에서 60자쯤 되는
+줄을 180바이트로 보고 쪼갠다:
+
+```luau
+-- 손으로 맞춘 것
+return false, "지상 생물은 '비행' 생물을 공격할 수 없습니다 ('비행' 또는 '원거리' 필요)"
+
+-- stylua(폭 110)가 바꾸려는 것
+return false,
+	"지상 생물은 '비행' 생물을 공격할 수 없습니다 ('비행' 또는 '원거리' 필요)"
+```
+
+폭을 넓히면 이번엔 반대로, 여러 줄로 나눠 쓴 조건문을 한 줄로 합친다. 실제로 재보면
+어느 값도 0 이 되지 않는다:
+
+| `column_width` | 어긋나는 파일 |
+|---|---|
+| 110 | 32개 |
+| **140 (현재)** | **19개** |
+| 200 | 24개 |
+
+이 저장소는 한글 **표시 폭** 기준으로 손으로 맞춰 왔고 stylua 는 그 기준을 모르므로,
+`.vscode/settings.json` 에서 luau 의 `editor.formatOnSave` 를 껐다. 포매터 지정은
+남겨뒀으니 필요하면 `Shift+Alt+F` 로 그 파일만 정렬할 수 있고,
+`stylua src tests play.luau` 로 전체를 한 번에 정렬할 수도 있다 — 다만 그러면
+한글 문자열이 여기저기 쪼개진다.
 
 ### 검사 셋이 각자 메우는 구멍
 

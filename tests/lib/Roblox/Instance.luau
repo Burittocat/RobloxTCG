@@ -14,6 +14,7 @@
 ]]
 
 local Signal = require("./Signal")
+local Datatypes = require("./Datatypes")
 
 local RobloxInstance = {}
 
@@ -74,6 +75,14 @@ local GUI_OBJECT = {
 	"Rotation",
 	"Transparency",
 	"Selectable",
+
+	--[[
+		이 하네스는 레이아웃을 계산하지 않는다. AbsoluteSize 는 항상 0 이다.
+		"넘치면 왼쪽 정렬" 같은 코드가 이 값을 읽는데, 속성 자체가 없으면 에러가 나서
+		그 코드 경로를 아예 못 지나간다. 테스트가 값을 직접 넣어 상황을 만들 수도 있다.
+	]]
+	"AbsoluteSize",
+	"AbsolutePosition",
 }
 
 local GUI_TEXT = {
@@ -159,6 +168,8 @@ local PROPERTIES = {
 		"VerticalAlignment",
 		"SortOrder",
 		"Wraps",
+		-- 실제로는 자식이 바뀔 때 Roblox 가 채운다. 여기서는 0 이고, 테스트가 직접 넣는다.
+		"AbsoluteContentSize",
 	}),
 }
 
@@ -168,6 +179,8 @@ local DEFAULTS = {
 	Active = true,
 	Visible = true,
 	Enabled = true,
+	AbsoluteSize = Datatypes.Vector2.new(0, 0),
+	AbsoluteContentSize = Datatypes.Vector2.new(0, 0),
 	Text = "",
 	Transparency = 0,
 	BackgroundTransparency = 0,

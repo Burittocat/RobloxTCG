@@ -41,6 +41,28 @@ local LOSS_REASON = {
 	Concede = "항복",
 }
 
+--[[
+	가로로 스크롤하는 줄이 **넘칠 때만** 왼쪽으로 붙게 한다.
+
+	UIListLayout 의 가운데 정렬은 내용이 줄보다 넓어지면 양쪽으로 똑같이 넘친다.
+	그러면 왼쪽 카드가 잘리고, 캔버스는 0 부터라 스크롤로도 거기까지 못 간다.
+	손패는 드로우가 늘면 실제로 줄보다 길어진다.
+
+	그렇다고 늘 왼쪽 정렬로 두면 카드가 두세 장일 때 화면이 왼쪽으로 쏠린다.
+	그래서 넓이를 보고 그때그때 바꾼다 — 내용이 넘치면 왼쪽, 아니면 가운데.
+]]
+local function alignWhenOverflowing(scroll, layout)
+	local function update()
+		local overflowing = layout.AbsoluteContentSize.X > scroll.AbsoluteSize.X
+		layout.HorizontalAlignment = overflowing and Enum.HorizontalAlignment.Left
+			or Enum.HorizontalAlignment.Center
+	end
+
+	layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(update)
+	scroll:GetPropertyChangedSignal("AbsoluteSize"):Connect(update)
+	update()
+end
+
 local Battle = {}
 Battle.__index = Battle
 
@@ -216,6 +238,8 @@ function Battle:build(parent)
 		BackgroundColor3 = Theme.color.bgDeep,
 	})
 
+	local handLayout = Widgets.listLayout(Enum.FillDirection.Horizontal, 8, Enum.HorizontalAlignment.Center)
+
 	self.handRow = new("ScrollingFrame", {
 		Name = "Hand",
 		Parent = handBar,
@@ -229,8 +253,10 @@ function Battle:build(parent)
 		ScrollBarThickness = 4,
 		ScrollBarImageColor3 = Theme.color.stroke,
 	}, {
-		Widgets.listLayout(Enum.FillDirection.Horizontal, 8, Enum.HorizontalAlignment.Center),
+		handLayout,
 	})
+
+	alignWhenOverflowing(self.handRow, handLayout)
 
 	--------------------------------------------------------------------
 	-- 겹쳐 뜨는 것들
@@ -352,7 +378,9 @@ function Battle:makePlayerPanel(parent, slot, position)
 end
 
 function Battle:makeFieldRow(parent, name, position)
-	return new("ScrollingFrame", {
+	local layout = Widgets.listLayout(Enum.FillDirection.Horizontal, 8, Enum.HorizontalAlignment.Center)
+
+	local row = new("ScrollingFrame", {
 		Name = name,
 		Parent = parent,
 		BackgroundTransparency = 1,
@@ -365,8 +393,13 @@ function Battle:makeFieldRow(parent, name, position)
 		ScrollBarThickness = 3,
 		ScrollBarImageColor3 = Theme.color.stroke,
 	}, {
-		Widgets.listLayout(Enum.FillDirection.Horizontal, 8, Enum.HorizontalAlignment.Center),
+		layout,
 	})
+
+	-- 필드도 생물이 늘어나면 줄보다 길어진다.
+	alignWhenOverflowing(row, layout)
+
+	return row
 end
 
 function Battle:makeActionBar(parent)

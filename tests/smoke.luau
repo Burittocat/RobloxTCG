@@ -917,6 +917,82 @@ t:describe("멀리건 관문", function()
 end)
 
 --==========================================================================
+-- 넘치는 줄
+--==========================================================================
+
+--[[
+	가로로 스크롤하는 줄(손패·필드)은 **넘칠 때만** 왼쪽으로 붙어야 한다.
+
+	가운데 정렬은 내용이 줄보다 넓어지면 양쪽으로 똑같이 넘쳐서 왼쪽 카드가 잘리고,
+	캔버스는 0 부터라 스크롤로도 거기까지 못 간다. 그렇다고 늘 왼쪽이면 카드가
+	두세 장일 때 화면이 왼쪽으로 쏠린다.
+
+	이 하네스는 레이아웃을 계산하지 않으므로(AbsoluteSize 는 항상 0) 넓이를 직접 넣어
+	상황을 만든다. 확인하는 것은 "그 상황에서 정렬이 바뀌는가" 다.
+]]
+t:describe("넘치는 줄", function()
+	local function handRow()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "AI 연습"))
+		world:advance(3)
+		t:truthy(passMulligan(world, kim), "멀리건 관문을 통과하지 못했습니다")
+
+		local row = Screen.find(guiOf(kim), "Hand")
+		local layout
+		for _, child in row:GetChildren() do
+			if child.ClassName == "UIListLayout" then
+				layout = child
+			end
+		end
+
+		return world, row, layout
+	end
+
+	t:it("평소에는 가운데로 모은다", function()
+		local _, _, layout = handRow()
+
+		t:eq(
+			tostring(layout.HorizontalAlignment),
+			tostring(Roblox.Datatypes.Enum.HorizontalAlignment.Center),
+			"카드가 몇 장 없을 때 왼쪽으로 쏠리면 안 됩니다"
+		)
+	end)
+
+	t:it("줄보다 길어지면 왼쪽으로 붙는다", function()
+		local world, row, layout = handRow()
+
+		row.AbsoluteSize = Roblox.Datatypes.Vector2.new(800, 150)
+		layout.AbsoluteContentSize = Roblox.Datatypes.Vector2.new(1400, 150)
+		world:advance(0.2)
+
+		t:eq(
+			tostring(layout.HorizontalAlignment),
+			tostring(Roblox.Datatypes.Enum.HorizontalAlignment.Left),
+			"넘치는데 가운데로 두면 왼쪽 카드가 잘리고 스크롤로도 못 간다"
+		)
+	end)
+
+	t:it("다시 줄어들면 가운데로 돌아온다", function()
+		local world, row, layout = handRow()
+
+		row.AbsoluteSize = Roblox.Datatypes.Vector2.new(800, 150)
+		layout.AbsoluteContentSize = Roblox.Datatypes.Vector2.new(1400, 150)
+		world:advance(0.2)
+		layout.AbsoluteContentSize = Roblox.Datatypes.Vector2.new(300, 150)
+		world:advance(0.2)
+
+		t:eq(
+			tostring(layout.HorizontalAlignment),
+			tostring(Roblox.Datatypes.Enum.HorizontalAlignment.Center)
+		)
+	end)
+end)
+
+--==========================================================================
 -- 대기 타이머
 --==========================================================================
 

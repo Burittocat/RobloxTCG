@@ -141,7 +141,7 @@ local LOADING = newproxy(false)
 -- Lune 의 빌트인(table.freeze 등)은 _G 가 아니라 실제 전역 환경에 있다.
 local GLOBALS = getfenv(0)
 
-local function makeRequire(cache)
+local function makeRequire(cache, globals)
 	local requireNode
 
 	requireNode = function(target)
@@ -164,7 +164,16 @@ local function makeRequire(cache)
 		cache[target] = LOADING
 
 		local chunk = assert(loadstring(fs.readFile(path), "@" .. path))
-		local env = setmetatable({ script = target, require = requireNode }, { __index = GLOBALS })
+		-- globals 는 로더가 넣어주는 것들(game 스텁 등). 없으면 Lune 빌트인만 보인다.
+		local env = setmetatable({ script = target, require = requireNode }, {
+			__index = function(_, key)
+				local injected = globals[key]
+				if injected ~= nil then
+					return injected
+				end
+				return GLOBALS[key]
+			end,
+		})
 		setfenv(chunk :: any, env :: any)
 
 		local value = chunk()
@@ -189,14 +198,42 @@ end
 		local env = RobloxEnv.mount("src/shared", "Shared")
 		local Rules = env.require(env.root.Rules)
 ]]
-function RobloxEnv.mount(dirPath, rootName)
-	assert(fs.isDir(dirPath), "폴더를 찾을 수 없습니다: " .. dirPath)
+--[[
+	폴더 여러 개를 **한 캐시로** 로드하는 로더.
 
-	local root = buildTree(dirPath, rootName or "Shared", nil)
+		local loader = RobloxEnv.newLoader()
+		local shared = loader.mount("src/shared", "Shared")
+		local client = loader.mount("src/client", "Client")
+
+	캐시를 나누면 안 된다. src/client 가 자기 require 로 Rules 를 다시 로드하면
+	카드 등록(Cards.load)이 한쪽 사본에만 남아, 클라이언트 쪽 Registry.mustGet 이
+	"등록되지 않은 카드" 로 죽는다. Roblox 에서는 ReplicatedStorage 의 같은
+	ModuleScript 를 공유하므로, 여기서도 한 벌만 있어야 실제와 같다.
+
+	loader.globals 는 모듈에 주입할 전역이다. 나중에 채워도 된다 — 모듈은
+	require 하는 순간에 읽는다. 클라이언트 코드에 `game` 스텁을 넣는 용도다.
+]]
+function RobloxEnv.newLoader(globals)
+	local resolved = globals or {}
+	local loader = { globals = resolved }
+
+	loader.require = makeRequire({}, resolved)
+
+	function loader.mount(dirPath, rootName)
+		assert(fs.isDir(dirPath), "폴더를 찾을 수 없습니다: " .. dirPath)
+		return buildTree(dirPath, rootName or "Shared", nil)
+	end
+
+	return loader
+end
+
+-- 폴더 하나만 로드하는 지름길. (play.luau 처럼 룰만 쓰는 곳)
+function RobloxEnv.mount(dirPath, rootName)
+	local loader = RobloxEnv.newLoader()
 
 	return {
-		root = root,
-		require = makeRequire({}),
+		root = loader.mount(dirPath, rootName or "Shared"),
+		require = loader.require,
 	}
 end
 

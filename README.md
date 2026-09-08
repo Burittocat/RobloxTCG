@@ -334,8 +334,8 @@ AI 자동 대전                    lune run play -- --auto
 명령줄로도 같다:
 
 ```powershell
-lune run tests/check.luau # 전체 .luau 문법 검사 (57개 파일)
-lune run tests/run.luau   # 룰 엔진 + 네트워크 + 매칭 테스트 (127개)
+lune run tests/check.luau # 전체 .luau 문법 검사 (58개 파일)
+lune run tests/run.luau   # 룰 · 네트워크 · 매칭 · 클라이언트 판정 (138개)
 lune run play -- --auto   # AI vs AI 자동 대전 (룰 구경용)
 lune run play -- --seed 42
 ```
@@ -349,11 +349,24 @@ lune run play -- --seed 42
 | 단계 | 하는 일 |
 |---|---|
 | 문법 검사 | `tests/check.luau` — 전체 `.luau` 컴파일 |
-| 룰 테스트 | `tests/run.luau` — 룰 · AI 자기대국 · 네트워크 계약 · 매칭 (127개) |
-| 스모크 테스트 | `tests/smoke.luau` — 서버와 클라이언트를 **실제로 실행** (25개) |
+| 룰 테스트 | `tests/run.luau` — 룰 · AI 자기대국 · 네트워크 계약 · 매칭 · 클라이언트 판정 (138개) |
+| 스모크 테스트 | `tests/smoke.luau` — 서버와 클라이언트를 **실제로 실행** (35개) |
 | 플레이스 빌드 | `rojo build` 가 실제로 성공하는지 |
 
 넷 다 합쳐 2초쯤이다.
+
+### 클라이언트 코드는 어떻게 테스트하나
+
+`src/client` 는 `game:GetService` 를 쓰므로 Lune 에서 그냥은 안 돌아간다. 두 갈래로 본다.
+
+| 무엇 | 어디서 | 어떻게 |
+|---|---|---|
+| 클릭 → 판정 (`Controller`) | `tests/specs/controller.luau` | `RobloxEnv.newLoader()` 가 `src/shared` 와 `src/client` 를 **한 캐시로** 마운트하고, `game:GetService("ReplicatedStorage"):WaitForChild("Shared")` 만 흉내낸다. 서버가 보낼 스냅샷(`viewFor` → `packView`)을 그대로 태워 하이라이트를 확인한다 |
+| 화면 (`Battle`·`Home`) | `tests/smoke.luau` | 진짜 인스턴스 트리 위에서 버튼을 눌러보고 텍스트를 읽는다 |
+
+캐시를 나누면 안 된다 — `src/client` 가 룰을 다시 로드하면 `Cards.load()` 가 한쪽 사본에만
+남아 클라이언트 쪽 `Registry.mustGet` 이 "등록되지 않은 카드" 로 죽는다.
+Roblox 에서는 `ReplicatedStorage` 의 같은 ModuleScript 를 공유하므로, 한 벌만 있어야 실제와 같다.
 
 ### 왜 `.ps1` 과 `.sh` 가 둘 다 있나
 

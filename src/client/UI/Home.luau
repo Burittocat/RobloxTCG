@@ -188,18 +188,24 @@ end
 -- 경과 시간
 --==========================================================================
 
+local function formatWait(seconds)
+	local whole = math.max(0, math.floor(seconds))
+	return ("%d:%02d"):format(whole // 60, whole % 60)
+end
+
 --[[
 	1초마다 대기 시간을 다시 그린다. 서버가 매초 알려주게 하면 아무것도 달라지지 않는
 	메시지를 인원수만큼 계속 쏘게 된다 — 시계는 클라이언트가 돌린다.
 
-	기준 시각(since)은 서버가 준 것이라 두 사람의 화면이 같은 값에서 출발한다.
+	출발점은 서버가 준 경과 초(elapsed)고, 그 뒤로는 **내 시계로만** 센다.
+	서버 시각에서 내 시각을 빼면 기기 시계가 어긋난 사람은 0:00 에 멈추거나
+	처음부터 몇 분이 찍힌다. 두 시계를 섞지 않는 게 요점이다.
 ]]
 function Home:startClock()
 	task.spawn(function()
 		while self.gui.Parent do
-			if self.screen == "queued" and self.queuedSince then
-				local elapsed = math.max(0, os.time() - self.queuedSince)
-				self.waitTimer.Text = ("%d:%02d"):format(elapsed // 60, elapsed % 60)
+			if self.screen == "queued" and self.queuedBase then
+				self.waitTimer.Text = formatWait(os.clock() - self.queuedBase)
 			end
 			task.wait(1)
 		end
@@ -236,10 +242,12 @@ function Home:render(payload)
 		self.message.Text = payload.text or "문제가 발생했습니다"
 		self.message.TextColor3 = Theme.color.warn
 	elseif screen == "queued" then
-		self.queuedSince = payload.since or os.time()
+		-- os.clock 은 기기 시계와 무관한 단조 시계다. 서버 시각과 비교하지 않는다.
+		local elapsed = tonumber(payload.elapsed) or 0
+		self.queuedBase = os.clock() - math.max(0, elapsed)
 		self.subtitle.Text = "매칭 중"
 		self.waitTitle.Text = "상대를 찾는 중"
-		self.waitTimer.Text = "0:00"
+		self.waitTimer.Text = formatWait(elapsed)
 		self.cancelButton.Visible = true
 	elseif screen == "found" then
 		self.subtitle.Text = "매칭 완료"

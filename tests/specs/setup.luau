@@ -87,4 +87,52 @@ return function(t, ctx)
 			t:falsy(ok, "생물에 즉시시전이 붙었는데 통과했습니다")
 		end)
 	end)
+
+	--==================================================================
+	-- 선공 결정 (GameState.new 의 폴백)
+	--==================================================================
+	t:describe("선공 폴백", function()
+		local function newMatch(opts)
+			local deck = {}
+			for _ = 1, 30 do
+				table.insert(deck, "COST_BASIC")
+			end
+
+			return Rules.newMatch({
+				seed = opts.seed,
+				startingPlayerId = opts.startingPlayerId,
+				strictDeck = false,
+				players = {
+					{ name = "P1", deck = table.clone(deck) },
+					{ name = "P2", deck = table.clone(deck) },
+				},
+			})
+		end
+
+		t:it("선공을 안 넘기면 시드로 정한 것과 같은 값이 나온다", function()
+			for _, seed in { 1, 7, 4242, 99999 } do
+				local state = newMatch({ seed = seed })
+				t:eq(
+					state.startingPlayerId,
+					Rules.startingPlayerFor(seed),
+					("시드 %d: 미리 물어본 답과 실제 판이 갈립니다"):format(seed)
+				)
+			end
+		end)
+
+		t:it("선공을 넘겼든 아니든 셔플 RNG 는 같은 자리에 있다", function()
+			-- 폴백이 셔플 RNG 를 한 번 소모하면, 선공을 넘겨받은 판과 아닌 판의
+			-- 이후 난수가 갈린다 — 같은 시드인데 다른 판이 되는 경로다.
+			local passed = newMatch({ seed = 4242, startingPlayerId = 1 })
+			local fallback = newMatch({ seed = 4242 })
+
+			t:eq(passed.rng:nextInteger(1, 1000000), fallback.rng:nextInteger(1, 1000000))
+		end)
+
+		t:it("시드를 안 주면 그 판의 시드를 상태에 남긴다", function()
+			local state = newMatch({})
+			t:truthy(type(state.seed) == "number", "재현하려면 실제로 쓴 시드가 남아 있어야 합니다")
+			t:eq(state.startingPlayerId, Rules.startingPlayerFor(state.seed))
+		end)
+	end)
 end

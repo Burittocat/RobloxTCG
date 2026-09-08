@@ -164,6 +164,7 @@ function Roblox.newWorld(opts)
 		servers = {},
 		nextJobId = 1,
 		nextUserId = 100,
+		nextAccessCode = 1,
 
 		memoryStore = {}, -- 이름 -> 큐
 		subscribers = {}, -- 토픽 -> { fn }
@@ -213,6 +214,35 @@ end
 	두 번째 성질이 곧 "큐 취소가 엔트리를 지우지 못하는" 이유이고,
 	CrossServer 백엔드가 그걸 로컬 표시로 우회하는 근거다.
 ]]
+--[[
+	MemoryStore 와 MessagingService 는 값을 **직렬화해서** 옮긴다. 하네스가 참조를
+	그대로 들고 있으면 "큐에 넣은 뒤 로컬 테이블을 고쳤더니 큐 안의 값도 같이 바뀌는"
+	일이 여기서만 일어난다 — 실제로는 옛 값이 나가는 코드가 초록불을 받는다.
+
+	담을 수 없는 값(함수·스레드·혼합 키)도 진짜처럼 여기서 거절한다.
+]]
+local function serialized(value, path)
+	local kind = type(value)
+
+	if kind == "table" then
+		local copy = {}
+		for key, child in pairs(value) do
+			local keyKind = type(key)
+			if keyKind ~= "string" and keyKind ~= "number" then
+				error(("직렬화할 수 없습니다: %s 의 키가 %s"):format(path, keyKind), 2)
+			end
+			copy[key] = serialized(child, ("%s.%s"):format(path, tostring(key)))
+		end
+		return copy
+	end
+
+	if kind == "function" or kind == "thread" or kind == "userdata" then
+		error(("직렬화할 수 없습니다: %s 가 %s"):format(path, kind), 2)
+	end
+
+	return value
+end
+
 local function makeQueue(world, invisibilityTimeout)
 	local queue = {
 		items = {}, -- { value, expiresAt, hiddenUntil }
@@ -222,7 +252,7 @@ local function makeQueue(world, invisibilityTimeout)
 
 	function queue:AddAsync(value, expiration)
 		table.insert(self.items, {
-			value = value,
+			value = serialized(value, "AddAsync 값"),
 			expiresAt = world.scheduler.clock + (expiration or 30),
 			hiddenUntil = 0,
 		})
@@ -252,7 +282,8 @@ local function makeQueue(world, invisibilityTimeout)
 		local values = {}
 		for _, item in picked do
 			item.hiddenUntil = now + invisibilityTimeout
-			table.insert(values, item.value)
+			-- 읽는 쪽에도 사본을 준다. 받은 값을 고쳐도 큐 안의 값은 그대로여야 한다.
+			table.insert(values, serialized(item.value, "ReadAsync 값"))
 		end
 
 		return values, readId
@@ -470,11 +501,17 @@ function Server:service(name, vm)
 
 	if name == "MessagingService" then
 		return {
+			--[[
+				**게시한 서버 자신에게도 배달한다.** 진짜 MessagingService 가 그렇다.
+
+				예전에는 자기 자신을 건너뛰었다. 그래서 CrossServer 의 `payload.origin`
+				에코 가드가 하네스에서 한 번도 실행되지 않았고, 그 가드를 지워도 테스트는
+				통과했다 — 실제로는 모든 match/cancel 이 두 번 처리됐을 것이다.
+			]]
 			PublishAsync = function(_, topic, data)
+				local payload = serialized(data, "PublishAsync 데이터")
 				for _, entry in world.subscribers[topic] or {} do
-					if entry.server ~= self then
-						entry.handler({ Data = data, Sent = world.scheduler.clock })
-					end
+					entry.handler({ Data = payload, Sent = world.scheduler.clock })
 				end
 			end,
 
@@ -500,7 +537,10 @@ function Server:service(name, vm)
 	if name == "TeleportService" then
 		return {
 			ReserveServerAsync = function(_, _placeId)
-				local code = ("access-%d"):format(#world.servers + math.random(1000, 9999))
+				-- 세는 값으로 만든다. math.random 으로 만들면 한 월드에서 두 번 예약할 때
+				-- 드물게 같은 코드가 나와, 테스트가 이유 없이 깜빡인다.
+				world.nextAccessCode += 1
+				local code = ("access-%d"):format(world.nextAccessCode)
 				world.reserved[code] = false -- 아직 서버가 안 생겼다
 				return code, "private-" .. code
 			end,
@@ -583,6 +623,9 @@ function Server:addPlayer(name, opts)
 		}
 	end
 
+	-- FireClient 가 "첫 인자가 진짜 Player 인가" 를 볼 수 있게 표식을 단다.
+	player._isPlayer = true
+
 	player.Parent = self.playersService
 	player._joinData = { TeleportData = opts.joinData }
 
@@ -615,6 +658,13 @@ function Server:addPlayer(name, opts)
 end
 
 function Server:removePlayer(player)
+	--[[
+		**아직 Players 의 자식인 채로** PlayerRemoving 이 돈다. 진짜 Roblox 가 그렇다.
+		먼저 떼어내면, 핸들러 안에서 `Players:GetPlayers()` 나 `player.Parent` 를 보는
+		코드가 실제와 다른 답을 받는다 — 나가는 사람을 이미 없는 사람으로 세게 된다.
+	]]
+	self.playerRemoving:Fire(player)
+
 	for index, existing in self.players do
 		if existing == player then
 			table.remove(self.players, index)
@@ -622,7 +672,21 @@ function Server:removePlayer(player)
 		end
 	end
 	player.Parent = nil
-	self.playerRemoving:Fire(player)
+
+	--[[
+		떠난 사람의 클라이언트 신호를 지운다. 안 지우면 FireAllClients 가 계속
+		그 사람에게 쏘고, 하네스에만 있는 유령 수신자가 남는다.
+
+		**PlayerRemoving 이 다 돈 뒤에** 지운다. 그 핸들러들이 아직 그 사람에게
+		마지막 메시지를 쏠 수 있고(몰수 안내 등), 먼저 지우면 그 호출이 신호를
+		다시 만들어 결국 남는다.
+	]]
+	for _, remote in self.remotes:GetChildren() do
+		local signals = rawget(remote, "_clientSignals")
+		if signals then
+			signals[player] = nil
+		end
+	end
 end
 
 --==========================================================================

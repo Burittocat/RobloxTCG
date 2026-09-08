@@ -565,6 +565,205 @@ t:describe("화면 배율", function()
 end)
 
 --==========================================================================
+-- 대기 타이머
+--==========================================================================
+
+--[[
+	타이머가 클라이언트 시계를 서버 시각과 빼면, 기기 시계가 어긋난 사람은
+	0:00 에 멈추거나 처음부터 몇 분이 찍힌다. 하네스는 두 시계가 같으므로 그 증상을
+	직접 재현할 수 없다 — 대신 **애초에 뺄 수 없게 되어 있는가**(시각이 아니라 경과 초를
+	보내는가)를 못 박는다.
+]]
+t:describe("대기 타이머", function()
+	local function queuedPayloads()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		world:advance(2)
+
+		local seen = {}
+		lobby.remotes.Lobby._clientSignalFor(kim):Connect(function(payload)
+			if type(payload) == "table" and payload.screen == "queued" then
+				table.insert(seen, payload)
+			end
+		end)
+
+		clickQueue(kim)
+		world:advance(2)
+
+		return world, lobby, kim, seen
+	end
+
+	t:it("서버는 시각이 아니라 경과 초를 보낸다", function()
+		local world, _, _, seen = queuedPayloads()
+		assertNoErrors(world, "큐 등록")
+
+		t:truthy(#seen > 0, "대기 화면 payload 를 받지 못했습니다")
+		t:eq(seen[1].since, nil, "시각을 보내면 클라이언트가 두 시계를 빼게 된다")
+		t:eq(seen[1].elapsed, 0, "막 등록했으니 0 초")
+	end)
+
+	t:it("기다린 만큼 화면에 찍힌다", function()
+		local world, _, kim = queuedPayloads()
+
+		world:advance(65)
+		assertNoErrors(world, "대기 중")
+
+		t:truthy(Screen.hasText(guiOf(kim), "1:0"), "1분 넘게 기다렸으면 1:0x 가 보여야 합니다")
+	end)
+
+	t:it("화면을 다시 받아도 0:00 으로 돌아가지 않는다", function()
+		local world, lobby, kim, seen = queuedPayloads()
+
+		world:advance(65)
+		-- 클라이언트가 다시 뜬 것처럼 hello 를 보낸다 (서버가 현재 화면을 다시 내려준다).
+		lobby.remotes.Lobby._serverSignal:Fire(kim, { kind = "hello" })
+		world:advance(1)
+		assertNoErrors(world, "hello 재전송")
+
+		local last = seen[#seen]
+		t:truthy(last.elapsed >= 65, ("이미 기다린 시간을 잃었습니다: %s"):format(tostring(last.elapsed)))
+	end)
+end)
+
+--==========================================================================
+-- 하네스 자체 검증
+--==========================================================================
+
+--[[
+	위의 테스트들이 믿을 만한지는 하네스가 진짜처럼 답하는지에 달려 있다.
+	세 가지는 실제로 어긋나 있었고, 전부 **초록불을 잘못 주는** 쪽이었다 —
+	그래서 게임 코드보다 여기가 더 위험하다. 다시 어긋나지 않게 못 박아둔다.
+]]
+t:describe("하네스가 진짜처럼 답하는가", function()
+	t:it("PublishAsync 는 게시한 서버 자신에게도 배달한다", function()
+		local world = Roblox.newWorld({ studio = false })
+		local alpha = world:newServer({ jobId = "job-alpha" }):boot()
+		local beta = world:newServer({ jobId = "job-beta" }):boot()
+
+		local heard = {}
+		for _, server in { alpha, beta } do
+			local messaging = server:service("MessagingService", server.serverVm)
+			messaging:SubscribeAsync("probe", function(message)
+				table.insert(heard, ("%s:%s"):format(server.jobId, tostring(message.Data.from)))
+			end)
+		end
+
+		local messaging = alpha:service("MessagingService", alpha.serverVm)
+		messaging:PublishAsync("probe", { from = "alpha" })
+		world:advance(1)
+
+		t:truthy(
+			table.find(heard, "job-alpha:alpha"),
+			"게시한 서버 자신이 못 받으면 CrossServer 의 origin 에코 가드가 한 번도 안 돈다"
+		)
+		t:truthy(table.find(heard, "job-beta:alpha"), "다른 서버도 받아야 합니다")
+	end)
+
+	t:it("MemoryStore 큐는 값을 복사해 담는다", function()
+		local world = Roblox.newWorld({ studio = false })
+		local server = world:newServer():boot()
+
+		local queue = server:service("MemoryStoreService", server.serverVm):GetQueue("probe", 30)
+		local entry = { token = "t1", name = "Kim" }
+		queue:AddAsync(entry, 30)
+
+		-- 넣은 뒤 로컬 사본을 고친다. 진짜 MemoryStore 는 직렬화해서 담으므로
+		-- 큐 안의 값은 그대로여야 한다.
+		entry.name = "고쳐짐"
+
+		local values = queue:ReadAsync(1, false, 0)
+		t:eq(values[1].name, "Kim", "큐가 참조를 들고 있으면 여기서 '고쳐짐' 이 나온다")
+
+		values[1].name = "또 고쳐짐"
+		local again = server:service("MemoryStoreService", server.serverVm):GetQueue("probe", 30)
+		t:eq(again.items[1].value.name, "Kim", "읽어간 값을 고쳐도 큐 안은 그대로여야 합니다")
+	end)
+
+	t:it("담을 수 없는 값은 거절한다", function()
+		local world = Roblox.newWorld({ studio = false })
+		local server = world:newServer():boot()
+
+		local queue = server:service("MemoryStoreService", server.serverVm):GetQueue("probe", 30)
+		local ok = pcall(function()
+			queue:AddAsync({ callback = function() end }, 30)
+		end)
+
+		t:falsy(ok, "함수가 든 값은 진짜 MemoryStore 도 거절합니다")
+	end)
+
+	t:it("FireClient 는 첫 인자가 Player 가 아니면 에러", function()
+		local world = Roblox.newWorld({ studio = false })
+		local server = world:newServer():boot()
+
+		-- `Notice:FireClient(text, kind)` 처럼 player 를 빠뜨린 호출.
+		local ok, err = pcall(function()
+			server.remotes.Notice:FireClient("상대가 나갔습니다", "warn")
+		end)
+
+		t:falsy(ok, "player 를 빠뜨린 호출이 조용히 통과하면 안 됩니다")
+		t:truthy(tostring(err):find("Player"), "무엇이 잘못됐는지 말해줘야 합니다")
+	end)
+
+	t:it("PlayerRemoving 은 아직 Players 에 있는 채로 돈다", function()
+		local world = Roblox.newWorld({ studio = false })
+		local server = world:newServer():boot()
+
+		local kim = server:addPlayer("Kim")
+		world:advance(1)
+
+		local sawInList, sawParent = false, false
+		server.playersService.PlayerRemoving:Connect(function(player)
+			sawParent = player.Parent == server.playersService
+			for _, existing in server.playersService:GetPlayers() do
+				if existing == player then
+					sawInList = true
+				end
+			end
+		end)
+
+		server:removePlayer(kim)
+
+		t:truthy(sawParent, "핸들러 안에서는 아직 Players 의 자식이어야 합니다")
+		t:truthy(sawInList, "GetPlayers 에도 아직 있어야 합니다 (나가는 사람을 세는 코드가 있다)")
+	end)
+
+	t:it("예약 서버 코드는 겹치지 않는다", function()
+		local world = Roblox.newWorld({ studio = false })
+		local server = world:newServer():boot()
+		local teleport = server:service("TeleportService", server.serverVm)
+
+		local seen = {}
+		for _ = 1, 200 do
+			local code = teleport:ReserveServerAsync(0)
+			t:falsy(seen[code], ("접근 코드가 겹쳤습니다: %s"):format(tostring(code)))
+			seen[code] = true
+		end
+	end)
+
+	t:it("나간 사람에게는 FireAllClients 가 가지 않는다", function()
+		local world = Roblox.newWorld({ studio = false })
+		local server = world:newServer():boot()
+
+		local kim = server:addPlayer("Kim")
+		world:advance(1)
+
+		-- 클라이언트 프록시가 OnClientEvent 를 얻는 것과 같은 경로다.
+		local got = 0
+		server.remotes.Notice._clientSignalFor(kim):Connect(function()
+			got += 1
+		end)
+
+		server.remotes.Notice:FireAllClients("hello")
+		t:eq(got, 1, "있는 사람은 받아야 합니다")
+
+		server:removePlayer(kim)
+		server.remotes.Notice:FireAllClients("hello")
+		t:eq(got, 1, "나간 사람에게 계속 쏘면 하네스에만 있는 유령 수신자가 남는다")
+	end)
+end)
+
+--==========================================================================
 
 print("")
 process.exit(t:report() and 0 or 1)

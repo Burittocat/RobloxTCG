@@ -734,29 +734,30 @@ PvP 빠른 매칭까지 끝났다. 남은 것:
 4. **연출** — 지금 UI 는 매 갱신마다 화면을 다시 그린다. 카드가 날아가는 애니메이션을
    붙이려면 `Battle:render` 를 diff 방식으로 바꿔야 한다
 
-### 코드 리뷰에서 나왔는데 아직 안 고친 것
+### 코드 리뷰에서 나온 것 (2026-09-09 전부 처리)
 
-2026-09-08 브랜치 전체 리뷰(13건) 중 급한 것은 처리했고, 아래가 남았다.
-수비준비 하이라이트 건은 2026-09-09 에 고쳤다(`Controller.canBlockAnyAttacker`).
-전부 게시를 막을 정도는 아니라고 판단해 남겨둔 것이지 "안 해도 되는" 것은 아니다.
+2026-09-08 브랜치 전체 리뷰 13건 중 급하지 않다고 미뤄뒀던 6건을 2026-09-09 에 다 고쳤다.
+**남은 것 없음.** 무엇을 왜 고쳤는지만 남긴다 — 같은 실수를 다시 하지 않으려고.
 
 **게임 쪽**
 
-| 곳 | 무엇 |
-|---|---|
-| `client/UI/Home.luau` 대기 타이머 | 서버가 준 `os.time()` 에서 클라이언트 시계를 뺀다. 시계가 어긋난 사람은 `0:00` 에 멈추거나 처음부터 몇 분이 찍힌다 |
-| `Rules/init.luau` · `GameState.luau` | `GameState.new` 의 선공 폴백이 `Config.randomFirstPlayer` 를 보지 않는다. 플래그가 모든 경로를 덮지 못하고, 그 폴백이 셔플 RNG 를 한 번 소모해 "같은 시드 → 같은 판" 이 `startingPlayerId` 전달 여부에 따라 갈린다 |
+| 곳 | 무엇이었나 | 어떻게 고쳤나 |
+|---|---|---|
+| `client/Controller.luau` 하이라이트 | 수비준비에서 `Combat.canBlock` 을 안 봤다. 비행 공격자만 있어도 지상 생물이 전부 초록으로 켜지고, 눌러 들어가면 고를 대상이 없었다 | `canBlockAnyAttacker` 로 "막을 수 있는 공격자가 하나라도 있는가" 를 보고 켠다. 꺼진 것을 눌렀을 때도 이유를 띄운다 |
+| `client/UI/Home.luau` 대기 타이머 | 서버가 준 `os.time()` 에서 클라이언트 시계를 뺐다. 시계가 어긋난 사람은 `0:00` 에 멈추거나 처음부터 몇 분이 찍혔다 | 서버가 **경과 초**(`elapsed`)를 보낸다. 클라이언트는 `os.clock()` 으로 이어 센다 — 두 시계를 섞지 않는다 |
+| `Rules/GameState.luau` 선공 | `GameState.new` 의 폴백이 `Config.randomFirstPlayer` 를 안 보고 셔플 RNG 를 한 번 소모했다. 선공을 넘겨받았는지에 따라 이후 난수가 갈렸다 | 판정을 `GameState.startingPlayerFor` 한 곳으로 모으고 `Rules.startingPlayerFor` 가 위임한다. 시드를 안 받은 판은 실제로 쓴 시드를 상태에 남긴다 |
 
-**테스트 하네스** — 전부 "하네스가 실제와 다르게 답한다" 는 종류다.
-초록불을 잘못 주는 쪽이라 게임보다 덜 급해 보이지만, 실은 더 위험하다.
+**테스트 하네스** — 전부 "하네스가 실제와 다르게 답한다" 는 종류였다.
+초록불을 잘못 주는 쪽이라 게임 코드보다 위험하다. 다시 어긋나지 않게
+`tests/smoke.luau` 의 "하네스가 진짜처럼 답하는가" 절에서 성질 자체를 테스트한다.
 
-| 곳 | 무엇 |
+| 곳 | 무엇이었나 |
 |---|---|
-| `PublishAsync` | 발행한 서버 자신에게 배달하지 않는다(실제는 배달한다). 그래서 `CrossServer:announce` 의 `payload.origin` 에코 가드가 **한 번도 실행되지 않는다** — 그 가드를 지워도 테스트는 통과하지만 실제로는 모든 match/cancel 이 두 번 처리된다 |
-| `AddAsync` | 값을 참조로 저장한다. 실제 MemoryStore 는 직렬화한다. 그래서 "큐에 넣은 뒤 로컬 객체를 고치면 큐 안 값도 같이 바뀌는" 일이 하네스에서만 일어난다 |
-| `FireClient` | 첫 인자가 Player 인지 안 본다. 아무 값이나 키로 새 신호를 만들어 조용히 버린다. 이 저장소가 `Notice:FireClient(player, text, kind)` 와 `Lobby:FireClient(player, payload)` 두 모양을 섞어 쓰므로 player 를 빠뜨린 실수가 통과한다. `removePlayer` 가 `_clientSignals` 도 안 지운다 |
-| `removePlayer` | `player.Parent = nil` 을 먼저 하고 `PlayerRemoving` 을 쏜다. 실제로는 아직 `Players` 의 자식인 상태에서 발생한다 |
-| `ReserveServerAsync` (하네스) | 접근 코드를 `math.random` 으로 만들어 한 월드에서 두 번 예약하면 드물게 충돌한다 |
+| `PublishAsync` | 게시한 서버 자신에게 배달하지 않아 `CrossServer` 의 `origin` 에코 가드가 한 번도 실행되지 않았다. 이제 자신에게도 배달하고, 데이터도 직렬화해서 보낸다 |
+| `AddAsync` / `ReadAsync` | 값을 참조로 저장했다. 이제 넣을 때와 읽을 때 각각 사본을 만들고, 담을 수 없는 값(함수 등)은 진짜처럼 거절한다 |
+| `FireClient` | 첫 인자가 Player 인지 안 봐서 `player` 를 빠뜨린 호출이 조용히 통과했다. 이제 에러를 낸다 (돌연변이 확인: 호출 한 곳에서 player 를 빼면 12건이 깨진다) |
+| `removePlayer` | `PlayerRemoving` 을 이미 떼어낸 뒤에 쐈다. 이제 실제처럼 아직 `Players` 자식인 채로 쏘고, 다 돈 뒤에 그 사람의 클라이언트 신호를 지운다 |
+| `ReserveServerAsync` | 접근 코드를 `math.random` 으로 만들어 드물게 충돌했다. 세는 값으로 바꿨다 |
 
 ### 매칭에서 아직 없는 것
 

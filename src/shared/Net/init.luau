@@ -57,7 +57,9 @@ end
 	서버 → 클라 (Lobby:FireClient)
 
 	  { screen = "home",    text = ? }                 시작 화면
-	  { screen = "queued",  since = <os.time()>, elapsed = ? }
+	  { screen = "queued",  elapsed = <이미 기다린 초> }
+	                          시각이 아니라 경과 초다. 클라이언트 시계와 서버 시계를
+	                          빼면 시계가 어긋난 사람의 타이머가 망가진다.
 	  { screen = "found",   opponent = "이름" }        곧 대전 서버로 이동
 	  { screen = "waiting", text = "상대를 기다리는 중" }  예약 서버에 먼저 도착
 	  { screen = "battle" }                            전투 화면으로

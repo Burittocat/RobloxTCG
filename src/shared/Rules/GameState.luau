@@ -54,15 +54,35 @@ end
 		strictDeck  = boolean?,           -- false 면 60장 규칙 생략(테스트/캠페인용)
 	}
 ]]
+--[[
+	선공 좌석. -> 1 | 2
+
+	같은 시드면 항상 같은 결과다. 매치의 셔플 RNG 와는 **별개 인스턴스**를 쓴다 —
+	동전을 던지느라 셔플이 한 칸 밀리면 "같은 시드 → 같은 판" 이 깨지고,
+	선공을 넘겨받았는지 여부에 따라 덱 순서가 갈린다.
+
+	Rules.startingPlayerFor 가 이걸 그대로 부른다. 판정이 두 벌 있으면
+	둘 중 하나만 Config 를 보는 상태로 어긋난다.
+]]
+function GameState.startingPlayerFor(seed)
+	if not Config.randomFirstPlayer then
+		return 1
+	end
+	return RNG.new((tonumber(seed) or 0) + 1):nextInteger(1, 2)
+end
+
 function GameState.new(opts)
 	assert(type(opts) == "table", "GameState.new: opts 테이블이 필요합니다")
 	assert(#opts.players == 2, "GameState.new: 현재는 2인전만 지원합니다")
 
-	local rng = RNG.new(opts.seed or os.time())
+	-- 시드를 안 받았으면 여기서 정해 **상태에 남긴다**. 남기지 않으면 그 판은
+	-- 다시 재현할 수 없고, 선공 결정도 시드 없이(=늘 같은 값으로) 돌게 된다.
+	local seed = opts.seed or os.time()
+	local rng = RNG.new(seed)
 
 	local state = {
 		version = STATE_VERSION,
-		seed = opts.seed,
+		seed = seed,
 		rng = rng,
 
 		turn = 0, -- beginTurn 에서 1 이 된다
@@ -100,7 +120,8 @@ function GameState.new(opts)
 		rng:shuffle(player.deck)
 	end
 
-	state.startingPlayerId = opts.startingPlayerId or rng:nextInteger(1, 2)
+	-- 셔플 RNG 를 쓰지 않는다(위 주석 참조). Config.randomFirstPlayer 도 여기 한 곳에서 본다.
+	state.startingPlayerId = opts.startingPlayerId or GameState.startingPlayerFor(seed)
 
 	-- 초기 패
 	for _, player in state.players do

@@ -403,7 +403,24 @@ local function attachRemote(node)
 	local signals = rawget(node, "_signals")
 	signals.OnServerEvent = rawget(node, "_serverSignal")
 
+	--[[
+		첫 인자가 진짜 Player 인지 본다.
+
+		예전에는 아무 값이나 키로 받아 새 신호를 만들고 조용히 버렸다. 이 저장소가
+		`Notice:FireClient(player, text, kind)` 와 `Lobby:FireClient(player, payload)`
+		두 모양을 섞어 쓰므로, player 를 빠뜨린 호출이 그대로 통과했다 —
+		아무에게도 안 가는데 테스트는 초록불이었다.
+	]]
 	rawset(node, "FireClient", function(_, player, ...)
+		if type(player) ~= "table" or not rawget(player, "_isPlayer") then
+			error(
+				("%s:FireClient 의 첫 인자는 Player 여야 합니다 (받은 값: %s)"):format(
+					tostring(rawget(node, "_fields").Name),
+					tostring(player)
+				),
+				2
+			)
+		end
 		clientSignal(player):Fire(...)
 	end)
 

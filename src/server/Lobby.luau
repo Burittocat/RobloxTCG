@@ -86,9 +86,31 @@ end
 	화면 전환의 주인은 서버다. 클라이언트가 자기 판단으로 화면을 바꾸면
 	"큐에 서 있는데 시작 화면이 보이는" 상태가 만들어진다.
 ]]
+--[[
+	클라이언트에게 나갈 모양으로 다듬는다.
+
+	대기 화면은 기준 시각(since) 이 아니라 **경과 초(elapsed)** 를 보낸다.
+	since 를 그대로 보내면 클라이언트가 `os.time() - since` 를 계산하게 되는데,
+	기기 시계가 어긋난 사람은 0:00 에 멈추거나 처음부터 몇 분이 찍힌다.
+	뺄셈은 시계가 하나뿐인 서버에서 한다.
+
+	hello 로 다시 내려줄 때도 이 함수를 거치므로, 화면을 다시 받아도 타이머가
+	0 으로 되돌아가지 않는다 — 그때그때 다시 계산되기 때문이다.
+]]
+function Lobby:outgoing(payload)
+	if payload.screen ~= Screen.Queued or not payload.since then
+		return payload
+	end
+
+	return {
+		screen = payload.screen,
+		elapsed = math.max(0, os.time() - payload.since),
+	}
+end
+
 function Lobby:setScreen(player, payload)
 	self.screens[player] = payload
-	self.remotes.Lobby:FireClient(player, payload)
+	self.remotes.Lobby:FireClient(player, self:outgoing(payload))
 end
 
 function Lobby:home(player, text)
@@ -125,7 +147,7 @@ function Lobby:onMessage(player, payload)
 
 	if payload.kind == "hello" then
 		local current = self.screens[player] or { screen = Screen.Home }
-		self.remotes.Lobby:FireClient(player, current)
+		self.remotes.Lobby:FireClient(player, self:outgoing(current))
 	elseif payload.kind == "queue" then
 		self:enqueue(player)
 	elseif payload.kind == "cancel" then

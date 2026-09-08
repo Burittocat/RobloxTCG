@@ -411,6 +411,10 @@ function MatchRunner:handle(player, payload)
 		ok, reason = Rules.clearAttackers(state, seatId)
 	elseif payload.kind == "clearBlockers" then
 		ok, reason = Rules.clearBlockers(state, seatId)
+	elseif payload.kind == "mulligan" then
+		ok, reason = Rules.mulligan(state, seatId)
+	elseif payload.kind == "keep" then
+		ok, reason = Rules.keepHand(state, seatId)
 	elseif payload.kind == "endPhase" then
 		ok, reason = Rules.endPhase(state, seatId)
 	elseif payload.kind == "pass" then

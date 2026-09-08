@@ -94,6 +94,14 @@ local function resolveSummon(state, item, instance)
 	end
 
 	GameState.log(state, ("%s 소환 (탭=%s)"):format(def.name, tostring(instance.tapped)))
+
+	--[[
+		소환 시 효과. 대상을 고르지 않는 것만 있다(CardDef 검증 참조).
+		필드에 놓은 **뒤** 해결한다 — 그래야 "자기 자신을 세는" 효과가 자연스럽다.
+	]]
+	if def.onSummon then
+		Effects.resolveSpell(state, { name = def.name, effects = def.onSummon }, item.controllerId, nil)
+	end
 end
 
 --[[

@@ -101,6 +101,23 @@ function CardDef.validate(def)
 				return fail(id, "생물은 '즉시시전' 키워드를 가질 수 없습니다")
 			end
 		end
+
+		--[[
+			소환 시 효과(onSummon). **대상을 고르지 않는 효과만** 허용한다.
+
+			대상을 고르는 소환 시 효과를 허용하면 "소환 버튼을 눌렀는데 대상 선택창이
+			뜨는" 흐름이 생기고, 그건 클라이언트·스택·AI 세 곳을 다 건드려야 한다.
+			대상 없는 효과(드로우, 양쪽 고정 피해)만으로도 카드 다양성은 충분히 나온다.
+		]]
+		for index, effect in def.onSummon or {} do
+			if Enums.EffectKind[effect.kind] == nil then
+				return fail(id, ("onSummon[%d]: 알 수 없는 kind '%s'"):format(index, tostring(effect.kind)))
+			end
+			if effect.target ~= nil and effect.target ~= Enums.TargetKind.None then
+				return fail(id, ("onSummon[%d]: 소환 시 효과는 대상을 고를 수 없습니다"):format(index))
+			end
+		end
+
 		return true
 	end
 

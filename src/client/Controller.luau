@@ -315,8 +315,18 @@ function Controller:hintText()
 	if self.mode.name ~= "idle" then
 		return "초록 테두리를 누르세요.\n취소하려면 '선택 취소'."
 	end
+	if view.phase == Phase.Mulligan and whoActs(view) ~= self.me then
+		return "상대가 손패를 고르는 중입니다."
+	end
 	if whoActs(view) ~= self.me then
 		return "상대가 두는 중입니다."
+	end
+
+	if view.phase == Phase.Mulligan then
+		if view.mulligan and view.mulligan.used[self.me] then
+			return "이미 한 번 물렸습니다.\n'이대로 시작' 을 누르세요."
+		end
+		return "손패가 마음에 안 들면 한 번, 벌칙 없이 통째로 바꿀 수 있습니다."
 	end
 
 	if not Stack.isEmpty(view) then
@@ -354,11 +364,17 @@ function Controller:buttonStates()
 		end
 	end
 
+	-- 멀리건 관문에서는 이 두 개 말고는 누를 것이 없다.
+	local atMulligan = (view.phase == Phase.Mulligan) and acting
+	local usedMulligan = view.mulligan and view.mulligan.used[self.me]
+
 	return {
 		endPhase = acting and perms.endPhase and not stackOpen,
 		pass = acting and stackOpen,
 		cancel = self.mode.name ~= "idle",
 		clear = canClear,
+		mulligan = atMulligan and not usedMulligan,
+		keep = atMulligan,
 	}
 end
 
@@ -615,6 +631,12 @@ function Controller:onAction(key)
 	end
 
 	if not view or view.finished then
+		return
+	end
+
+	if key == "mulligan" or key == "keep" then
+		self.mode = { name = "idle" }
+		self:send({ kind = key })
 		return
 	end
 

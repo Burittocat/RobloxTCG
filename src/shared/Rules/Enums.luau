@@ -69,6 +69,10 @@ Enums.Zone = table.freeze({
 	  EndTurn      - 턴 종료 정리
 ]]
 Enums.Phase = table.freeze({
+	-- 판이 시작되기 전 한 번. PhaseOrder 에 넣지 않는다 — 턴 순환의 일부가 아니라
+	-- 그 앞의 관문이고, 여기서 Phases.advance 가 돌면 안 되기 때문이다.
+	Mulligan = "Mulligan",
+
 	Untap = "Untap",
 	Draw = "Draw",
 	Main = "Main",
@@ -79,6 +83,7 @@ Enums.Phase = table.freeze({
 })
 
 Enums.PhaseDisplay = table.freeze({
+	Mulligan = "멀리건",
 	Untap = "언탭",
 	Draw = "드로우",
 	Main = "메인 페이즈",

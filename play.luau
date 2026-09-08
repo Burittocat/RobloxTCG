@@ -577,6 +577,43 @@ local function declareBlockFor(state, playerId, blockerId)
 	end
 end
 
+--[[
+	멀리건 관문. 판이 시작되기 전 한 번, 손패를 통째로 바꿀 수 있다 (무료 1회).
+	-> "continue" | "quit"
+]]
+local function humanMulligan(state, playerId)
+	renderBoard(state, playerId)
+
+	local used = state.players[playerId].hasMulliganed
+	say((" %s이 손패로 시작할까요? %sy = 시작%s%s"):format(
+		C.bold,
+		C.reset,
+		used and "" or ("   %sm = 손패 물리기 (무료 1회)%s"):format(C.magenta, C.reset),
+		C.reset
+	))
+
+	local input = readCommand(C.bold .. " 명령> " .. C.reset)
+	if input == nil or input == "q" then
+		return "quit"
+	end
+
+	if input == "m" and not used then
+		local ok, reason = Rules.mulligan(state, playerId)
+		if not ok then
+			say(C.red .. tostring(reason) .. C.reset)
+		else
+			say(C.dim .. "  손패를 물렸습니다" .. C.reset)
+		end
+		return "continue"
+	end
+
+	local ok, reason = Rules.keepHand(state, playerId)
+	if not ok then
+		say(C.red .. tostring(reason) .. C.reset)
+	end
+	return "continue"
+end
+
 -- -> "continue" | "quit"
 local function humanTurn(state, playerId)
 	renderBoard(state, playerId)
@@ -703,6 +740,11 @@ local function main()
 			-- 대응할 카드가 하나도 없으면 물어보지 않고 자동 패스
 			if not Stack.isEmpty(state) and not AI.hasAnyPlayableCard(state, mover) then
 				Rules.pass(state, mover)
+			elseif state.phase == Phase.Mulligan then
+				if humanMulligan(state, mover) == "quit" then
+					say("\n종료합니다.")
+					return
+				end
 			else
 				if humanTurn(state, mover) == "quit" then
 					say("\n종료합니다.")

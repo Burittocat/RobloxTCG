@@ -130,7 +130,44 @@ function GameState.new(opts)
 		end
 	end
 
+	--[[
+		멀리건 관문. 판이 시작되기 **전** 상태다.
+
+		동시에 묻지 않고 선공부터 차례로 묻는다. 각자 자기 손패만 보므로 동시에 하는
+		것과 결과가 같고, 대신 "지금 누가 결정할 차례인가" 가 activePlayerId 하나로
+		표현된다 — 우선권·화면·AI 가 전부 이미 그것만 보고 있어서, 관문을 위해
+		따로 고쳐야 하는 곳이 없다.
+	]]
+	state.mulligan = { kept = { false, false } }
+	state.activePlayerId = state.startingPlayerId
+
 	return state
+end
+
+--==========================================================================
+-- 멀리건
+--==========================================================================
+
+--[[
+	손패를 통째로 덱에 되돌려 섞고 같은 장수를 다시 뽑는다.
+
+	벌칙이 없으므로(Config 주석 참조) 한 번 쓰면 그것으로 그 사람의 결정은 끝난다 —
+	새 손패를 보고 또 물릴 수 있다면 그건 무료 1회가 아니다.
+]]
+function GameState.mulliganHand(state, playerId)
+	local player = state.players[playerId]
+
+	for _, instanceId in table.clone(player.hand) do
+		GameState.moveCard(state, state.cards[instanceId], Zone.Deck)
+	end
+
+	state.rng:shuffle(player.deck)
+
+	for _ = 1, Config.startingHandSize do
+		GameState.drawCard(state, playerId)
+	end
+
+	player.hasMulliganed = true
 end
 
 --==========================================================================

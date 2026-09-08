@@ -80,6 +80,70 @@ local function clickQueue(player)
 	Screen.click(button)
 end
 
+--[[
+	멀리건 관문을 통과한다. 판은 여기서부터 시작한다 —
+	관문에 서 있는 동안에는 '페이즈 종료' 가 꺼져 있어서 아무것도 굴러가지 않는다.
+	(관문 자체가 제대로 뜨는지는 아래 "멀리건 관문" 절이 본다)
+]]
+--[[
+	그 버튼이 눌릴 수 있게 될 때까지 시간을 감는다.
+
+	AI 는 한 수에 0.55초씩 쓰므로 "몇 초 감고 확인" 은 AI 가 얼마나 둘 게 많은지에
+	따라 깜빡인다. 조건이 만족될 때까지 기다리고, 못 기다리면 nil 을 돌려준다.
+]]
+local function waitForButton(world, player, text, budget)
+	local waited = 0
+	while waited <= (budget or 30) do
+		local button = Screen.findButton(guiOf(player), text)
+		if button and button.Active then
+			return button
+		end
+		world:advance(0.5)
+		waited += 0.5
+	end
+	return nil
+end
+
+--[[
+	멀리건 관문을 통과시킨다. 판은 여기서부터 시작한다 —
+	관문에 서 있는 동안에는 '페이즈 종료' 가 꺼져 있어서 아무것도 굴러가지 않는다.
+
+	**차례가 올 때까지 기다려야 한다.** 관문은 선공부터 차례로 묻고, 자기 차례가
+	아닌 사람의 버튼은 꺼져 있다. 그냥 한 번 보고 지나가면 아무도 안 누른 채로
+	관문에 머무는데, 화면에는 아무 오류도 안 뜬다.
+]]
+local function passMulligan(world, ...)
+	local players = { ... }
+	local kept = {}
+	local waited = 0
+
+	while waited <= 30 do
+		local done = true
+
+		for _, player in players do
+			if not kept[player] then
+				local button = Screen.findButton(guiOf(player), "이대로 시작")
+				if button and button.Active then
+					Screen.click(button)
+					kept[player] = true
+				else
+					done = false
+				end
+			end
+		end
+
+		if done then
+			world:advance(1)
+			return true
+		end
+
+		world:advance(0.5)
+		waited += 0.5
+	end
+
+	return false
+end
+
 --==========================================================================
 t:describe("로비 부팅", function()
 	t:it("접속하면 시작 화면이 뜬다", function()
@@ -167,6 +231,7 @@ t:describe("AI 연습", function()
 
 		Screen.click(Screen.findButton(guiOf(kim), "AI 연습"))
 		world:advance(3)
+		t:truthy(passMulligan(world, kim), "멀리건 관문을 통과하지 못했습니다")
 
 		for turn = 1, 30 do
 			local button = Screen.findButton(guiOf(kim), "페이즈 종료")
@@ -242,6 +307,9 @@ t:describe("같은 서버 매칭", function()
 		clickQueue(lee)
 		world:advance(6) -- 폴링 2초 + 준비 왕복
 		assertNoErrors(world, "같은 서버 매칭")
+
+		assert(passMulligan(world, kim, lee), "멀리건 관문을 통과하지 못했습니다")
+		assertNoErrors(world, "멀리건 관문")
 
 		return world, lobby, kim, lee
 	end
@@ -561,6 +629,78 @@ t:describe("화면 배율", function()
 
 		t:eq(root.Size.X.Scale, 1 / scale.Scale)
 		t:eq(root.Size.Y.Scale, 1 / scale.Scale)
+	end)
+end)
+
+--==========================================================================
+-- 멀리건 관문
+--==========================================================================
+
+--[[
+	무료 1회 전체 교체. 룰 자체는 tests/specs/mulligan.luau 가 보고,
+	여기서는 "화면에 실제로 뜨고 눌리는가" 만 본다.
+]]
+t:describe("멀리건 관문", function()
+	local function practice()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "AI 연습"))
+		world:advance(3)
+		assertNoErrors(world, "AI 연습 시작")
+
+		return world, kim
+	end
+
+	t:it("판이 시작되기 전에 손패와 두 버튼이 뜬다", function()
+		local world, kim = practice()
+		local gui = guiOf(kim)
+
+		t:eq(Screen.countNamed(gui, "Hand_"), 7, "관문에서도 손패가 보여야 고를 수 있습니다")
+
+		local mulliganButton = Screen.findButton(gui, "손패 물리기")
+		local keepButton = Screen.findButton(gui, "이대로 시작")
+		t:truthy(mulliganButton and mulliganButton.Active, "'손패 물리기' 가 눌려야 합니다")
+		t:truthy(keepButton and keepButton.Active, "'이대로 시작' 이 눌려야 합니다")
+
+		local endPhase = Screen.findButton(gui, "페이즈 종료")
+		t:falsy(endPhase and endPhase.Active, "관문에서는 판이 굴러가면 안 됩니다")
+		t:eq(world:errors()[1], nil)
+	end)
+
+	t:it("이대로 시작을 누르면 판이 굴러간다", function()
+		local world, kim = practice()
+
+		t:truthy(passMulligan(world, kim), "'이대로 시작' 이 눌려야 합니다")
+		assertNoErrors(world, "관문 통과")
+
+		-- 선공이 AI 면 AI 가 1턴을 다 두고 나서야 내 차례가 온다.
+		t:truthy(
+			waitForButton(world, kim, "페이즈 종료"),
+			"판이 시작되면 언젠가는 내 차례가 와야 합니다"
+		)
+
+		-- 후공이면 자기 턴 드로우로 한 장 늘어 있다.
+		local hand = Screen.countNamed(guiOf(kim), "Hand_")
+		t:truthy(hand == 7 or hand == 8, ("손패가 %d 장입니다"):format(hand))
+	end)
+
+	t:it("물리면 손패가 새로 오고 판이 시작된다", function()
+		local world, kim = practice()
+
+		Screen.click(Screen.findButton(guiOf(kim), "손패 물리기"))
+		world:advance(1.5)
+		assertNoErrors(world, "손패 물리기")
+
+		t:eq(Screen.countNamed(guiOf(kim), "Hand_"), 7, "같은 장수를 다시 뽑습니다")
+
+		-- 무료 1회다 — 물린 자리에서 결정이 끝나므로 관문 버튼은 더 이상 눌리지 않는다.
+		local mulliganButton = Screen.findButton(guiOf(kim), "손패 물리기")
+		t:falsy(mulliganButton and mulliganButton.Active, "두 번째 물리기는 없습니다")
+
+		t:truthy(waitForButton(world, kim, "페이즈 종료"), "물린 뒤에는 판이 시작돼야 합니다")
 	end)
 end)
 

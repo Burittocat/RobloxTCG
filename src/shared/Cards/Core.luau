@@ -267,4 +267,179 @@ return {
 		},
 		rarity = "Common",
 	},
+	--======================================================================
+	-- 2026-09-09 확충 — 덱 순환(드로우) 축과 코스트 곡선 메우기
+	--
+	-- 왜 드로우 축을 먼저 세웠나: AI 자기대국 60판에서 판이 평균 30턴인데
+	-- 덱은 1/3(21장)밖에 쓰이지 않았다. 카드를 더 못 봐서 길어지는 판이라,
+	-- 카드 종류를 늘리는 것보다 "덱이 도는 속도" 를 먼저 올려야 했다.
+	--======================================================================
+
+	--======================================================================
+	-- 드로우 / 순환
+	--======================================================================
+	{
+		id = "SPL_INSIGHT",
+		name = "통찰",
+		type = CardType.Spell,
+		cost = 1,
+		speed = "Normal",
+		--[[
+			일부러 즉시시전이 아니다. 즉시시전으로 두면 "대응용으로 쥐고 있는 카드" 가
+			되어 손에서 안 나가고, 그러면 덱이 도는 데 전혀 기여하지 않는다.
+			(실제로 그렇게 만들었다가 계측에서 그대로 드러났다)
+		]]
+		text = "카드 1 장을 뽑는다.",
+		effects = {
+			{ kind = "Draw", amount = 1 },
+		},
+		rarity = "Common",
+	},
+	{
+		id = "SPL_ARCHIVE",
+		name = "서고 개방",
+		type = CardType.Spell,
+		cost = 4,
+		speed = "Normal",
+		text = "카드 3 장을 뽑는다.",
+		effects = {
+			{ kind = "Draw", amount = 3 },
+		},
+		rarity = "Rare",
+	},
+	{
+		id = "CRE_SCRIBE",
+		name = "종군 서기",
+		type = CardType.Creature,
+		cost = 2,
+		power = 1,
+		toughness = 2,
+		text = "소환하면 카드 1 장을 뽑는다.",
+		onSummon = {
+			{ kind = "Draw", amount = 1 },
+		},
+		rarity = "Common",
+	},
+	{
+		id = "CRE_HERALD",
+		name = "전령",
+		type = CardType.Creature,
+		cost = 4,
+		power = 3,
+		toughness = 3,
+		keywords = { KW.Haste },
+		text = "신속. 소환하면 카드 1 장을 뽑는다.",
+		onSummon = {
+			{ kind = "Draw", amount = 1 },
+		},
+		rarity = "Rare",
+	},
+
+	--======================================================================
+	-- 생물 — 곡선 메우기
+	--======================================================================
+	{
+		id = "CRE_SQUIRE",
+		name = "종자",
+		type = CardType.Creature,
+		cost = 1,
+		power = 2,
+		toughness = 1,
+		text = "먼저 나가서 먼저 때린다.",
+		rarity = "Common",
+	},
+	{
+		id = "CRE_SENTRY",
+		name = "초소병",
+		type = CardType.Creature,
+		cost = 2,
+		power = 1,
+		toughness = 4,
+		keywords = { KW.Taunt },
+		text = "도발 — 이 생물이 있으면 플레이어를 직접 공격할 수 없다.",
+		rarity = "Common",
+	},
+	{
+		id = "CRE_FALCONER",
+		name = "매부리",
+		type = CardType.Creature,
+		cost = 3,
+		power = 2,
+		toughness = 3,
+		keywords = { KW.Flying },
+		text = "비행 — 지상 생물은 이 생물을 공격하거나 방어할 수 없다.",
+		rarity = "Common",
+	},
+	{
+		id = "CRE_LANCER",
+		name = "창기병",
+		type = CardType.Creature,
+		cost = 4,
+		power = 4,
+		toughness = 4,
+		text = "중반을 버티는 몸값.",
+		rarity = "Common",
+	},
+	{
+		id = "CRE_BERSERKER",
+		name = "광전사",
+		type = CardType.Creature,
+		cost = 4,
+		power = 5,
+		toughness = 3,
+		keywords = { KW.Haste },
+		text = "신속 — 소환한 턴에 바로 공격할 수 있다.",
+		rarity = "Rare",
+	},
+	{
+		id = "CRE_TITAN",
+		name = "태고의 거석",
+		type = CardType.Creature,
+		cost = 6,
+		power = 7,
+		toughness = 7,
+		text = "여기까지 끌고 왔다면 이길 자격이 있다.",
+		rarity = "Rare",
+	},
+
+	--======================================================================
+	-- 마법 — 제거와 보강
+	--======================================================================
+	{
+		id = "SPL_SNIPE",
+		name = "저격",
+		type = CardType.Spell,
+		cost = 2,
+		speed = "Instant",
+		keywords = { KW.Instant },
+		text = "즉시시전 — 생물 하나에게 2 피해.",
+		effects = {
+			{ kind = "Damage", amount = 2, target = "AnyCreature" },
+		},
+		rarity = "Common",
+	},
+	{
+		id = "SPL_BANISH",
+		name = "추방",
+		type = CardType.Spell,
+		cost = 3,
+		speed = "Normal",
+		text = "적 생물 하나를 덱으로 돌려보낸다.",
+		effects = {
+			{ kind = "ToDeck", target = "EnemyCreature" },
+		},
+		rarity = "Common",
+	},
+	{
+		id = "SPL_REINFORCE",
+		name = "증원",
+		type = CardType.Spell,
+		cost = 3,
+		speed = "Normal",
+		text = "아군 생물 하나가 +2/+2 를 얻는다.",
+		effects = {
+			{ kind = "Buff", power = 2, toughness = 2, target = "AllyCreature" },
+		},
+		rarity = "Common",
+	},
 }

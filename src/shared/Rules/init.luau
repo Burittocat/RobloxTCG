@@ -44,10 +44,85 @@ local Rules = {
 -- 매치 생명주기
 --==========================================================================
 
+--[[
+	새 매치. -> state
+
+	Config.mulliganEnabled 면 **멀리건 관문에서 멈춘 상태**로 돌아온다. 판은 두 사람이
+	각각 Rules.mulligan / Rules.keepHand 로 결정을 끝낸 뒤에 시작한다.
+
+	opts.mulligan = false 를 주면 관문을 건너뛴다. 판이 이미 시작된 상태를 원하는 곳
+	(테스트 픽스처, 특정 국면 재현)이 쓴다.
+]]
 function Rules.newMatch(opts)
 	local state = GameState.new(opts)
-	Phases.beginMatch(state)
+
+	if Config.mulliganEnabled and opts.mulligan ~= false then
+		state.phase = Enums.Phase.Mulligan
+	else
+		state.mulligan = nil
+		Phases.beginMatch(state)
+	end
+
 	return state
+end
+
+--==========================================================================
+-- 멀리건 관문
+--==========================================================================
+
+local function mulliganGateCheck(state, playerId)
+	if state.phase ~= Enums.Phase.Mulligan then
+		return false, "지금은 멀리건을 할 수 없습니다"
+	end
+	if playerId ~= state.activePlayerId then
+		return false, "상대가 결정하는 중입니다"
+	end
+	return true
+end
+
+--[[
+	두 사람이 다 결정했으면 판을 시작하고, 아니면 상대에게 차례를 넘긴다.
+]]
+local function finishMulliganTurn(state, playerId)
+	state.mulligan.kept[playerId] = true
+
+	local other = GameState.opponentOf(playerId)
+	if state.mulligan.kept[other] then
+		Phases.beginMatch(state)
+	else
+		state.activePlayerId = other
+	end
+end
+
+--[[
+	손패를 물린다. 무료지만 1회뿐이고, 물린 그 자리에서 결정이 끝난다 —
+	새 손패를 보고 또 고를 수 있다면 그건 무료 1회가 아니다.
+]]
+function Rules.mulligan(state, playerId)
+	local ok, reason = mulliganGateCheck(state, playerId)
+	if not ok then
+		return false, reason
+	end
+	if state.players[playerId].hasMulliganed then
+		return false, "멀리건은 한 번만 할 수 있습니다"
+	end
+
+	GameState.mulliganHand(state, playerId)
+	GameState.log(state, ("%s 가 손패를 물렸습니다"):format(state.players[playerId].name))
+	finishMulliganTurn(state, playerId)
+
+	return true
+end
+
+-- 이 손패로 시작한다.
+function Rules.keepHand(state, playerId)
+	local ok, reason = mulliganGateCheck(state, playerId)
+	if not ok then
+		return false, reason
+	end
+
+	finishMulliganTurn(state, playerId)
+	return true
 end
 
 --[[
@@ -391,6 +466,12 @@ function Rules.viewFor(state, playerId)
 		combat = state.combat,
 		cards = {},
 		players = {},
+
+		-- 멀리건 관문에서만 있다. 화면이 버튼을 켤지 정하는 데 쓴다.
+		mulligan = state.mulligan and {
+			kept = { state.mulligan.kept[1] or false, state.mulligan.kept[2] or false },
+			used = { state.players[1].hasMulliganed, state.players[2].hasMulliganed },
+		} or nil,
 	}
 
 	local function exposeCard(instanceId)

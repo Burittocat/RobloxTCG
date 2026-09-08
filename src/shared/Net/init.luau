@@ -159,6 +159,7 @@ function Net.packView(view, logTail)
 		stack = stack,
 		attackers = view.combat.attackers,
 		blocks = blocks,
+		mulligan = view.mulligan,
 		log = logTail or {},
 	}
 end
@@ -184,6 +185,7 @@ function Net.unpackView(payload)
 		cards = {},
 		stack = {},
 		combat = { attackers = payload.attackers or {}, blocks = {} },
+		mulligan = payload.mulligan,
 		log = payload.log or {},
 	}
 

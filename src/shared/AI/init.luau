@@ -277,11 +277,49 @@ end
 
 	호출자는 acted 가 false 가 되거나 차례가 넘어갈 때까지 반복하면 된다.
 ]]
+--[[
+	이 손패를 물릴 것인가.
+
+	사람이 실제로 물리는 손패만 물린다 — **코스트가 너무 적거나 너무 많은 패**다.
+	코스트가 0~1 장이면 몇 턴 동안 아무것도 못 내고, 5 장 넘게 잡으면 낼 것이 없다.
+	그 사이는 어떻게든 판이 굴러가므로 건드리지 않는다.
+
+	(카드 풀이 넓어지고 덱 구성이 생기면 여기도 덱을 보고 판단해야 한다.
+	 지금은 스타터 덱 하나뿐이라 코스트 장수만으로 충분하다.)
+]]
+function AI.shouldMulligan(state, playerId)
+	local costCards = 0
+	for _, instanceId in state.players[playerId].hand do
+		if CardDef.isCost(Registry.mustGet(state.cards[instanceId].defId)) then
+			costCards += 1
+		end
+	end
+
+	return costCards <= Config.aiMulliganMinCost or costCards >= Config.aiMulliganMaxCost
+end
+
 function AI.act(state, playerId, difficulty)
 	difficulty = difficulty or AI.Difficulty.Normal
 
 	if state.finished then
 		return false
+	end
+
+	--------------------------------------------------------------------
+	-- 멀리건 관문
+	--------------------------------------------------------------------
+	if state.phase == Phase.Mulligan then
+		if playerId ~= state.activePlayerId then
+			return false
+		end
+
+		if not state.players[playerId].hasMulliganed and AI.shouldMulligan(state, playerId) then
+			Rules.mulligan(state, playerId)
+			return true, "손패를 물렸다"
+		end
+
+		Rules.keepHand(state, playerId)
+		return true, "이 손패로 시작"
 	end
 
 	--------------------------------------------------------------------

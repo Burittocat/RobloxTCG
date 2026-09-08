@@ -60,6 +60,7 @@ local Controller = loader.require(Client.Controller)
 
 local SPECS = {
 	{ name = "setup", run = require("./specs/setup") },
+	{ name = "mulligan", run = require("./specs/mulligan") },
 	{ name = "cost", run = require("./specs/cost") },
 	{ name = "phases", run = require("./specs/phases") },
 	{ name = "keywords", run = require("./specs/keywords") },

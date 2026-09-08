@@ -419,6 +419,10 @@ function Battle:makeActionBar(parent)
 		return button
 	end
 
+	-- 멀리건 관문 전용. 관문 밖에서는 buttonStates 가 꺼둔다.
+	addButton("mulligan", "손패 물리기", 1, Theme.color.stack)
+	addButton("keep", "이대로 시작", 2, Theme.color.creature)
+
 	addButton("endPhase", "페이즈 종료", 3, Theme.color.creature)
 	addButton("pass", "대응 패스", 4, Theme.color.stack)
 	addButton("cancel", "선택 취소", 5)

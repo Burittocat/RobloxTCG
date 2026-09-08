@@ -24,6 +24,9 @@ function Fixture.match(Rules, opts)
 		seed = opts.seed or 12345,
 		startingPlayerId = opts.startingPlayerId or 1,
 		strictDeck = false,
+		-- 픽스처는 "판이 이미 시작된 상태" 를 원한다. 멀리건 관문 자체는
+		-- tests/specs/mulligan.luau 가 본다.
+		mulligan = opts.mulligan or false,
 		players = {
 			{ name = "P1", deck = table.clone(deck) },
 			{ name = "P2", deck = table.clone(deck) },

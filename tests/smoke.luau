@@ -656,7 +656,7 @@ t:describe("덱 편집", function()
 	end
 
 	t:it("시작 화면에서 덱 편집을 열 수 있다", function()
-		local world, _, kim = openEditor()
+		local _, _, kim = openEditor()
 		local gui = guiOf(kim)
 
 		t:truthy(Screen.hasText(gui, "덱 편집"), "덱 편집 화면이 떠야 합니다")
@@ -680,7 +680,7 @@ t:describe("덱 편집", function()
 	end)
 
 	t:it("저장한 덱으로 다음 판이 열린다", function()
-		local world, lobby, kim = openEditor()
+		local world, _, kim = openEditor()
 
 		-- 스타터에 없는 카드(초소병)를 넣고 그만큼 코스트를 뺀다.
 		local catalog = Screen.find(guiOf(kim), "Catalog")

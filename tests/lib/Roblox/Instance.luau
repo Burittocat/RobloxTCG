@@ -413,9 +413,10 @@ local function attachRemote(node)
 	]]
 	rawset(node, "FireClient", function(_, player, ...)
 		if type(player) ~= "table" or not rawget(player, "_isPlayer") then
+			local fields = rawget(node, "_fields")
 			error(
 				("%s:FireClient 의 첫 인자는 Player 여야 합니다 (받은 값: %s)"):format(
-					tostring(rawget(node, "_fields").Name),
+					tostring(fields and fields.Name or "RemoteEvent"),
 					tostring(player)
 				),
 				2

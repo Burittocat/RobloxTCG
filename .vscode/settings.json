@@ -27,7 +27,7 @@
   // 룰 엔진 코드가 전부 탭 들여쓰기다. 섞이면 diff 가 지저분해진다.
   "editor.insertSpaces": false,
   "editor.tabSize": 4,
-  "editor.rulers": [110],
+  "editor.rulers": [140],
   "[luau]": {
     "editor.defaultFormatter": "JohnnyMorganz.stylua",
     "editor.formatOnSave": true

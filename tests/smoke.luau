@@ -747,6 +747,87 @@ t:describe("덱 편집", function()
 		)
 	end)
 
+	--[[
+		목록은 스크롤 영역보다 길다(카드 32종). UIListLayout 이 세로 가운데 정렬이면
+		내용이 위아래로 똑같이 넘쳐서 **맨 위가 잘리고 스크롤로도 못 올라간다.**
+		실제로 그렇게 나와 있었다 — 생물 목록의 첫 줄이 안 보였다.
+
+		잘림 자체는 이 하네스가 레이아웃을 계산하지 않아 못 잰다. 대신 원인이었던
+		설정을 못 박는다.
+	]]
+	t:it("목록은 위에서부터 쌓인다", function()
+		local _, _, kim = openEditor()
+
+		for _, panelName in { "Catalog", "Deck" } do
+			local list = Screen.find(Screen.find(guiOf(kim), panelName), "List")
+			local layout
+
+			for _, child in list:GetChildren() do
+				if child.ClassName == "UIListLayout" then
+					layout = child
+				end
+			end
+
+			t:truthy(layout, ("%s 목록에 UIListLayout 이 없습니다"):format(panelName))
+			t:eq(
+				tostring(layout.VerticalAlignment),
+				tostring(Roblox.Datatypes.Enum.VerticalAlignment.Top),
+				("%s 목록이 가운데 정렬이면 맨 위가 잘린다"):format(panelName)
+			)
+		end
+	end)
+
+	t:it("카드를 오른쪽 클릭하면 자세히 보여준다", function()
+		local world, _, kim = openEditor()
+		local gui = guiOf(kim)
+
+		local hawk = Screen.findNamed(Screen.find(gui, "Catalog"), "Card_CRE_HAWK")
+		t:truthy(hawk, "카드 목록에 창공의 매가 있어야 합니다")
+
+		Screen.rightClick(hawk)
+		world:advance(0.2)
+		assertNoErrors(world, "카드 상세")
+
+		-- 창공의 매: 2코 2/1 비행
+		t:truthy(Screen.hasText(gui, "창공의 매"), "카드 이름")
+		t:truthy(Screen.hasText(gui, "공격력 2"), "공격력")
+		t:truthy(Screen.hasText(gui, "생명력 1"), "생명력")
+		t:truthy(Screen.hasText(gui, "코스트 2"), "코스트")
+		t:truthy(Screen.hasText(gui, "비행"), "태그")
+		t:truthy(Screen.hasText(gui, "내 덱에 3장"), "내 덱에 몇 장인지")
+	end)
+
+	t:it("상세를 열어둔 채 카드를 넣으면 숫자가 따라간다", function()
+		local world, _, kim = openEditor()
+		local gui = guiOf(kim)
+
+		local catalog = Screen.find(gui, "Catalog")
+		Screen.rightClick(Screen.findNamed(catalog, "Card_CRE_HAWK"))
+		world:advance(0.2)
+		t:truthy(Screen.hasText(gui, "내 덱에 3장"))
+
+		-- 한 장 빼서 자리를 만들고 매를 한 장 더 넣는다.
+		Screen.click(Screen.findNamed(Screen.find(gui, "Deck"), "Card_COST_BASIC"))
+		world:advance(0.2)
+		Screen.click(Screen.findNamed(Screen.find(gui, "Catalog"), "Card_CRE_HAWK"))
+		world:advance(0.2)
+
+		t:truthy(Screen.hasText(gui, "내 덱에 4장"), "열어둔 상세도 같이 갱신돼야 합니다")
+	end)
+
+	t:it("상세는 닫을 수 있고, 화면을 다시 열면 닫혀 있다", function()
+		local world, _, kim = openEditor()
+		local gui = guiOf(kim)
+
+		Screen.rightClick(Screen.findNamed(Screen.find(gui, "Catalog"), "Card_CRE_HAWK"))
+		world:advance(0.2)
+		t:truthy(Screen.hasText(gui, "창공의 매"))
+
+		Screen.click(Screen.findButton(gui, "닫기"))
+		world:advance(0.2)
+		t:falsy(Screen.hasText(gui, "공격력 2"), "닫으면 안 보여야 합니다")
+	end)
+
 	t:it("스타터 덱으로 되돌릴 수 있다", function()
 		local world, _, kim = openEditor()
 

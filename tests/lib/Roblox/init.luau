@@ -1134,6 +1134,17 @@ function Screen.click(button)
 	assert(rawget(button, "_signals")).Activated:Fire()
 end
 
+--[[
+	오른쪽 버튼으로 누른다. 카드 상세 보기처럼 "누르는 것과 들여다보는 것" 이
+	다른 조작일 때 쓴다.
+]]
+function Screen.rightClick(button)
+	if button.Active == false then
+		error(("'%s' 버튼은 지금 꺼져 있습니다"):format(tostring(button.Text)), 2)
+	end
+	assert(rawget(button, "_signals")).MouseButton2Click:Fire()
+end
+
 function Screen.dump(root)
 	local lines = {}
 	walk(root, function(node)

@@ -378,7 +378,7 @@ end
 --==========================================================================
 
 local SIGNALS = {
-	TextButton = { "Activated", "MouseButton1Click" },
+	TextButton = { "Activated", "MouseButton1Click", "MouseButton2Click" },
 	ScreenGui = {},
 }
 

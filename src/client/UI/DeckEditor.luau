@@ -54,7 +54,7 @@ end
 	카드 한 장을 나타내는 줄. 목록에서도 덱에서도 같은 모양을 쓴다 —
 	같은 카드가 자리에 따라 달라 보이면 옮겨 다니는 동안 눈이 카드를 놓친다.
 ]]
-local function cardRow(parent, def, order, count, onClick)
+local function cardRow(parent, def, order, count, onClick, onInspect)
 	local body = def.power and ("%d/%d"):format(def.power, def.toughness) or "—"
 	local tags = keywordText(def)
 
@@ -65,6 +65,12 @@ local function cardRow(parent, def, order, count, onClick)
 		Size = UDim2.new(1, 0, 0, 34),
 		BackgroundColor3 = Theme.color.panelSoft,
 	}, onClick)
+
+	-- 왼쪽 클릭은 넣고 빼는 것, 오른쪽 클릭은 들여다보는 것. 두 조작이 섞이면
+	-- "보려고 눌렀는데 덱이 바뀌는" 일이 생긴다.
+	if onInspect then
+		button.MouseButton2Click:Connect(onInspect)
+	end
 
 	Widgets.label(("%s   %s"):format(def.name, tags), {
 		Parent = button,
@@ -140,7 +146,7 @@ function DeckEditor:build(parent)
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.new(1, -80, 1, -60),
 	}, {
-		Widgets.listLayout(Enum.FillDirection.Vertical, 10),
+		Widgets.listLayout(Enum.FillDirection.Vertical, 10, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Top),
 	})
 
 	--------------------------------------------------------------------
@@ -221,7 +227,14 @@ function DeckEditor:build(parent)
 			CanvasSize = UDim2.new(),
 			AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		}, {
-			Widgets.listLayout(Enum.FillDirection.Vertical, 4),
+			--[[
+				**세로 정렬은 Top 이어야 한다.**
+
+				Widgets.listLayout 의 기본값은 Center 다. 내용이 스크롤 영역보다 길어지면
+				위아래로 똑같이 넘쳐서 **맨 위가 잘리고, 스크롤로도 거기까지 못 올라간다**
+				(캔버스는 0 부터인데 내용이 그 위로 밀려 있다). 카드 32장은 항상 넘친다.
+			]]
+			Widgets.listLayout(Enum.FillDirection.Vertical, 4, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Top),
 		})
 
 		return scroll, titleLabel
@@ -264,6 +277,152 @@ function DeckEditor:build(parent)
 	addButton("save", "저장", 1, Theme.color.creature)
 	addButton("reset", "스타터 덱으로", 2)
 	addButton("back", "돌아가기", 3)
+
+	Widgets.label("카드를 오른쪽 클릭하면 자세히 볼 수 있습니다", {
+		Name = "InspectHint",
+		Parent = footer,
+		LayoutOrder = 4,
+		Size = UDim2.fromOffset(320, 40),
+		TextColor3 = Theme.color.textFaint,
+		TextSize = Theme.text.small,
+	})
+
+	self:buildDetail(root)
+end
+
+--==========================================================================
+-- 카드 상세 (오른쪽 클릭)
+--==========================================================================
+
+--[[
+	카드 한 장을 크게 보여준다. 목록의 한 줄은 이름·코스트·공/체까지밖에 못 담는데,
+	덱을 짜려면 그 카드가 **무엇을 하는지**를 봐야 한다.
+
+	화면 가운데를 덮지 않고 오른쪽에 띄운다 — 보면서 계속 목록을 만질 수 있어야 한다.
+]]
+function DeckEditor:buildDetail(root)
+	local panel = Widgets.panel({
+		Name = "Detail",
+		Parent = root,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -50, 0.5, 0),
+		Size = UDim2.fromOffset(300, 340),
+		Visible = false,
+		BackgroundColor3 = Theme.color.panel,
+	}, {
+		Widgets.padding(16),
+		Widgets.listLayout(Enum.FillDirection.Vertical, 8, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Top),
+	})
+	self.detail = panel
+
+	self.detailName = Widgets.label("", {
+		Name = "DetailName",
+		Parent = panel,
+		LayoutOrder = 1,
+		Size = UDim2.new(1, 0, 0, 30),
+		Font = Theme.font.bold,
+		TextSize = 24,
+	})
+
+	self.detailType = Widgets.label("", {
+		Name = "DetailType",
+		Parent = panel,
+		LayoutOrder = 2,
+		Size = UDim2.new(1, 0, 0, 20),
+		TextColor3 = Theme.color.textDim,
+		TextSize = Theme.text.label,
+	})
+
+	self.detailStat = Widgets.label("", {
+		Name = "DetailStat",
+		Parent = panel,
+		LayoutOrder = 3,
+		Size = UDim2.new(1, 0, 0, 34),
+		Font = Theme.font.bold,
+		TextColor3 = Theme.color.accent,
+		TextSize = Theme.text.stat,
+	})
+
+	self.detailTags = Widgets.label("", {
+		Name = "DetailTags",
+		Parent = panel,
+		LayoutOrder = 4,
+		Size = UDim2.new(1, 0, 0, 22),
+		TextColor3 = Theme.color.stack,
+		TextSize = Theme.text.label,
+	})
+
+	self.detailText = Widgets.label("", {
+		Name = "DetailText",
+		Parent = panel,
+		LayoutOrder = 5,
+		Size = UDim2.new(1, 0, 0, 120),
+		TextColor3 = Theme.color.text,
+		TextSize = Theme.text.body,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+	})
+
+	self.detailDeck = Widgets.label("", {
+		Name = "DetailDeck",
+		Parent = panel,
+		LayoutOrder = 6,
+		Size = UDim2.new(1, 0, 0, 22),
+		TextColor3 = Theme.color.me,
+		TextSize = Theme.text.label,
+	})
+
+	Widgets.button("닫기", {
+		Name = "DetailClose",
+		Parent = panel,
+		LayoutOrder = 7,
+		Size = UDim2.new(1, 0, 0, 32),
+	}, function()
+		self:hideDetail()
+	end)
+end
+
+local TYPE_LONG = {
+	[CardType.Cost] = "코스트 카드",
+	[CardType.Creature] = "생물",
+	[CardType.Spell] = "마법",
+}
+
+function DeckEditor:showDetail(def)
+	self.detailDef = def
+
+	self.detailName.Text = def.name
+	self.detailType.Text = ("%s%s"):format(
+		TYPE_LONG[def.type] or def.type,
+		def.rarity == "Rare" and "  ·  희귀" or ""
+	)
+
+	local parts = {}
+	if def.cost then
+		table.insert(parts, ("코스트 %d"):format(def.cost))
+	end
+	if def.power then
+		table.insert(parts, ("공격력 %d"):format(def.power))
+		table.insert(parts, ("생명력 %d"):format(def.toughness))
+	end
+	self.detailStat.Text = table.concat(parts, "   ")
+
+	local tags = keywordText(def)
+	self.detailTags.Text = (tags ~= "") and tags or "태그 없음"
+	self.detailText.Text = def.text or "특별한 효과가 없습니다."
+
+	local count = self.counts[def.id] or 0
+	local max = Decks.maxCopies(def.id)
+	self.detailDeck.Text = (max >= Config.deckSize)
+			and ("내 덱에 %d장 (매수 제한 없음)"):format(count)
+		or ("내 덱에 %d장 / 최대 %d장"):format(count, max)
+
+	self.detail.Visible = true
+end
+
+function DeckEditor:hideDetail()
+	self.detail.Visible = false
+	self.detailDef = nil
 end
 
 function DeckEditor:setVisible(visible)
@@ -376,6 +535,8 @@ function DeckEditor:render()
 
 		cardRow(self.catalogList, def, order, self.counts[def.id], function()
 			self:add(def.id)
+		end, function()
+			self:showDetail(def)
 		end)
 	end
 
@@ -386,6 +547,8 @@ function DeckEditor:render()
 			order += 1
 			cardRow(self.deckList, def, order, count, function()
 				self:remove(def.id)
+			end, function()
+				self:showDetail(def)
 			end)
 		end
 	end
@@ -396,6 +559,12 @@ function DeckEditor:render()
 
 	-- 60장이 아니면 저장을 아예 못 누른다. 서버가 거부할 것을 미리 막는다.
 	Widgets.setEnabled(self.saveButton, total == Config.deckSize)
+
+	-- 열어둔 상세의 "내 덱에 N장" 도 같이 따라가야 한다. 안 그러면 넣고 뺀 직후에
+	-- 옛 숫자가 남아 "안 들어갔나?" 하게 된다.
+	if self.detailDef then
+		self:showDetail(self.detailDef)
+	end
 end
 
 --[[
@@ -407,6 +576,7 @@ function DeckEditor:load(payload)
 		self.counts[entry.id] = entry.count
 	end
 
+	self:hideDetail()
 	self:render()
 	self:setMessage(payload.text, payload.saved == true)
 end

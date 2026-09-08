@@ -186,6 +186,23 @@ local function emptyHighlights()
 end
 
 --[[
+	지금 선언된 공격자 중 이 생물이 하나라도 막을 수 있는가.
+
+	`tapped` 만 보면 안 된다. 비행 공격자만 들어온 턴에는 지상 비원거리 생물을
+	Combat.canBlock 이 전부 거부하는데, 그걸 안 보면 초록 테두리는 다 켜지고
+	눌러 들어가 봐야 고를 공격자가 없어 '선택 취소' 로만 나오게 된다.
+]]
+local function canBlockAnyAttacker(view, blocker)
+	for _, declaration in view.combat.attackers do
+		local attacker = view.cards[declaration.id]
+		if attacker and Combat.canBlock(view, blocker, attacker) then
+			return true
+		end
+	end
+	return false
+end
+
+--[[
 	지금 모드에서 누를 수 있는 것들. Battle 은 이 표만 보고 테두리를 칠한다.
 ]]
 function Controller:highlights()
@@ -258,7 +275,8 @@ function Controller:highlights()
 			end
 		elseif view.phase == Phase.DefensePrep and view.activePlayerId == self.foe then
 			for _, instance in GameState.creaturesOnField(view, self.me) do
-				if not instance.tapped and not view.combat.blocks[instance.id] then
+				-- canBlock 이 탭·필드 여부까지 보므로 여기서 또 보지 않는다.
+				if not view.combat.blocks[instance.id] and canBlockAnyAttacker(view, instance) then
 					out.creature[instance.id] = true
 				end
 			end
@@ -527,6 +545,10 @@ function Controller:onFieldCard(instanceId)
 		end
 		if view.combat.blocks[instanceId] then
 			self.battle:showToast("이미 방어를 배정한 생물입니다", "error")
+			return
+		end
+		if not canBlockAnyAttacker(view, instance) then
+			self.battle:showToast("이 생물이 막을 수 있는 공격자가 없습니다 (비행 확인)", "error")
 			return
 		end
 

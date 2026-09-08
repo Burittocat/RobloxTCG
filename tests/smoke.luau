@@ -633,6 +633,137 @@ t:describe("화면 배율", function()
 end)
 
 --==========================================================================
+-- 덱 편집 · 저장
+--==========================================================================
+
+--[[
+	덱은 DataStore 에 저장되고, 다음 판은 그 덱으로 열린다.
+	Studio 에서는 API 접근이 꺼져 있으면 저장 자체가 안 되므로, 게시하기 전에
+	여기서 "눌러서 저장되고 그 덱으로 판이 열리는가" 까지 확인해둔다.
+]]
+t:describe("덱 편집", function()
+	local function openEditor()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "덱 편집"))
+		world:advance(1)
+		assertNoErrors(world, "덱 편집 열기")
+
+		return world, lobby, kim
+	end
+
+	t:it("시작 화면에서 덱 편집을 열 수 있다", function()
+		local world, _, kim = openEditor()
+		local gui = guiOf(kim)
+
+		t:truthy(Screen.hasText(gui, "덱 편집"), "덱 편집 화면이 떠야 합니다")
+		t:truthy(Screen.hasText(gui, "60 / 60 장"), "저장된 덱(스타터 60장)이 채워져 있어야 합니다")
+		t:truthy(Screen.countNamed(gui, "Card_") > 30, "카드 목록이 그려져야 합니다")
+	end)
+
+	t:it("60장이 아니면 저장할 수 없다", function()
+		local world, _, kim = openEditor()
+
+		-- 덱 쪽 목록에서 한 장 뺀다.
+		local deckList = Screen.find(guiOf(kim), "Deck")
+		local row = Screen.findNamed(deckList, "Card_")
+		Screen.click(row)
+		world:advance(0.5)
+
+		t:truthy(Screen.hasText(guiOf(kim), "59 / 60 장"), "한 장 빠져야 합니다")
+
+		local save = Screen.findButton(guiOf(kim), "저장")
+		t:falsy(save and save.Active, "60장이 아니면 저장이 꺼져 있어야 합니다")
+	end)
+
+	t:it("저장한 덱으로 다음 판이 열린다", function()
+		local world, lobby, kim = openEditor()
+
+		-- 스타터에 없는 카드(초소병)를 넣고 그만큼 코스트를 뺀다.
+		local catalog = Screen.find(guiOf(kim), "Catalog")
+		local deckList = Screen.find(guiOf(kim), "Deck")
+
+		Screen.click(Screen.findNamed(deckList, "Card_COST_BASIC"))
+		world:advance(0.2)
+		Screen.click(Screen.findNamed(catalog, "Card_CRE_SENTRY"))
+		world:advance(0.2)
+
+		t:truthy(Screen.hasText(guiOf(kim), "60 / 60 장"), "다시 60장이어야 합니다")
+
+		Screen.click(Screen.findButton(guiOf(kim), "저장"))
+		world:advance(1)
+		assertNoErrors(world, "덱 저장")
+		t:truthy(Screen.hasText(guiOf(kim), "저장했습니다"), "저장 결과를 알려줘야 합니다")
+
+		--[[
+			화면 문구만 보면 "저장했다고 말하는 것" 까지밖에 확인이 안 된다.
+			실제로 저장소에 들어갔는지를 저장된 값에서 직접 본다.
+		]]
+		local stored = world.dataStores["PlayerDecks_v1"][("user_%d"):format(kim.UserId)]
+		t:truthy(stored, "DataStore 에 덱이 들어가야 합니다")
+
+		local savedSentry
+		for _, entry in stored do
+			if entry.id == "CRE_SENTRY" then
+				savedSentry = entry.count
+			end
+		end
+		t:eq(savedSentry, 1, "방금 넣은 카드가 저장돼야 합니다")
+
+		Screen.click(Screen.findButton(guiOf(kim), "돌아가기"))
+		world:advance(1)
+		Screen.click(Screen.findButton(guiOf(kim), "AI 연습"))
+		world:advance(3)
+		assertNoErrors(world, "저장한 덱으로 대전")
+
+		t:truthy(passMulligan(world, kim), "멀리건 관문을 통과하지 못했습니다")
+		t:truthy(waitForButton(world, kim, "페이즈 종료"), "판이 시작돼야 합니다")
+	end)
+
+	t:it("다시 열면 저장한 덱이 그대로 있다", function()
+		local world, _, kim = openEditor()
+
+		local catalog = Screen.find(guiOf(kim), "Catalog")
+		local deckList = Screen.find(guiOf(kim), "Deck")
+		Screen.click(Screen.findNamed(deckList, "Card_COST_BASIC"))
+		world:advance(0.2)
+		Screen.click(Screen.findNamed(catalog, "Card_CRE_SENTRY"))
+		world:advance(0.2)
+		Screen.click(Screen.findButton(guiOf(kim), "저장"))
+		world:advance(1)
+
+		Screen.click(Screen.findButton(guiOf(kim), "돌아가기"))
+		world:advance(1)
+		Screen.click(Screen.findButton(guiOf(kim), "덱 편집"))
+		world:advance(1)
+
+		local deckAgain = Screen.find(guiOf(kim), "Deck")
+		t:truthy(
+			Screen.findNamed(deckAgain, "Card_CRE_SENTRY"),
+			"저장한 카드가 다시 열었을 때도 있어야 합니다"
+		)
+	end)
+
+	t:it("스타터 덱으로 되돌릴 수 있다", function()
+		local world, _, kim = openEditor()
+
+		local deckList = Screen.find(guiOf(kim), "Deck")
+		Screen.click(Screen.findNamed(deckList, "Card_COST_BASIC"))
+		world:advance(0.2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "스타터 덱으로"))
+		world:advance(1)
+		assertNoErrors(world, "스타터 덱으로")
+
+		t:truthy(Screen.hasText(guiOf(kim), "60 / 60 장"))
+		t:truthy(Screen.hasText(guiOf(kim), "되돌"), "결과를 알려줘야 합니다")
+	end)
+end)
+
+--==========================================================================
 -- 멀리건 관문
 --==========================================================================
 

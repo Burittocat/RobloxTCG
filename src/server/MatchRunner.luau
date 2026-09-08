@@ -146,9 +146,17 @@ function MatchRunner:start(seed)
 	self.seed = seed or self.pendingSeed or Random.new():NextInteger(1, 2147483646)
 	self.pendingSeed = nil
 
+	--[[
+		좌석이 자기 덱을 들고 온다. 안 들고 왔으면(AI, 저장 실패) 스타터 덱이다 —
+		여기서 nil 이 되면 판이 열리다가 죽는다.
+	]]
 	local players = {}
 	for seatId = 1, 2 do
-		players[seatId] = { name = self:seatName(seatId), deck = Decks.starter() }
+		local seat = self.seats[seatId]
+		players[seatId] = {
+			name = self:seatName(seatId),
+			deck = seat and seat.deck or Decks.starter(),
+		}
 	end
 
 	self.state = Rules.newMatch({

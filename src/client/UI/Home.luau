@@ -103,7 +103,7 @@ function Home:build(parent)
 		Parent = column,
 		LayoutOrder = 3,
 		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 142),
+		Size = UDim2.new(1, 0, 0, 196),
 	}, {
 		Widgets.listLayout(Enum.FillDirection.Vertical, 10, Enum.HorizontalAlignment.Center),
 	})
@@ -125,6 +125,15 @@ function Home:build(parent)
 		TextSize = Theme.text.title,
 	}, function()
 		self.callbacks.practice()
+	end)
+
+	self.deckButton = Widgets.button("덱 편집", {
+		Parent = self.menu,
+		LayoutOrder = 3,
+		Size = UDim2.new(0, 320, 0, 44),
+		TextSize = Theme.text.label,
+	}, function()
+		self.callbacks.deck()
 	end)
 
 	--------------------------------------------------------------------

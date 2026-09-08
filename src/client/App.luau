@@ -17,6 +17,7 @@ local Net = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").
 
 local Battle = require(script.Parent.UI.Battle)
 local Home = require(script.Parent.UI.Home)
+local DeckEditor = require(script.Parent.UI.DeckEditor)
 local Controller = require(script.Parent.Controller)
 
 local Screen = Net.LobbyScreen
@@ -33,6 +34,22 @@ function App.new(playerGui, remotes)
 
 	self.home = Home.new(playerGui)
 	self.battle = Battle.new(playerGui)
+	self.deck = DeckEditor.new(playerGui)
+
+	--[[
+		덱 편집의 세 버튼. 저장·되돌리기는 서버가 판단하고 화면을 다시 내려주므로
+		여기서는 보내기만 한다 — 클라이언트가 스스로 "저장됐다" 로 넘어가면,
+		거부당한 덱이 저장된 것처럼 보인다.
+	]]
+	self.deck.callbacks.save = function()
+		self:send({ kind = "deckSave", entries = self.deck:entries() })
+	end
+	self.deck.callbacks.reset = function()
+		self:send({ kind = "deckReset" })
+	end
+	self.deck.callbacks.back = function()
+		self:send({ kind = "home" })
+	end
 	self.controller = Controller.new(self.battle, remotes)
 
 	self.home.callbacks.queue = function()
@@ -43,6 +60,9 @@ function App.new(playerGui, remotes)
 	end
 	self.home.callbacks.practice = function()
 		self:send({ kind = "practice" })
+	end
+	self.home.callbacks.deck = function()
+		self:send({ kind = "deck" })
 	end
 
 	remotes.Lobby.OnClientEvent:Connect(function(payload)
@@ -68,6 +88,16 @@ function App:show(payload)
 	local screen = payload.screen
 	local wasBattle = (self.screen == Screen.Battle)
 	self.screen = screen
+
+	if screen == Screen.Deck then
+		self.home:setVisible(false)
+		self.battle:setVisible(false)
+		self.deck:setVisible(true)
+		self.deck:load(payload)
+		return
+	end
+
+	self.deck:setVisible(false)
 
 	if screen == Screen.Battle then
 		self.home:setVisible(false)

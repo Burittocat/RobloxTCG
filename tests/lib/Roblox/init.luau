@@ -165,6 +165,7 @@ function Roblox.newWorld(opts)
 		nextJobId = 1,
 		nextUserId = 100,
 		nextAccessCode = 1,
+		dataStores = {}, -- 이름 -> { key -> 값 }
 
 		memoryStore = {}, -- 이름 -> 큐
 		subscribers = {}, -- 토픽 -> { fn }
@@ -495,6 +496,51 @@ function Server:service(name, vm)
 					world.memoryStore[key] = makeQueue(world, invisibilityTimeout or 30)
 				end
 				return world.memoryStore[key]
+			end,
+		}
+	end
+
+	--[[
+		DataStore. 진짜와 같은 성질 세 가지를 지킨다.
+
+		  · 값을 **직렬화해서** 담는다 (참조를 들고 있으면 저장 안 한 변경이 남는다)
+		  · UpdateAsync 는 현재 값을 받아 새 값을 돌려주는 함수를 받는다
+		  · 서버가 달라도 같은 저장소를 본다 (월드 하나에 저장소 하나)
+
+		흉내내지 않는 것: 호출 한도(throttle), 6분 캐시, 실패. 실패를 흉내내려면
+		테스트가 실패를 넣을 수 있어야 하는데, 그건 필요해질 때 만든다.
+	]]
+	if name == "DataStoreService" then
+		return {
+			GetDataStore = function(_, storeName)
+				world.dataStores[storeName] = world.dataStores[storeName] or {}
+				local store = world.dataStores[storeName]
+
+				return {
+					GetAsync = function(_, key)
+						return serialized(store[key], ("GetAsync(%s)"):format(tostring(key)))
+					end,
+
+					SetAsync = function(_, key, value)
+						store[key] = serialized(value, ("SetAsync(%s)"):format(tostring(key)))
+					end,
+
+					UpdateAsync = function(_, key, transform)
+						local current = serialized(store[key], "UpdateAsync 현재값")
+						local nextValue = transform(current)
+						if nextValue == nil then
+							return nil -- 진짜 DataStore 도 nil 을 돌려주면 쓰지 않는다
+						end
+						store[key] = serialized(nextValue, ("UpdateAsync(%s)"):format(tostring(key)))
+						return store[key]
+					end,
+
+					RemoveAsync = function(_, key)
+						local old = store[key]
+						store[key] = nil
+						return old
+					end,
+				}
 			end,
 		}
 	end
@@ -1018,6 +1064,42 @@ end
 	Widgets.setEnabled 가 끈 버튼을 테스트가 눌러버리면 "화면에선 못 누르는데
 	테스트는 통과" 가 된다.
 ]]
+--[[
+	이름이 prefix 로 시작하는 **보이는** 노드 하나. 카드처럼 이름이 id 로 끝나는 것을
+	짚을 때 쓴다 (Card_CRE_HAWK 를 "Card_" 로 찾거나 이름 전체로 찾거나 둘 다 된다).
+
+	안 보이는 것은 건너뛴다 — 꺼진 화면 안의 노드를 눌러놓고 "됐다" 고 하면 안 된다.
+]]
+function Screen.findNamed(root, prefix)
+	local found
+
+	local function recurse(node, shown)
+		if found then
+			return
+		end
+
+		local visible = shown
+		if rawget(node, "ClassName") == "ScreenGui" then
+			visible = shown and node.Enabled ~= false
+		end
+		if node:IsA("GuiObject") then
+			visible = visible and node.Visible ~= false
+		end
+
+		if visible and node.Name:sub(1, #prefix) == prefix then
+			found = node
+			return
+		end
+
+		for _, child in node:GetChildren() do
+			recurse(child, visible)
+		end
+	end
+
+	recurse(root, true)
+	return found
+end
+
 --[[
 	이름이 prefix 로 시작하는 보이는 노드 개수. 카드처럼 이름이 id 로 끝나는 것들을 센다.
 ]]

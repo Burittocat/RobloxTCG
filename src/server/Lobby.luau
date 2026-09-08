@@ -21,6 +21,9 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local AI = require(Shared.AI)
 local Net = require(Shared.Net)
 
+local Decks = require(Shared.Decks)
+
+local DeckStore = require(script.Parent.DeckStore)
 local MatchRunner = require(script.Parent.MatchRunner)
 local Matchmaker = require(script.Parent.Matchmaker)
 
@@ -35,6 +38,7 @@ function Lobby.new(remotes, host)
 	self.remotes = remotes
 	self.host = host
 	self.screens = {} :: { [Player]: any }
+	self.deckStore = DeckStore.new()
 
 	self.matchmaker = Matchmaker.new({
 		onMatchFound = function(player, opponentName)
@@ -68,6 +72,7 @@ function Lobby.new(remotes, host)
 	Players.PlayerRemoving:Connect(function(player)
 		self.matchmaker:cancel(player)
 		self.screens[player] = nil
+		self.deckStore:forget(player)
 	end)
 
 	for _, player in Players:GetPlayers() do
@@ -106,6 +111,16 @@ function Lobby:outgoing(payload)
 		screen = payload.screen,
 		elapsed = math.max(0, os.time() - payload.since),
 	}
+end
+
+--[[
+	이 사람이 이번 판에 쓸 덱(목록 모양). 저장이 없거나 못 읽으면 스타터 덱이다.
+]]
+function Lobby:deckFor(player)
+	if not player then
+		return Decks.starter()
+	end
+	return Decks.toList(self.deckStore:get(player))
 end
 
 function Lobby:setScreen(player, payload)
@@ -153,6 +168,19 @@ function Lobby:onMessage(player, payload)
 	elseif payload.kind == "cancel" then
 		self.matchmaker:cancel(player)
 		self:home(player)
+	elseif payload.kind == "home" then
+		--[[
+			시작 화면으로. hello 로는 안 된다 — hello 는 "지금 화면을 다시 달라" 라서
+			덱 편집 화면이 그대로 다시 온다. 돌아가는 것은 별개의 요청이다.
+		]]
+		self.matchmaker:cancel(player)
+		self:home(player)
+	elseif payload.kind == "deck" then
+		self:openDeck(player)
+	elseif payload.kind == "deckSave" then
+		self:saveDeck(player, payload.entries)
+	elseif payload.kind == "deckReset" then
+		self:resetDeck(player)
 	elseif payload.kind == "practice" then
 		self:startPractice(player)
 	elseif payload.kind == "leave" then
@@ -179,6 +207,58 @@ function Lobby:enqueue(player)
 end
 
 --==========================================================================
+-- 덱 편집
+--==========================================================================
+
+--[[
+	덱 편집 화면을 연다.
+
+	판을 두는 중에는 열지 않는다 — 덱은 판이 시작될 때 정해지므로, 두는 중에 바꾸면
+	"바꿨는데 안 바뀌는" 것처럼 보인다. 큐에 서 있을 때도 막는다(같은 이유).
+]]
+function Lobby:openDeck(player)
+	if self.host:runnerFor(player) then
+		return
+	end
+	self.matchmaker:cancel(player)
+
+	self:setScreen(player, {
+		screen = Screen.Deck,
+		entries = self.deckStore:get(player),
+	})
+end
+
+function Lobby:saveDeck(player, entries)
+	local ok, reason = self.deckStore:save(player, entries)
+
+	--[[
+		실패해도 화면은 덱 편집 그대로 두고 이유만 알려준다. 시작 화면으로 되돌리면
+		방금 편집한 것이 통째로 날아간 것처럼 보인다.
+
+		저장에 실패해도 self.deckStore 의 캐시에는 들어가 있다(DeckStore 주석 참조).
+		그래서 이 서버에 있는 동안은 그 덱으로 대전할 수 있다.
+	]]
+	self:setScreen(player, {
+		screen = Screen.Deck,
+		entries = self.deckStore:get(player),
+		saved = ok,
+		text = ok and "저장했습니다" or tostring(reason or "저장하지 못했습니다"),
+	})
+end
+
+function Lobby:resetDeck(player)
+	local starter = Decks.starterEntries()
+	local ok = self.deckStore:save(player, starter)
+
+	self:setScreen(player, {
+		screen = Screen.Deck,
+		entries = self.deckStore:get(player),
+		saved = ok,
+		text = ok and "스타터 덱으로 되돌렸습니다" or "되돌렸지만 저장하지 못했습니다",
+	})
+end
+
+--==========================================================================
 -- AI 연습
 --==========================================================================
 
@@ -190,7 +270,7 @@ function Lobby:startPractice(player)
 
 	local runner = MatchRunner.new(self.remotes, {
 		seats = {
-			[1] = { player = player },
+			[1] = { player = player, deck = self:deckFor(player) },
 			[2] = { ai = AI.Difficulty.Normal, name = "훈련용 AI" },
 		},
 		allowRestart = true, -- 연습이니까 R 로 계속 새 판을 열 수 있다
@@ -207,7 +287,7 @@ end
 function Lobby:startLocalMatch(match, players)
 	local seats = {}
 	for seat = 1, 2 do
-		seats[seat] = { player = players[seat] }
+		seats[seat] = { player = players[seat], deck = self:deckFor(players[seat]) }
 	end
 
 	local runner = MatchRunner.new(self.remotes, {

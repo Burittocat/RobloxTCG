@@ -200,11 +200,10 @@ end
 
 	살아남으면서 잡을 수 있으면 최우선. 라이프가 위험하면 몸빵도 한다.
 ]]
-local function assignOneBlock(state, playerId)
-	local myLife = state.players[playerId].life
-
-	-- 이번 전투로 들어올 총 피해
+-- 막지 않으면 이번 전투로 죽는가.
+local function isDesperate(state, playerId)
 	local incoming = 0
+
 	for _, declaration in state.combat.attackers do
 		if not state.combat.blocks[declaration.id] and declaration.targetKind == "Player" then
 			local attacker = GameState.getCard(state, declaration.id)
@@ -213,7 +212,12 @@ local function assignOneBlock(state, playerId)
 			end
 		end
 	end
-	local desperate = incoming >= myLife
+
+	return incoming >= state.players[playerId].life
+end
+
+local function assignOneBlock(state, playerId)
+	local desperate = isDesperate(state, playerId)
 
 	for _, declaration in state.combat.attackers do
 		local attacker = GameState.getCard(state, declaration.id)
@@ -259,6 +263,103 @@ local function assignOneBlock(state, playerId)
 					local ok = Rules.declareBlocker(state, playerId, best.id, declaration.id)
 					if ok then
 						return true
+					end
+				end
+			end
+		end
+	end
+
+	return false
+end
+
+--[[
+	겹쳐 막는다 — 혼자서는 못 잡는 공격자에 여러 마리를 붙인다. -> ok
+
+	붙이는 조건은 둘이다.
+	  1. 붙이면 **공격자가 죽는다.** 둘이 붙어도 못 잡으면 두 마리를 그냥 내주는 셈이다
+	  2. 내가 잃는 것이 **한 마리 이하** 다. 두 마리를 잃고 하나를 잡는 건 손해다
+	     (라이프가 위험하면 그때는 손해를 감수한다)
+
+	몇 마리가 죽는지는 Combat.splitAmongBlockers 로 미리 재본다. 여기서 따로 계산하면
+	AI 가 예상한 것과 실제 전투 결과가 어긋난다.
+
+	한 번에 필요한 만큼 다 붙인다. 한 마리씩 나눠 붙이면 "첫 마리만 붙고 두 번째가
+	막히는" 중간 상태가 생기고, 그건 그냥 혼자 몸빵한 것이 된다.
+]]
+local function assignGangBlock(state, playerId, desperate)
+	for _, declaration in state.combat.attackers do
+		local attacker = GameState.getCard(state, declaration.id)
+
+		if attacker and Rules.canAssignBlockerTo(state, declaration.id) then
+			-- 지금 붙어 있는 방어자들
+			local current = {}
+			for blockerId, attackerId in state.combat.blocks do
+				if attackerId == declaration.id then
+					local blocker = GameState.getCard(state, blockerId)
+					if blocker then
+						table.insert(current, blocker)
+					end
+				end
+			end
+
+			local damage = 0
+			for _, blocker in current do
+				damage += Keywords.power(blocker)
+			end
+
+			local needed = Keywords.remainingToughness(attacker)
+
+			if damage < needed then
+				-- 자유로운 방어자를 공격력 큰 순으로. 적게 붙일수록 좋다.
+				local free = {}
+				for _, blocker in Combat.legalBlockers(state, attacker) do
+					if not state.combat.blocks[blocker.id] then
+						table.insert(free, blocker)
+					end
+				end
+				table.sort(free, function(a, b)
+					if Keywords.power(a) ~= Keywords.power(b) then
+						return Keywords.power(a) > Keywords.power(b)
+					end
+					return a.id < b.id
+				end)
+
+				local picked = {}
+				local total = damage
+				local room = Config.maxBlockersPerAttacker - #current
+
+				for _, blocker in free do
+					if total >= needed or #picked >= room then
+						break
+					end
+					table.insert(picked, blocker)
+					total += Keywords.power(blocker)
+				end
+
+				if total >= needed and #picked > 0 then
+					-- 이 배정으로 내 쪽이 몇 마리 죽는가
+					local all = table.clone(current)
+					for _, blocker in picked do
+						table.insert(all, blocker)
+					end
+
+					local losses = 0
+					for _, share in Combat.splitAmongBlockers(Keywords.power(attacker), all) do
+						if share.damage >= Keywords.remainingToughness(share.blocker) then
+							losses += 1
+						end
+					end
+
+					if losses <= 1 or desperate then
+						local assigned = false
+						for _, blocker in picked do
+							if Rules.declareBlocker(state, playerId, blocker.id, declaration.id) then
+								assigned = true
+							end
+						end
+						if assigned then
+							return true
+						end
 					end
 				end
 			end
@@ -404,9 +505,16 @@ function AI.act(state, playerId, difficulty)
 	--------------------------------------------------------------------
 	-- 방어 배정
 	--------------------------------------------------------------------
+	--[[
+		한 공격자에 한 마리씩 먼저 붙이고, 더 붙일 데가 없으면 겹쳐 막기를 본다.
+		순서가 중요하다 — 겹쳐 막기부터 하면 다른 공격자가 무방비로 남는다.
+	]]
 	if perms.declareBlockers then
 		if assignOneBlock(state, playerId) then
 			return true, "방어 배정"
+		end
+		if assignGangBlock(state, playerId, isDesperate(state, playerId)) then
+			return true, "겹쳐 막기"
 		end
 	end
 

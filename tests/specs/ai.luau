@@ -128,6 +128,82 @@ return function(t, ctx)
 			end
 		end)
 
+		--[[
+			겹쳐 막기. AI 가 혼자서는 못 잡는 공격자에 여러 마리를 붙이는가.
+		]]
+		t:it("혼자 못 잡는 공격자는 둘이서 막는다", function()
+			local Fixture = ctx.Fixture
+			local state = Fixture.match(Rules)
+			local Field = Rules.Enums.Zone.Field
+
+			local attacker = Fixture.spawn(Rules, state, 1, "CRE_LANCER", Field) -- 4/4
+			Fixture.spawn(Rules, state, 2, "CRE_GUARD", Field) -- 2/3
+			Fixture.spawn(Rules, state, 2, "CRE_GUARD", Field) -- 2/3
+
+			Rules.endPhase(state, 1)
+			t:allowed(Rules.declareAttacker(state, 1, attacker.id))
+			Rules.endPhase(state, 1) -- → DefensePrep (2번이 방어)
+
+			--[[
+				**가장 많이 붙었을 때를 센다.** AI 는 방어를 붙인 다음 페이즈까지 넘기는데,
+				그 순간 전투가 해결되면서 배정이 지워진다 — 다 끝난 뒤에 세면 언제나 0 이다.
+			]]
+			local blockers = 0
+			for _ = 1, 10 do
+				local acted = AI.act(state, 2, AI.Difficulty.Normal)
+
+				local now = 0
+				for _, attackerId in state.combat.blocks do
+					if attackerId == attacker.id then
+						now += 1
+					end
+				end
+				blockers = math.max(blockers, now)
+
+				if not acted or state.phase ~= Rules.Enums.Phase.DefensePrep then
+					break
+				end
+			end
+
+			--[[
+				2/3 한 마리로는 4/4 를 못 잡고 저만 죽는다(그래서 혼자서는 안 막는다).
+				둘이 붙으면 2 + 2 = 4 로 잡고, 죽는 것은 한 마리뿐이다.
+			]]
+			t:eq(blockers, 2, "둘이 붙어야 4/4 를 잡습니다")
+		end)
+
+		t:it("두 마리를 잃으면서까지 겹쳐 막지는 않는다", function()
+			local Fixture = ctx.Fixture
+			local state = Fixture.match(Rules)
+			local Field = Rules.Enums.Zone.Field
+
+			local attacker = Fixture.spawn(Rules, state, 1, "CRE_BRUTE", Field) -- 6/6
+			Fixture.spawn(Rules, state, 2, "CRE_RAIDER", Field) -- 3/2
+			Fixture.spawn(Rules, state, 2, "CRE_RAIDER", Field) -- 3/2
+
+			Rules.endPhase(state, 1)
+			t:allowed(Rules.declareAttacker(state, 1, attacker.id))
+			Rules.endPhase(state, 1)
+
+			-- 3/2 둘이 붙으면 6 을 잡지만 6 피해가 둘을 다 죽인다. 라이프 30 이면 그냥 맞는다.
+			local blockers = 0
+			for _ = 1, 10 do
+				local acted = AI.act(state, 2, AI.Difficulty.Normal)
+
+				local now = 0
+				for _ in state.combat.blocks do
+					now += 1
+				end
+				blockers = math.max(blockers, now)
+
+				if not acted or state.phase ~= Rules.Enums.Phase.DefensePrep then
+					break
+				end
+			end
+
+			t:eq(blockers, 0, "하나 잡자고 둘을 내주지 않습니다")
+		end)
+
 		t:it("모든 카드 인스턴스의 zone 필드가 실제 위치와 일치한다", function()
 			local state = playOut(2025)
 			local Zone = Rules.Enums.Zone

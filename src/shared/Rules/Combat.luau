@@ -222,6 +222,43 @@ end
 --==========================================================================
 
 --[[
+	공격력을 방어자들에게 나눈다. -> { { blocker, damage }, ... }
+
+	**공격자가 자기에게 유리하게 배분한 것으로 친다** — 죽일 수 있는 것부터 치사에
+	필요한 만큼만 주고, 남으면 마지막 방어자에게 몰아준다.
+	(3 공격력이 1/1 과 1/5 에게 막히면 1/1 을 죽이고 2 가 1/5 에게 간다)
+
+	배분 순서를 사람에게 물어보는 게 정석이지만, 그러려면 수비준비가 끝난 뒤에 공격측
+	입력 창이 하나 더 필요하다. 물어보지 않고 정하되 **공격측에 유리한 쪽**으로 고정했다 —
+	겹쳐 막을지는 방어측이 이미 고른 것이라, 배분까지 방어측에 유리하게 두면
+	겹쳐 막기가 언제나 이득이 된다.
+
+	AI 도 이 함수로 "겹쳐 막으면 몇 마리를 잃는가" 를 미리 재본다. 판정이 두 벌이면
+	AI 가 예상한 것과 실제 결과가 어긋난다.
+]]
+function Combat.splitAmongBlockers(attackerPower, blockers)
+	local order = table.clone(blockers)
+	table.sort(order, function(a, b)
+		local left, right = Keywords.remainingToughness(a), Keywords.remainingToughness(b)
+		if left ~= right then
+			return left < right
+		end
+		return a.id < b.id
+	end)
+
+	local out = {}
+	local remaining = attackerPower
+
+	for index, blocker in order do
+		local share = (index == #order) and remaining or math.min(remaining, Keywords.remainingToughness(blocker))
+		remaining -= share
+		table.insert(out, { blocker = blocker, damage = share })
+	end
+
+	return out
+end
+
+--[[
 	선언된 공격/방어를 전부 해결한다. -> events
 
 	데미지는 "전부 계산한 뒤 한꺼번에 적용"한다. 순차 적용하면
@@ -285,44 +322,20 @@ function Combat.resolve(state)
 			----------------------------------------------------------------
 
 			--[[
-				공격력을 방어자들에게 나눠준다.
-
-				**공격자가 자기에게 유리하게 배분한 것으로 친다** — 죽일 수 있는 것부터
-				치사에 필요한 만큼만 주고, 남으면 마지막 방어자에게 몰아준다.
-				(3 공격력이 1/1 과 1/5 에게 막히면 1/1 을 죽이고 2 가 1/5 에게 간다)
-
-				배분 순서를 사람에게 물어보는 게 정석이지만, 그러려면 수비준비가 끝난 뒤에
-				공격측 입력 창이 하나 더 필요하다. 물어보지 않고 정하되 **공격측에 유리한
-				쪽**으로 고정했다 — 겹쳐 막을지는 방어측이 이미 고른 것이라, 배분까지
-				방어측에 유리하게 두면 겹쳐 막기가 언제나 이득이 된다.
-
-				방어자는 저마다 공격력을 그대로 공격자에게 돌려준다. 겹쳐 막으면
-				공격자가 죽는다 — 그게 겹쳐 막는 이유다.
+				공격력은 splitAmongBlockers 가 나눈다(그 주석 참조).
+				방어자는 저마다 공격력을 그대로 공격자에게 돌려준다 — 겹쳐 막으면
+				공격자가 죽는다. 그게 겹쳐 막는 이유다.
 			]]
-			local order = table.clone(blockers)
-			table.sort(order, function(a, b)
-				local left, right = Keywords.remainingToughness(a), Keywords.remainingToughness(b)
-				if left ~= right then
-					return left < right
-				end
-				return a.id < b.id
-			end)
-
-			local remaining = attackerPower
-			for index, blocker in order do
-				local share = (index == #order) and remaining
-					or math.min(remaining, Keywords.remainingToughness(blocker))
-
-				addCreatureDamage(blocker, share)
-				addCreatureDamage(attacker, Keywords.power(blocker))
-				remaining -= share
+			for _, share in Combat.splitAmongBlockers(attackerPower, blockers) do
+				addCreatureDamage(share.blocker, share.damage)
+				addCreatureDamage(attacker, Keywords.power(share.blocker))
 
 				table.insert(events, {
 					kind = "Blocked",
 					attackerId = attacker.id,
-					blockerId = blocker.id,
-					damageToBlocker = share,
-					damageToAttacker = Keywords.power(blocker),
+					blockerId = share.blocker.id,
+					damageToBlocker = share.damage,
+					damageToAttacker = Keywords.power(share.blocker),
 				})
 			end
 		elseif declaration.targetKind == "Player" then

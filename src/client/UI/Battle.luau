@@ -141,7 +141,7 @@ function Battle:build(parent)
 	})
 
 	-- 창 크기에 맞춰 화면 전체를 늘렸다 줄인다. (Size 도 여기서 다시 정해진다)
-	Widgets.autoScale(root)
+	self.uiScale = Widgets.autoScale(root)
 
 	--------------------------------------------------------------------
 	-- 상단 바
@@ -719,10 +719,26 @@ local ARROW_THICKNESS = 4
 --[[
 	좌표는 Vector2 가 아니라 숫자 두 개로 다룬다. 벡터 연산(빼기·나누기)을 쓰면
 	테스트 하네스의 Vector2 흉내에서 걸린다 — 거기엔 연산자가 없다.
+
+	--------------------------------------------------------------------------
+	배율을 나눠야 한다
+
+	AbsolutePosition 은 **진짜 화면 픽셀**이고, 우리가 넣는 Position/Size 의 offset 은
+	루트의 UIScale 이 곱해진 뒤에 화면에 닿는다(Widgets.autoScale). 그래서 화면 픽셀로
+	잰 거리를 그대로 offset 에 넣으면 배율만큼 어긋난다 — 1080 화면(배율 1.2)에서는
+	화살표가 카드에서 20% 씩 밀려나 아무 데도 안 닿는다.
+
+	잰 값을 배율로 나눠서 "루트 안쪽 좌표" 로 바꾼 뒤에 넣는다. 두께(4)와 화살촉 크기(22)는
+	원래부터 안쪽 좌표라 그대로 둔다 — 그건 배율과 함께 커져야 맞다.
 ]]
 function Battle:drawArrow(originX, originY, fromX, fromY, toX, toY, color, name)
+	local scale = (self.uiScale and self.uiScale.Scale or 1)
+	if scale <= 0 then
+		scale = 1
+	end
+
 	local dx, dy = toX - fromX, toY - fromY
-	local length = math.sqrt(dx * dx + dy * dy)
+	local length = math.sqrt(dx * dx + dy * dy) / scale
 	local angle = math.deg(math.atan2(dy, dx))
 	local midX, midY = fromX + dx * 0.5, fromY + dy * 0.5
 
@@ -730,7 +746,7 @@ function Battle:drawArrow(originX, originY, fromX, fromY, toX, toY, color, name)
 		Name = name,
 		Parent = self.arrows,
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromOffset(midX - originX, midY - originY),
+		Position = UDim2.fromOffset((midX - originX) / scale, (midY - originY) / scale),
 		Size = UDim2.fromOffset(length, ARROW_THICKNESS),
 		Rotation = angle,
 		BackgroundColor3 = color,
@@ -745,7 +761,7 @@ function Battle:drawArrow(originX, originY, fromX, fromY, toX, toY, color, name)
 		Name = name .. "Head",
 		Parent = self.arrows,
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromOffset(toX - originX, toY - originY),
+		Position = UDim2.fromOffset((toX - originX) / scale, (toY - originY) / scale),
 		Size = UDim2.fromOffset(22, 22),
 		Rotation = angle,
 		TextSize = 20,

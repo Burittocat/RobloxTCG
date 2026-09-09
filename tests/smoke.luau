@@ -1319,6 +1319,60 @@ t:describe("전투 화살표", function()
 			end
 		end
 
+		--[[
+			**선이 실제로 두 카드를 잇는가.**
+
+			하네스는 레이아웃을 안 굴리므로 절대 좌표가 전부 0 이다. 그래서 여기서는
+			좌표를 직접 넣어 놓고 한 프레임 뒤에 계산 결과를 읽는다.
+
+			이 단언이 잡는 것: 화면 픽셀로 잰 거리를 그대로 offset 에 넣는 실수.
+			루트에 UIScale 이 걸려 있어서(Widgets.autoScale) 배율로 나누지 않으면
+			1080 화면에서 화살표가 카드에서 20% 씩 밀려난다.
+		]]
+		do
+			local gui = guiOf(kim)
+			local arrowsFrame = Screen.find(gui, "Arrows")
+			local uiScale = Screen.find(gui, "Root"):FindFirstChildOfClass("UIScale")
+			local scale = uiScale.Scale
+
+			local declaration = arrowLines(kim, "ArrowAttack")[1]
+			t:truthy(declaration, "공격 화살표가 있어야 합니다")
+
+			-- 이름에서 몇 번째 화살표인지 찾아, 그 공격자와 대상의 자리를 직접 정한다.
+			local attackerCard = litCards(Screen.find(gui, "MyField"))[1]
+				or allNamedIn(Screen.find(gui, "MyField"), "Field_")[1]
+			t:truthy(attackerCard, "내 생물이 화면에 있어야 합니다")
+
+			local V2 = Roblox.Datatypes.Vector2
+			arrowsFrame.AbsolutePosition = V2.new(100, 100)
+			attackerCard.AbsolutePosition = V2.new(200, 500)
+			attackerCard.AbsoluteSize = V2.new(100, 100)
+
+			local foePanel = Screen.find(gui, "FoePanel")
+			foePanel.AbsolutePosition = V2.new(200, 100)
+			foePanel.AbsoluteSize = V2.new(100, 100)
+
+			for _, node in allNamedIn(Screen.find(gui, "FoeField"), "Field_") do
+				node.AbsolutePosition = V2.new(200, 100)
+				node.AbsoluteSize = V2.new(100, 100)
+			end
+
+			world:advance(0.2) -- 한 프레임 이상. 화살표는 매 프레임 다시 그린다
+
+			local line = arrowLines(kim, "ArrowAttack")[1]
+			t:truthy(line, "다시 그린 뒤에도 화살표가 있어야 합니다")
+
+			--[[
+				공격자 가운데 (250, 550) → 대상 가운데 (250, 150).
+				중점은 (250, 350), 판 기준으로 (150, 250), 배율로 나누면 그 값 / scale.
+				길이는 400 / scale, 각도는 위로 곧게 -90 도.
+			]]
+			t:eq(line.Position.X.Offset, 150 / scale, "화살표 중점 X")
+			t:eq(line.Position.Y.Offset, 250 / scale, "화살표 중점 Y")
+			t:eq(line.Size.X.Offset, 400 / scale, "화살표 길이")
+			t:eq(line.Rotation, -90, "공격자에서 대상 쪽으로 향해야 합니다")
+		end
+
 		-- 선 하나에 화살촉 하나.
 		local arrows = Screen.find(guiOf(kim), "Arrows"):GetChildren()
 		local heads = 0

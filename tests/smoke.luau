@@ -650,6 +650,22 @@ t:describe("튜토리얼", function()
 		return nil
 	end
 
+	--[[
+		이 태그를 단 카드가 지금 화면에 있는가.
+
+		카드 위의 태그 칩은 이름만 딱 적혀 있다(CardView 의 keywordRow). 그래서
+		**정확히 일치**로 찾는다 — 카드 설명문에도 "비행 — 지상 생물은…" 처럼 그 낱말이
+		들어 있어서, 부분 일치로 찾으면 설명문만 보고도 있다고 착각한다.
+	]]
+	local function hasKeywordChip(player, name)
+		for _, text in Screen.visibleTexts(guiOf(player)) do
+			if text == name then
+				return true
+			end
+		end
+		return false
+	end
+
 	local function activeButton(player, text)
 		local button = Screen.findButton(guiOf(player), text)
 		if button and button.Active then
@@ -825,6 +841,8 @@ t:describe("튜토리얼", function()
 		return Screen.hasText(overlay, "승리") and "승리" or "패배"
 	end
 
+	local TAG_NAMES = { "도발", "비행", "원거리", "신속", "즉시시전" }
+
 	t:it("시작 화면에서 튜토리얼을 열 수 있다", function()
 		local _, kim = openTutorial()
 		local gui = guiOf(kim)
@@ -869,6 +887,20 @@ t:describe("튜토리얼", function()
 			local line = coachText(kim)
 			if line then
 				said[line] = true
+
+				--[[
+					**여기가 이 절에서 제일 중요한 단언이다.**
+					태그 설명이 뜬 순간, 그 태그를 단 카드가 화면에 있어야 한다.
+					없으면 읽는 사람은 화면에서 그걸 찾다가 못 찾는다.
+				]]
+				for _, name in TAG_NAMES do
+					if line:find("<b>" .. name .. "</b>") then
+						t:truthy(
+							hasKeywordChip(kim, name),
+							("화면에 %s 카드가 없는데 %s 설명이 떴습니다"):format(name, name)
+						)
+					end
+				end
 			end
 			if pressSomething(world, kim) then
 				pressed += 1
@@ -903,13 +935,18 @@ t:describe("튜토리얼", function()
 		t:truthy(saidAny("옆으로 누운"), "탭이 무엇인지 설명해야 합니다")
 		t:truthy(saidAny("내 턴이 시작할 때"), "언탭이 언제 되는지 설명해야 합니다")
 
+		--[[
+			태그는 **판에 실제로 나온 것만** 설명하므로, 한 판에서 다섯 종을 다 만나지는
+			못한다. 그래서 개수는 느슨하게 본다 — 이 절의 진짜 단언은 위쪽, 설명이 뜰 때마다
+			그 카드가 화면에 있었는지 확인한 것이다. (나머지 태그는 결과 화면이 안내한다)
+		]]
 		local tags = 0
-		for _, name in { "도발", "비행", "원거리", "신속", "즉시시전" } do
+		for _, name in TAG_NAMES do
 			if saidAny("<b>" .. name .. "</b>") then
 				tags += 1
 			end
 		end
-		t:truthy(tags >= 4, ("태그를 %d 종만 소개했습니다"):format(tags))
+		t:truthy(tags >= 2, ("태그를 %d 종만 소개했습니다"):format(tags))
 	end)
 end)
 

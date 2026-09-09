@@ -34,7 +34,7 @@
 	단계 하나
 
 	    key    이름. 테스트가 "지금 몇 단계인가" 를 이걸로 가리킨다
-	    text   말풍선. 함수면 판 상태를 받아 만든다
+	    text   말풍선. 함수면 (view, me, 코치) 를 받아 만든다
 	    done   (view, me) -> boolean    끝났으면 다음 단계로
 	    skip   (view, me) -> boolean?   이 판에서는 가르칠 수 없다 (선택)
 	    allow  (view, me) -> 허용표     무엇을 누를 수 있나
@@ -59,6 +59,7 @@ local Combat = Rules.Combat
 local Phase = Enums.Phase
 local CardType = Enums.CardType
 local Keyword = Enums.Keyword
+local Zone = Enums.Zone
 
 local FREE = { free = true }
 local NOTHING = { buttons = {} }
@@ -116,16 +117,20 @@ local function hasTappedCard(view, me)
 end
 
 --[[
-	태그 5종을 차례로 소개한다.
+	태그 소개 — **화면에 나와 있는 것만.**
 
-	처음에는 "지금 화면에 나와 있는 태그" 만 골라 설명했다. 카드를 보면서 읽는 게 낫다고
-	봤는데, 실제로 재보니 한 판에 **두 종밖에** 안 나왔다 — 손에 잡히는 카드는 판마다
-	다르고, 자유롭게 두는 구간은 열댓 턴 중 절반도 안 된다. 그래서 다섯을 고정 순서로
-	돌린다. 튜토리얼 덱에 다섯이 전부 들어 있으므로, 여기 설명은 곧 그 판에서 만나게 될
-	카드 이야기다.
+	한때 다섯 종을 무조건 돌린 적이 있다. 한 판에 두 종밖에 못 보여주는 게 아쉬워서였는데,
+	비행 생물이 한 마리도 없는 판에서 비행 설명이 떴다. 읽는 사람은 화면에서 그걸 찾다가
+	못 찾는다 — 설명이 아니라 헛것이 된다. 지금은 양쪽 전장과 내 손패에 실제로 있는
+	태그만 고르고, **어느 카드 이야기인지 이름을 붙인다.**
 
-	넘어가는 단위는 **페이즈**다. 매 렌더마다 돌리면 읽는 중에 글이 바뀌고,
-	턴마다 돌리면 한 판에 서너 개밖에 못 보여준다.
+	한 판에서 다섯을 다 만나지는 못한다. 그건 감수한다 — 나머지는 결과 화면이
+	덱 편집으로 안내한다(Controller:endNote).
+
+	고르는 규칙
+	  · 아직 설명 안 한 태그를 먼저 (같은 태그만 반복하면 판이 길어져도 배우는 게 없다)
+	  · 한 페이즈 동안은 바뀌지 않는다 (매 렌더마다 돌리면 읽는 중에 글이 바뀐다)
+	  · 페이즈가 넘어가면 다음 것으로
 ]]
 local TAG_ORDER = { Keyword.Taunt, Keyword.Flying, Keyword.Ranged, Keyword.Haste, Keyword.Instant }
 
@@ -135,9 +140,47 @@ local PHASE_STEP = {
 	[Phase.DefensePrep] = 2,
 }
 
-local function tagForNow(view)
-	local step = view.turn * 3 + (PHASE_STEP[view.phase] or 0)
-	return TAG_ORDER[(step % #TAG_ORDER) + 1]
+--[[
+	지금 화면에 나와 있는 태그. -> { { keyword = ..., card = "창공의 매" }, ... }
+
+	즉시시전은 전장에 나오지 않는 태그라, 손패를 안 보면 영영 소개되지 않는다.
+	카드 순서는 인스턴스 번호로 고정한다 — 테이블 순회 순서에 맡기면 같은 판에서도
+	설명에 붙는 카드 이름이 바뀐다.
+]]
+local function visibleTags(view, me)
+	local cardFor = {}
+
+	local ids = {}
+	for instanceId in view.cards do
+		table.insert(ids, instanceId)
+	end
+	table.sort(ids)
+
+	for _, instanceId in ids do
+		local instance = view.cards[instanceId]
+		local onField = instance.zone == Zone.Field
+		local inMyHand = instance.zone == Zone.Hand and instance.controllerId == me
+
+		if onField or inMyHand then
+			local def = Registry.get(instance.defId)
+			local name = def and def.name or "?"
+
+			for _, keyword in (def and def.keywords) or {} do
+				cardFor[keyword] = cardFor[keyword] or name
+			end
+			for _, keyword in instance.grantedKeywords or {} do
+				cardFor[keyword] = cardFor[keyword] or name
+			end
+		end
+	end
+
+	local out = {}
+	for _, keyword in TAG_ORDER do
+		if cardFor[keyword] then
+			table.insert(out, { keyword = keyword, card = cardFor[keyword] })
+		end
+	end
+	return out
 end
 
 local function contains(list, value)
@@ -216,8 +259,8 @@ local STEPS = {
 			endMain 이 같은 일(페이즈 종료)을 맡는다.
 		]]
 		key = "tap",
-		text = "생물을 내면서 코스트 카드가 <b>탭</b> 됐어요 — 옆으로 누운 카드예요.\n"
-			.. "탭된 카드는 이번 턴에 다시 못 써요. 내 턴이 시작할 때 <b>언탭</b> 돼서 다시 서요.\n"
+		text = "코스트 카드가 <b>탭</b> 됐어요 — 옆으로 누운 카드예요.\n"
+			.. "이번 턴엔 다시 못 쓰고, 내 턴이 시작할 때 <b>언탭</b> 돼요.\n"
 			.. "[페이즈 종료] 로 공격준비로 넘어가세요.",
 		skip = function(view, me)
 			return not myTurn(view, me) or not hasTappedCard(view, me)
@@ -315,8 +358,8 @@ local STEPS = {
 						.. "소환 멀미는 다음 턴에 풀려요. [페이즈 종료] 로 넘기세요."
 				end
 				return "공격할 수 있는 생물이 초록으로 켜졌어요.\n"
-					.. "생물을 누른 다음, 공격할 대상을 고르세요 — 상대 생물도, 상대 자신도 돼요.\n"
-					.. "공격을 선언한 생물은 <b>탭</b> 돼요. 다음 내 턴에 언탭돼요."
+					.. "생물을 누르고 공격할 대상을 고르세요. 상대 자신도 돼요.\n"
+					.. "공격을 선언한 생물은 <b>탭</b> 돼요."
 			end
 			return "코스트를 내고 생물을 소환한 뒤,\n[페이즈 종료] 로 <b>공격준비</b> 까지 가 보세요."
 		end,
@@ -330,7 +373,7 @@ local STEPS = {
 
 	{
 		key = "win",
-		text = function(view, me)
+		text = function(view, me, coach)
 			if view.phase == Phase.AttackPrep and #view.combat.attackers > 0 then
 				return "공격을 선언했어요.\n"
 					.. "[페이즈 종료] 를 누르면 상대가 막을 차례예요.\n"
@@ -345,9 +388,13 @@ local STEPS = {
 				태그를 턴마다 하나씩 소개한다 — 화면에 그 카드가 실제로 있을 때 읽어야
 				"이게 그거구나" 가 된다. 튜토리얼 덱에 태그 5종이 다 들어 있는 이유다.
 			]]
-			local tag = tagForNow(view)
+			local tag = coach and coach:tagLesson(view, me)
 			if tag then
-				return ("<b>%s</b> — %s\n"):format(Enums.KeywordDisplay[tag], Enums.KeywordText[tag]) .. goal
+				return ("%s의 <b>%s</b> — %s\n"):format(
+					tag.card,
+					Enums.KeywordDisplay[tag.keyword],
+					Enums.KeywordText[tag.keyword]
+				) .. goal
 			end
 
 			return "기본은 다 배웠어요 — 이제 자유롭게 두세요.\n" .. goal
@@ -367,12 +414,17 @@ local Tutorial = {}
 Tutorial.__index = Tutorial
 
 function Tutorial.new()
-	return setmetatable({ index = 1 }, Tutorial)
+	local self = setmetatable({}, Tutorial)
+	self:reset()
+	return self
 end
 
 -- 판이 새로 열리면 처음부터. (다시 하기 · 튜토리얼 재입장)
 function Tutorial:reset()
 	self.index = 1
+	self.taught = {} -- 이미 설명한 태그
+	self.tagKey = nil -- 지금 태그를 고른 페이즈
+	self.tag = nil
 end
 
 --[[
@@ -399,14 +451,46 @@ function Tutorial:update(view, me)
 end
 
 -- 지금 단계의 말풍선. 단계가 다 끝났으면 nil (코치가 사라진다).
-function Tutorial.textOf(step, view, me)
+function Tutorial:textOf(step, view, me)
 	if not step then
 		return nil
 	end
 	if type(step.text) == "function" then
-		return step.text(view, me)
+		return step.text(view, me, self)
 	end
 	return step.text
+end
+
+--[[
+	이번 페이즈에 소개할 태그. -> { keyword, card } | nil
+
+	한 페이즈 동안은 같은 것을 돌려준다(아래 tagKey). 매 렌더마다 새로 고르면
+	읽는 중에 글이 바뀐다. 페이즈가 넘어가면 **아직 설명 안 한 태그**부터 고른다 —
+	같은 태그만 반복하면 판이 길어져도 배우는 게 없다.
+]]
+function Tutorial:tagLesson(view, me)
+	local key = ("%d:%s"):format(view.turn, tostring(view.phase))
+	if self.tagKey == key then
+		return self.tag
+	end
+
+	local tags = visibleTags(view, me)
+	if #tags == 0 then
+		self.tagKey, self.tag = key, nil
+		return nil
+	end
+
+	local pick = tags[1]
+	for _, entry in tags do
+		if not self.taught[entry.keyword] then
+			pick = entry
+			break
+		end
+	end
+
+	self.taught[pick.keyword] = true
+	self.tagKey, self.tag = key, pick
+	return pick
 end
 
 --[[

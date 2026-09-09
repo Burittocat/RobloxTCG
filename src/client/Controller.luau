@@ -479,7 +479,7 @@ function Controller:refresh()
 		selectedId = self.mode.cardId or self.mode.attackerId or self.mode.blockerId,
 		prompt = self:promptText(),
 		hint = self:hintText(),
-		coach = Tutorial.textOf(self:coachStep(), self.view, self.me),
+		coach = self.tutorial:textOf(self:coachStep(), self.view, self.me),
 		endNote = self:endNote(),
 		lockedHand = self:lockedHand(allow),
 		busy = (not self.view.finished) and whoActs(self.view) ~= self.me,

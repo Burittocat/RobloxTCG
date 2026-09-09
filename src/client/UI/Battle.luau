@@ -802,6 +802,11 @@ function Battle:renderCenter(state, opts)
 		매 판 떠 있어서 **처음 보는 사람이 읽어야 할 글** 과 섞이면 둘 다 안 읽힌다.
 	]]
 	if opts.coach then
+		--[[
+			높이 74 는 **세 줄** 예산이다(520 폭에 본문 크기 기준). 코치 문구를 쓸 때
+			줄당 35자쯤을 넘기지 않는다 — 넘치면 상자 밖으로 흘러 전장 위에 겹친다.
+			보드 가운데는 자리가 좁아서(위아래 패널·필드가 고정 높이다) 상자를 더 키울 수 없다.
+		]]
 		local box = Widgets.panel({
 			Name = "Coach",
 			Size = UDim2.new(0, 520, 0, 74),

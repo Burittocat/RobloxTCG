@@ -98,27 +98,32 @@ return function(t, ctx)
 			t:eq(attacker.zone, Zone.Graveyard, "2 + 1 = 3 을 맞아 4/2 공격자가 죽는다")
 		end)
 
-		t:it("한 공격자에 정해진 수보다 많이 배정할 수 없다", function()
+		t:it("셋 이상도 함께 막을 수 있다", function()
 			local state = Fixture.match(Rules)
-			local attacker = Fixture.spawn(Rules, state, 1, "CRE_LANCER", Field)
+			local attacker = Fixture.spawn(Rules, state, 1, "CRE_TITAN", Field) -- 7/7
+			-- 도발 생물은 넣지 않는다. 있으면 플레이어 직접 공격 자체가 막혀서
+			-- 이 테스트가 재려는 것(겹쳐 막기)에 닿지도 못한다.
 			local blockers = {
-				Fixture.spawn(Rules, state, 2, "CRE_SCOUT", Field),
-				Fixture.spawn(Rules, state, 2, "CRE_SQUIRE", Field),
-				Fixture.spawn(Rules, state, 2, "CRE_GUARD", Field),
+				Fixture.spawn(Rules, state, 2, "CRE_SCOUT", Field), -- 1/2
+				Fixture.spawn(Rules, state, 2, "CRE_SQUIRE", Field), -- 2/1
+				Fixture.spawn(Rules, state, 2, "CRE_GUARD", Field), -- 2/3
+				Fixture.spawn(Rules, state, 2, "CRE_SCRIBE", Field), -- 1/2
 			}
 
 			Rules.endPhase(state, 1)
-			Rules.declareAttacker(state, 1, attacker.id)
+			t:allowed(Rules.declareAttacker(state, 1, attacker.id))
 			Rules.endPhase(state, 1)
 
-			for index = 1, Rules.Config.maxBlockersPerAttacker do
-				t:allowed(Rules.declareBlocker(state, 2, blockers[index].id, attacker.id))
+			-- 인원 제한이 없다. 막을 생물이 있으면 다 던질 수 있다.
+			for _, blocker in blockers do
+				t:allowed(Rules.declareBlocker(state, 2, blocker.id, attacker.id))
 			end
 
-			local extra = blockers[Rules.Config.maxBlockersPerAttacker + 1]
-			if extra then
-				t:denied(Rules.declareBlocker(state, 2, extra.id, attacker.id), "최대")
-			end
+			Rules.endPhase(state, 2)
+
+			-- 1 + 2 + 2 + 1 = 6 은 7/7 을 못 잡는다. 그래도 라이프는 지켰다.
+			t:eq(state.players[2].life, 30, "막았으므로 플레이어는 무피해")
+			t:eq(attacker.zone, Field, "6 피해로는 7/7 이 죽지 않는다")
 		end)
 
 		t:it("치사 피해를 서로 주면 동시에 죽는다", function()

@@ -180,6 +180,9 @@ local DEFAULTS = {
 	Visible = true,
 	Enabled = true,
 	AbsoluteSize = Datatypes.Vector2.new(0, 0),
+	-- 화면 좌표를 읽는 코드(전투 화살표)가 여기까지 온다. 레이아웃을 계산하지 않으므로
+	-- 값은 0 이지만, nil 이면 그 코드 경로를 아예 못 지나간다.
+	AbsolutePosition = Datatypes.Vector2.new(0, 0),
 	AbsoluteContentSize = Datatypes.Vector2.new(0, 0),
 	Text = "",
 	Transparency = 0,

@@ -41,6 +41,14 @@ Theme.color = {
 	ok = Color3.fromRGB(94, 214, 155),
 	warn = Color3.fromRGB(242, 112, 108),
 
+	--[[
+		전투 화살표. 공격은 빨강, 방어는 파랑 — 사용자가 정한 약속이다.
+		me/foe(초록·붉은색)와 겹치지 않게 더 진하고 선명한 값을 쓴다.
+		선은 보드 위에 겹쳐 그려지므로, 카드 색보다 튀어야 눈에 먼저 들어온다.
+	]]
+	arrowAttack = Color3.fromRGB(232, 66, 62),
+	arrowBlock = Color3.fromRGB(80, 156, 248),
+
 	-- 카드 종류
 	cost = Color3.fromRGB(78, 132, 100),
 	creature = Color3.fromRGB(72, 106, 162),

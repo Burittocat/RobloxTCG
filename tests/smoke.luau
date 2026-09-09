@@ -98,6 +98,108 @@ end
 	기다린다**(Config.autoPassWithNoResponse = false). 화면 앞에 앉은 사람은 그걸 보고
 	누르므로, 여기 학생도 그렇게 한다. 안 그러면 어떤 테스트도 두 턴을 못 넘긴다.
 ]]
+--[[
+	이름이 prefix 로 시작하는 노드 전부. Screen.findNamed 는 첫 하나만 준다.
+]]
+local function allNamedIn(root, prefix)
+	local out = {}
+	local function walk(node)
+		if node.Name:sub(1, #prefix) == prefix then
+			table.insert(out, node)
+		end
+		for _, child in node:GetChildren() do
+			walk(child)
+		end
+	end
+	walk(root)
+	return out
+end
+
+--[[
+	지금 낼 수 있어 보이는 손패 카드. **흐린 카드는 세지 않는다** —
+	코치가 잠근 카드와 코스트가 모자란 카드가 그렇게 그려진다(CardView 의 dim).
+]]
+local function brightHandCard(player)
+	for _, node in allNamedIn(guiOf(player), "Hand_") do
+		if node.BackgroundTransparency < 0.4 then
+			return node
+		end
+	end
+	return nil
+end
+
+--[[
+	이 태그를 단 카드가 지금 화면에 있는가.
+
+	카드 위의 태그 칩은 이름만 딱 적혀 있다(CardView 의 keywordRow). 그래서
+	**정확히 일치**로 찾는다 — 카드 설명문에도 "비행 — 지상 생물은…" 처럼 그 낱말이
+	들어 있어서, 부분 일치로 찾으면 설명문만 보고도 있다고 착각한다.
+]]
+local function hasKeywordChip(player, name)
+	for _, text in Screen.visibleTexts(guiOf(player)) do
+		if text == name then
+			return true
+		end
+	end
+	return false
+end
+
+--[[
+	내 생물을 눌러 보고, 화면이 대상을 물으면 골라준다.
+	공격이면 상대 자신을, 방어면 아무 공격자나 고른다. -> 눌렀나
+]]
+--[[
+	화면 가운데 안내문. **코치 말풍선과 구별해서** 읽어야 한다 —
+	코치도 "막을 공격자를 고르세요" 라고 말하기 때문에, 화면 전체에서 글자를 찾으면
+	아무것도 안 고르고 있을 때도 고르는 중이라고 착각한다.
+]]
+local function promptText(player)
+	local node = Screen.find(guiOf(player), "Prompt")
+	return node and node.Text or ""
+end
+
+--[[
+	초록으로 켜진 카드인가. (CardView.outlineFor — 켜진 카드만 테두리가 두껍다)
+
+	**여기가 이 테스트의 핵심이다.** 학생은 화면에서 켜진 것만 누른다. 켜졌는데
+	눌러보니 서버가 거부하면 그건 화면이 거짓말을 한 것이고, 학생은 그 자리에서
+	맴돌다 "진도가 안 나갔습니다" 로 실패한다.
+]]
+local function isLit(node)
+	local stroke = node:FindFirstChildOfClass("UIStroke")
+	return stroke ~= nil and stroke.Thickness >= 4
+end
+
+-- 플레이어 패널은 테두리가 2.5 로 켜진다 (renderPlayerPanel)
+local function isPanelLit(panel)
+	local stroke = panel and panel:FindFirstChildOfClass("UIStroke")
+	return stroke ~= nil and stroke.Thickness > 1
+end
+
+local function litCards(root)
+	local out = {}
+	for _, node in allNamedIn(root, "Field_") do
+		if isLit(node) then
+			table.insert(out, node)
+		end
+	end
+	return out
+end
+
+--[[
+	판이 끝났는가. -> "승리" | "패배" | nil
+
+	화면 전체에서 "승리" 를 찾으면 안 된다 — 코치 말풍선이 "상대 라이프를 0 으로
+	만들면 승리예요" 라고 말하는 순간 이겼다고 착각한다. 결과 오버레이 안에서만 본다.
+]]
+local function outcome(player)
+	local overlay = Screen.find(guiOf(player), "EndOverlay")
+	if not overlay or not overlay.Visible then
+		return nil
+	end
+	return Screen.hasText(overlay, "승리") and "승리" or "패배"
+end
+
 local function activeButton(player, text)
 	local button = Screen.findButton(guiOf(player), text)
 	if button and button.Active then
@@ -105,6 +207,41 @@ local function activeButton(player, text)
 	end
 	return nil
 end
+
+--[[
+	마법을 내면 화면이 대상을 물어본다. 켜진 것 중 아무거나 골라준다.
+	고를 게 없으면 선택을 되돌린다 — 여기서 안 빠져나오면 그 다음 클릭이 전부
+	"대상 고르기" 로 먹혀서, 학생이 조용히 굳는다.
+]]
+local function answerTargetPrompt(world, player)
+	local gui = guiOf(player)
+	if not promptText(player):find("대상을 고르세요") then
+		return
+	end
+
+	for _, field in { "MyField", "FoeField" } do
+		local node = litCards(Screen.find(gui, field))[1]
+		if node then
+			Screen.click(node)
+			world:advance(0.4)
+			return
+		end
+	end
+
+	local foePanel = Screen.find(gui, "FoePanel")
+	if isPanelLit(foePanel) then
+		Screen.click(foePanel:FindFirstChild("Hit"))
+		world:advance(0.4)
+		return
+	end
+
+	local cancel = activeButton(player, "선택 취소")
+	if cancel then
+		Screen.click(cancel)
+		world:advance(0.2)
+	end
+end
+
 
 local function passIfResponding(world, player)
 	local pass = activeButton(player, "대응 패스")
@@ -171,6 +308,91 @@ local function passMulligan(world, ...)
 end
 
 --==========================================================================
+--[[
+	켜진 내 생물을 눌러, 화면이 대상을 물으면 골라준다. -> 눌렀나
+	공격이면 상대 자신을, 방어면 켜진 공격자를 고른다.
+]]
+local function tryCreature(world, player)
+	local gui = guiOf(player)
+	local myField = Screen.find(gui, "MyField")
+	if not myField then
+		return false
+	end
+
+	for _, node in litCards(myField) do
+		Screen.click(node)
+		world:advance(0.3)
+
+		if promptText(player):find("공격할 대상") then
+			local hit = Screen.find(gui, "FoePanel"):FindFirstChild("Hit")
+			Screen.click(hit)
+			world:advance(0.6)
+			return true
+		end
+
+		if promptText(player):find("막을 공격자") then
+			local attacker = litCards(Screen.find(gui, "FoeField"))[1]
+			if attacker then
+				Screen.click(attacker)
+				world:advance(0.6)
+				return true
+			end
+		end
+
+		local cancel = activeButton(player, "선택 취소")
+		if cancel then
+			Screen.click(cancel)
+			world:advance(0.2)
+		end
+	end
+
+	return false
+end
+
+--[[
+	"지금 눌리는 것" 을 하나 누른다. -> 눌렀나
+
+	순서는 사람이 할 법한 순서다 — 손패를 내고, 공격하고, 페이즈를 넘긴다.
+]]
+local function pressSomething(world, player)
+	local keep = activeButton(player, "이대로 시작")
+	if keep then
+		Screen.click(keep)
+		world:advance(0.6)
+		return true
+	end
+
+	-- 상대가 카드를 내면 대응 창이 열린다. 넘기지 않으면 판이 거기서 멈춘다.
+	if passIfResponding(world, player) then
+		return true
+	end
+
+	local card = brightHandCard(player)
+	if card then
+		Screen.click(card)
+		world:advance(0.6)
+		answerTargetPrompt(world, player)
+		return true
+	end
+
+	if tryCreature(world, player) then
+		return true
+	end
+
+	local endPhase = activeButton(player, "페이즈 종료")
+	if endPhase then
+		Screen.click(endPhase)
+		world:advance(0.8)
+		return true
+	end
+
+	world:advance(0.6) -- 상대가 두는 중
+	return false
+end
+
+local TAG_NAMES = { "도발", "비행", "원거리", "신속", "즉시시전" }
+
+
 t:describe("로비 부팅", function()
 	t:it("접속하면 시작 화면이 뜬다", function()
 		local world = Roblox.newWorld()
@@ -694,225 +916,7 @@ t:describe("튜토리얼", function()
 		return nil
 	end
 
-	--[[
-		이름이 prefix 로 시작하는 노드 전부. Screen.findNamed 는 첫 하나만 준다.
-	]]
-	local function allNamed(root, prefix)
-		local out = {}
-		local function walk(node)
-			if node.Name:sub(1, #prefix) == prefix then
-				table.insert(out, node)
-			end
-			for _, child in node:GetChildren() do
-				walk(child)
-			end
-		end
-		walk(root)
-		return out
-	end
-
-	--[[
-		지금 낼 수 있어 보이는 손패 카드. **흐린 카드는 세지 않는다** —
-		코치가 잠근 카드와 코스트가 모자란 카드가 그렇게 그려진다(CardView 의 dim).
-	]]
-	local function brightHandCard(player)
-		for _, node in allNamed(guiOf(player), "Hand_") do
-			if node.BackgroundTransparency < 0.4 then
-				return node
-			end
-		end
-		return nil
-	end
-
-	--[[
-		이 태그를 단 카드가 지금 화면에 있는가.
-
-		카드 위의 태그 칩은 이름만 딱 적혀 있다(CardView 의 keywordRow). 그래서
-		**정확히 일치**로 찾는다 — 카드 설명문에도 "비행 — 지상 생물은…" 처럼 그 낱말이
-		들어 있어서, 부분 일치로 찾으면 설명문만 보고도 있다고 착각한다.
-	]]
-	local function hasKeywordChip(player, name)
-		for _, text in Screen.visibleTexts(guiOf(player)) do
-			if text == name then
-				return true
-			end
-		end
-		return false
-	end
-
-	--[[
-		내 생물을 눌러 보고, 화면이 대상을 물으면 골라준다.
-		공격이면 상대 자신을, 방어면 아무 공격자나 고른다. -> 눌렀나
-	]]
-	--[[
-		화면 가운데 안내문. **코치 말풍선과 구별해서** 읽어야 한다 —
-		코치도 "막을 공격자를 고르세요" 라고 말하기 때문에, 화면 전체에서 글자를 찾으면
-		아무것도 안 고르고 있을 때도 고르는 중이라고 착각한다.
-	]]
-	local function promptText(player)
-		local node = Screen.find(guiOf(player), "Prompt")
-		return node and node.Text or ""
-	end
-
-	--[[
-		초록으로 켜진 카드인가. (CardView.outlineFor — 켜진 카드만 테두리가 두껍다)
-
-		**여기가 이 테스트의 핵심이다.** 학생은 화면에서 켜진 것만 누른다. 켜졌는데
-		눌러보니 서버가 거부하면 그건 화면이 거짓말을 한 것이고, 학생은 그 자리에서
-		맴돌다 "진도가 안 나갔습니다" 로 실패한다.
-	]]
-	local function isLit(node)
-		local stroke = node:FindFirstChildOfClass("UIStroke")
-		return stroke ~= nil and stroke.Thickness >= 4
-	end
-
-	-- 플레이어 패널은 테두리가 2.5 로 켜진다 (renderPlayerPanel)
-	local function isPanelLit(panel)
-		local stroke = panel and panel:FindFirstChildOfClass("UIStroke")
-		return stroke ~= nil and stroke.Thickness > 1
-	end
-
-	local function litCards(root)
-		local out = {}
-		for _, node in allNamed(root, "Field_") do
-			if isLit(node) then
-				table.insert(out, node)
-			end
-		end
-		return out
-	end
-
-	--[[
-		켜진 내 생물을 눌러, 화면이 대상을 물으면 골라준다. -> 눌렀나
-		공격이면 상대 자신을, 방어면 켜진 공격자를 고른다.
-	]]
-	local function tryCreature(world, player)
-		local gui = guiOf(player)
-		local myField = Screen.find(gui, "MyField")
-		if not myField then
-			return false
-		end
-
-		for _, node in litCards(myField) do
-			Screen.click(node)
-			world:advance(0.3)
-
-			if promptText(player):find("공격할 대상") then
-				local hit = Screen.find(gui, "FoePanel"):FindFirstChild("Hit")
-				Screen.click(hit)
-				world:advance(0.6)
-				return true
-			end
-
-			if promptText(player):find("막을 공격자") then
-				local attacker = litCards(Screen.find(gui, "FoeField"))[1]
-				if attacker then
-					Screen.click(attacker)
-					world:advance(0.6)
-					return true
-				end
-			end
-
-			local cancel = activeButton(player, "선택 취소")
-			if cancel then
-				Screen.click(cancel)
-				world:advance(0.2)
-			end
-		end
-
-		return false
-	end
-
-	--[[
-		마법을 내면 화면이 대상을 물어본다. 켜진 것 중 아무거나 골라준다.
-		고를 게 없으면 선택을 되돌린다 — 여기서 안 빠져나오면 그 다음 클릭이 전부
-		"대상 고르기" 로 먹혀서, 학생이 조용히 굳는다.
-	]]
-	local function answerTargetPrompt(world, player)
-		local gui = guiOf(player)
-		if not promptText(player):find("대상을 고르세요") then
-			return
-		end
-
-		for _, field in { "MyField", "FoeField" } do
-			local node = litCards(Screen.find(gui, field))[1]
-			if node then
-				Screen.click(node)
-				world:advance(0.4)
-				return
-			end
-		end
-
-		local foePanel = Screen.find(gui, "FoePanel")
-		if isPanelLit(foePanel) then
-			Screen.click(foePanel:FindFirstChild("Hit"))
-			world:advance(0.4)
-			return
-		end
-
-		local cancel = activeButton(player, "선택 취소")
-		if cancel then
-			Screen.click(cancel)
-			world:advance(0.2)
-		end
-	end
-
-	--[[
-		"지금 눌리는 것" 을 하나 누른다. -> 눌렀나
-
-		순서는 사람이 할 법한 순서다 — 손패를 내고, 공격하고, 페이즈를 넘긴다.
-	]]
-	local function pressSomething(world, player)
-		local keep = activeButton(player, "이대로 시작")
-		if keep then
-			Screen.click(keep)
-			world:advance(0.6)
-			return true
-		end
-
-		-- 상대가 카드를 내면 대응 창이 열린다. 넘기지 않으면 판이 거기서 멈춘다.
-		if passIfResponding(world, player) then
-			return true
-		end
-
-		local card = brightHandCard(player)
-		if card then
-			Screen.click(card)
-			world:advance(0.6)
-			answerTargetPrompt(world, player)
-			return true
-		end
-
-		if tryCreature(world, player) then
-			return true
-		end
-
-		local endPhase = activeButton(player, "페이즈 종료")
-		if endPhase then
-			Screen.click(endPhase)
-			world:advance(0.8)
-			return true
-		end
-
-		world:advance(0.6) -- 상대가 두는 중
-		return false
-	end
-
-	--[[
-		판이 끝났는가. -> "승리" | "패배" | nil
-
-		화면 전체에서 "승리" 를 찾으면 안 된다 — 코치 말풍선이 "상대 라이프를 0 으로
-		만들면 승리예요" 라고 말하는 순간 이겼다고 착각한다. 결과 오버레이 안에서만 본다.
-	]]
-	local function outcome(player)
-		local overlay = Screen.find(guiOf(player), "EndOverlay")
-		if not overlay or not overlay.Visible then
-			return nil
-		end
-		return Screen.hasText(overlay, "승리") and "승리" or "패배"
-	end
-
-	local TAG_NAMES = { "도발", "비행", "원거리", "신속", "즉시시전" }
+	local allNamed = allNamedIn
 
 	t:it("시작 화면에서 튜토리얼을 열 수 있다", function()
 		local _, kim = openTutorial()
@@ -1192,6 +1196,138 @@ t:describe("저장한 덱으로 대전", function()
 		assertNoErrors(world, "저장한 덱으로 AI 연습")
 
 		t:truthy(handIsFrom(kim, KIM_CARDS))
+	end)
+end)
+
+--==========================================================================
+-- 전투 화살표
+--==========================================================================
+
+t:describe("전투 화살표", function()
+	--[[
+		공격과 방어를 화살표로 보여준다. 빨강은 공격, 파랑은 방어.
+
+		하네스는 레이아웃을 계산하지 않으므로(모든 절대 좌표가 0) **선이 어디로 가는지는
+		여기서 못 본다.** 볼 수 있는 것은 "선언한 만큼 그려졌는가 · 색이 맞는가 ·
+		선언을 취소하면 사라지는가" 다. 각도와 길이는 Studio 에서 눈으로 본다.
+	]]
+	--[[
+		공격과 방어를 화살표로 보여준다. 빨강은 공격, 파랑은 방어.
+
+		**사람 둘로 본다.** AI 연습으로는 "상대가 공격하고 내가 막는" 상황을 언제 만나는지
+		운에 맡기게 된다 — 실제로 그렇게 짰다가 80턴을 굴려도 방어 한 번을 못 봤다.
+		두 사람을 다 조종하면 공격도 방어도 원할 때 만든다.
+
+		하네스는 레이아웃을 계산하지 않으므로(절대 좌표가 전부 0) **선이 어디로 가는지는
+		여기서 못 본다.** 볼 수 있는 것은 "선언한 만큼 그려졌는가 · 색이 맞는가 ·
+		양쪽 화면에 다 보이는가" 다. 각도와 길이는 Studio 에서 눈으로 본다.
+	]]
+	t:it("공격은 빨간 화살표, 방어는 파란 화살표로 그린다", function()
+		local world = Roblox.newWorld({ studio = false })
+
+		local alpha = world:newServer({ jobId = "job-alpha" }):boot()
+		local beta = world:newServer({ jobId = "job-beta" }):boot()
+
+		local kim = alpha:addPlayer("Kim")
+		local lee = beta:addPlayer("Lee")
+		world:advance(2)
+
+		clickQueue(kim)
+		clickQueue(lee)
+		world:advance(10)
+		assertNoErrors(world, "화살표 테스트 매칭")
+
+		local both = { kim, lee }
+
+		-- 카드 위의 "공격" · "방어" 배지 개수. 배지는 글자가 딱 그것뿐이라 정확히 일치로 센다
+		-- ("공격력 2" · "공격 취소" 와 섞이면 안 된다).
+		local function badges(player, word)
+			local count = 0
+			for _, text in Screen.visibleTexts(guiOf(player)) do
+				if text == word then
+					count += 1
+				end
+			end
+			return count
+		end
+
+		local function arrowLines(player, prefix)
+			local out = {}
+			for _, node in Screen.find(guiOf(player), "Arrows"):GetChildren() do
+				if node.Name:sub(1, #prefix) == prefix and not node.Name:find("Head$") then
+					table.insert(out, node)
+				end
+			end
+			return out
+		end
+
+		for _, player in both do
+			t:eq(#arrowLines(player, "Arrow"), 0, "전투 전에는 화살표가 없어야 합니다")
+		end
+
+		-- 둘 다 학생처럼 둔다. 공격이 선언될 때까지.
+		local attacked = false
+		for _ = 1, 200 do
+			if badges(kim, "공격") > 0 then
+				attacked = true
+				break
+			end
+			pressSomething(world, kim)
+			pressSomething(world, lee)
+		end
+
+		t:truthy(attacked, "공격 선언이 한 번은 나와야 합니다")
+		assertNoErrors(world, "공격 선언")
+
+		for _, player in both do
+			local lines = arrowLines(player, "ArrowAttack")
+			t:eq(#lines, badges(player, "공격"), ("%s 화면: 공격 선언 수만큼 화살표"):format(player.Name))
+			t:truthy(#lines > 0, ("%s 화면에도 공격 화살표가 보여야 합니다"):format(player.Name))
+
+			for _, node in lines do
+				--[[
+					팔레트 값을 여기 베껴 두면 색을 조금만 손봐도 테스트가 깨진다.
+					"붉은 계열인가" 만 본다 — 파란 방어 화살표와 헷갈릴 일이 없다.
+				]]
+				local color = node.BackgroundColor3
+				t:truthy(color.R > color.B, "공격 화살표는 붉은 계열이어야 합니다")
+			end
+		end
+
+		-- 이어서 방어. 막은 쪽이 누구든 상관없다.
+		local blocked = false
+		for _ = 1, 60 do
+			if badges(kim, "방어") > 0 then
+				blocked = true
+				break
+			end
+			pressSomething(world, kim)
+			pressSomething(world, lee)
+		end
+
+		t:truthy(blocked, "방어 배정이 한 번은 나와야 합니다")
+		assertNoErrors(world, "방어 배정")
+
+		for _, player in both do
+			local lines = arrowLines(player, "ArrowBlock")
+			t:eq(#lines, badges(player, "방어"), ("%s 화면: 방어 배정 수만큼 화살표"):format(player.Name))
+			t:truthy(#lines > 0, ("%s 화면에도 방어 화살표가 보여야 합니다"):format(player.Name))
+
+			for _, node in lines do
+				local color = node.BackgroundColor3
+				t:truthy(color.B > color.R, "방어 화살표는 파란 계열이어야 합니다")
+			end
+		end
+
+		-- 선 하나에 화살촉 하나.
+		local arrows = Screen.find(guiOf(kim), "Arrows"):GetChildren()
+		local heads = 0
+		for _, node in arrows do
+			if node.Name:find("Head$") then
+				heads += 1
+			end
+		end
+		t:eq(heads, #arrows - heads, "선 하나에 화살촉 하나")
 	end)
 end)
 

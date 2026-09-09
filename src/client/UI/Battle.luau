@@ -89,6 +89,18 @@ function Battle.new(parent)
 	self.me, self.foe = DEFAULT_ME, DEFAULT_FOE
 
 	self:build(parent)
+
+	--[[
+		화살표는 매 프레임 다시 그린다. 렌더 한 번에 그려두면 안 된다 —
+		그 시점에는 레이아웃이 아직 안 잡혀 카드의 절대 좌표가 0 이다.
+	]]
+	task.spawn(function()
+		while self.gui.Parent do
+			self:drawArrows()
+			task.wait()
+		end
+	end)
+
 	return self
 end
 
@@ -224,6 +236,20 @@ function Battle:build(parent)
 
 	self.myField = self:makeFieldRow(board, "MyField", UDim2.new(0, 0, 1, -half))
 	self.myPanel = self:makePlayerPanel(board, "me", UDim2.new(0, 0, 1, -panelHeight))
+
+	--[[
+		전투 화살표를 그리는 판. 보드 위에 겹쳐 놓는다.
+
+		Active 를 켜지 않으므로 입력을 가로채지 않는다 — 화살표 위로도 카드가 눌린다.
+		ZIndex 는 카드보다 위, 상세·결과 화면(25 이상)보다 아래다.
+	]]
+	self.arrows = new("Frame", {
+		Name = "Arrows",
+		Parent = board,
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 15,
+	})
 
 	self:makeActionBar(body)
 
@@ -678,6 +704,121 @@ function Battle:inspect(def)
 	self.callbacks.inspect(def)
 end
 
+--==========================================================================
+-- 전투 화살표
+--==========================================================================
+
+--[[
+	화살표 하나. from → to (둘 다 화면 절대 좌표), 색은 공격/방어에 따라 다르다.
+
+	Roblox 에는 선을 긋는 위젯이 없다. 가로로 긴 Frame 을 두 점의 중간에 놓고
+	각도만큼 돌리면 선이 된다. 화살촉은 끝점에 같은 각도로 돌린 글자를 얹는다.
+]]
+local ARROW_THICKNESS = 4
+
+--[[
+	좌표는 Vector2 가 아니라 숫자 두 개로 다룬다. 벡터 연산(빼기·나누기)을 쓰면
+	테스트 하네스의 Vector2 흉내에서 걸린다 — 거기엔 연산자가 없다.
+]]
+function Battle:drawArrow(originX, originY, fromX, fromY, toX, toY, color, name)
+	local dx, dy = toX - fromX, toY - fromY
+	local length = math.sqrt(dx * dx + dy * dy)
+	local angle = math.deg(math.atan2(dy, dx))
+	local midX, midY = fromX + dx * 0.5, fromY + dy * 0.5
+
+	new("Frame", {
+		Name = name,
+		Parent = self.arrows,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromOffset(midX - originX, midY - originY),
+		Size = UDim2.fromOffset(length, ARROW_THICKNESS),
+		Rotation = angle,
+		BackgroundColor3 = color,
+		BackgroundTransparency = 0.15,
+		BorderSizePixel = 0,
+		ZIndex = 15,
+	}, {
+		Widgets.corner(2),
+	})
+
+	Widgets.label("▶", {
+		Name = name .. "Head",
+		Parent = self.arrows,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromOffset(toX - originX, toY - originY),
+		Size = UDim2.fromOffset(22, 22),
+		Rotation = angle,
+		TextSize = 20,
+		TextColor3 = color,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		ZIndex = 16,
+	})
+end
+
+local function centerOf(node)
+	local position, size = node.AbsolutePosition, node.AbsoluteSize
+	return position.X + size.X / 2, position.Y + size.Y / 2
+end
+
+--[[
+	누가 누구를 공격하고 누가 그것을 막는지 선으로 잇는다.
+
+	    공격  빨강   공격자 → 대상(생물 또는 상대 자신)
+	    방어  파랑   방어자 → 막는 공격자
+
+	**매 프레임 다시 그린다.** 카드 위치는 레이아웃이 잡은 뒤에야 정해지고
+	(AbsolutePosition), 필드가 넘쳐 스크롤되면 그때그때 움직인다. 한 번 그려놓고
+	두면 카드는 옮겨 갔는데 화살표만 남는다.
+]]
+function Battle:drawArrows()
+	local state = self.state
+	local combat = state and state.combat
+
+	local wanted = combat and (#combat.attackers > 0 or next(combat.blocks) ~= nil)
+	if not wanted then
+		-- 그릴 게 없다. 이미 비어 있으면 매 프레임 손대지 않는다.
+		if self.arrowsDrawn then
+			Widgets.clear(self.arrows)
+			self.arrowsDrawn = false
+		end
+		return
+	end
+
+	Widgets.clear(self.arrows)
+	self.arrowsDrawn = true
+
+	local origin = self.arrows.AbsolutePosition
+	local originX, originY = origin.X, origin.Y
+	local index = 0
+
+	for _, declaration in combat.attackers do
+		local attacker = self.fieldNodes[declaration.id]
+		local target = (declaration.targetKind == "Player")
+				and (declaration.targetId == self.me and self.myPanel.frame or self.foePanel.frame)
+			or self.fieldNodes[declaration.targetId]
+
+		if attacker and target then
+			index += 1
+			local fromX, fromY = centerOf(attacker)
+			local toX, toY = centerOf(target)
+			self:drawArrow(originX, originY, fromX, fromY, toX, toY, Theme.color.arrowAttack, "ArrowAttack" .. index)
+		end
+	end
+
+	index = 0
+	for blockerId, attackerId in combat.blocks do
+		local blocker = self.fieldNodes[blockerId]
+		local attacker = self.fieldNodes[attackerId]
+
+		if blocker and attacker then
+			index += 1
+			local fromX, fromY = centerOf(blocker)
+			local toX, toY = centerOf(attacker)
+			self:drawArrow(originX, originY, fromX, fromY, toX, toY, Theme.color.arrowBlock, "ArrowBlock" .. index)
+		end
+	end
+end
+
 function Battle:showToast(text, kind)
 	self.toastToken += 1
 	local token = self.toastToken
@@ -814,6 +955,9 @@ function Battle:renderField(row, state, playerId, opts)
 			end,
 		})
 		card.Parent = row
+
+		-- 화살표가 어디서 어디로 갈지 정하려면 카드 노드를 알아야 한다.
+		self.fieldNodes[instance.id] = card
 	end
 end
 
@@ -1076,6 +1220,9 @@ function Battle:render(state, opts)
 	--------------------------------------------------------------------
 	-- 보드
 	--------------------------------------------------------------------
+	-- 지난 판(또는 지난 갱신)의 카드 노드는 버린다. 죽은 생물의 화살표가 남으면 안 된다.
+	self.fieldNodes = {}
+
 	self:renderPlayerPanel(self.foePanel, state, self.foe, opts)
 	self:renderPlayerPanel(self.myPanel, state, self.me, opts)
 	self:renderField(self.foeField, state, self.foe, opts)

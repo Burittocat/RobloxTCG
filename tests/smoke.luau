@@ -1044,6 +1044,22 @@ t:describe("튜토리얼", function()
 					end
 				end
 
+				--[[
+					"상대가 공격했어요" 는 **진짜 공격이 선언됐을 때만** 해야 한다.
+					상대가 생물을 소환하기만 해도 대응 창이 열리는데(대응 패스를 직접
+					누르게 되면서 매번 열린다), 그걸 방어 상황으로 착각하면 코치가
+					매번 없는 공격을 알린다 — 실제로 그랬다.
+				]]
+				if line:find("상대가 공격했어요") then
+					local attackBadges = 0
+					for _, text in Screen.visibleTexts(gui) do
+						if text == "공격" then
+							attackBadges += 1
+						end
+					end
+					t:truthy(attackBadges > 0, "공격 선언이 없는데 공격했다고 알렸습니다")
+				end
+
 				-- 오른쪽 클릭을 배우라고 하면 한 번 해본다. 학생은 시킨 대로 한다.
 				if not inspected and line:find("오른쪽 클릭") then
 					local card = allNamed(gui, "Hand_")[1]
@@ -1093,6 +1109,16 @@ t:describe("튜토리얼", function()
 			그중 몇 종만 보여준다. 대신 **찾아보는 법**을 가르쳤는지 본다.
 		]]
 		t:truthy(saidAny("오른쪽 클릭"), "카드를 들여다보는 법을 알려줘야 합니다")
+
+		--[[
+			한 판을 끝까지 두면 상대는 반드시 공격해 오고, 카드를 낼 때마다 대응 창도 열린다.
+			둘 다 사람이 눌러야 넘어가는 순간이라, 코치가 그때 무슨 상황인지 말해줘야 한다.
+
+			방어를 "상대 첫 턴" 단계에 넣었을 때는 한 번도 안 떴다 — 소환 멀미 때문에
+			상대의 첫 공격은 그 뒤에 온다. 그래서 상황 안내로 옮겼고, 여기서 그걸 지킨다.
+		]]
+		t:truthy(saidAny("상대가 공격했어요"), "막을 차례가 오면 알려줘야 합니다")
+		t:truthy(saidAny("대응 패스"), "대응 창이 열리면 무엇을 눌러야 하는지 알려줘야 합니다")
 		t:truthy(inspected, "말만 하고 실제로 눌러볼 카드가 없었습니다")
 		t:truthy(saidAny("기본은 다 배웠어요"), "손짓을 배운 뒤에는 잔소리를 멈춰야 합니다")
 	end)

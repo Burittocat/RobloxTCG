@@ -315,14 +315,8 @@ local STEPS = {
 
 	{
 		key = "foeTurn",
-		text = function(view, me)
-			if acting(view, me) then
-				return "상대가 공격했어요!\n"
-					.. "막을 생물을 누르고, 막을 공격자를 고르세요.\n"
-					.. "안 막으면 그 공격력만큼 내 라이프가 깎여요."
-			end
-			return "상대 차례예요. 무엇을 하는지 지켜보세요.\n" .. "오른쪽 로그에 무슨 일이 있었는지 남아요."
-		end,
+		-- 대응 창과 방어는 단계가 아니라 **상황 안내**가 맡는다 (Tutorial:textOf).
+		text = "상대 차례예요. 무엇을 하는지 지켜보세요.\n오른쪽 로그에 무슨 일이 있었는지 남아요.",
 		done = function(view, me)
 			return myTurn(view, me) and view.phase == Phase.Main
 		end,
@@ -382,7 +376,7 @@ local STEPS = {
 		key = "win",
 		text = function(view, me, coach)
 			if view.phase == Phase.AttackPrep and #view.combat.attackers > 0 then
-				return "공격을 선언했어요.\n"
+				return "공격을 선언했어요. <font color='#E8423E'>빨간 화살표</font>가 대상이에요.\n"
 					.. "[페이즈 종료] 를 누르면 상대가 막을 차례예요.\n"
 					.. "막히지 않은 공격만 상대 라이프로 들어가요."
 			end
@@ -487,11 +481,49 @@ function Tutorial:update(view, me)
 	return STEPS[self.index]
 end
 
+--[[
+	단계보다 먼저 봐야 하는 상황. -> 말풍선 | nil
+
+	지금 눌러야 할 것이 정해져 있는 순간이 둘 있다. 어느 단계에 있든 그게 먼저다.
+
+	  대응 창   상대가 카드를 내는 중이고 내가 대응권자다
+	  수비준비  상대가 공격했고 내가 막을 차례다
+
+	단계로 만들지 않은 이유: **언제 올지 모른다.** 방어를 "상대 첫 턴" 단계에 넣었더니
+	한 번도 안 떴다 — 소환 멀미 때문에 상대의 첫 공격은 그 뒤에 온다. 상황은 상황으로
+	다뤄야 어느 턴에 오든 맞는 말을 한다.
+]]
+function Tutorial.situationText(view, me)
+	if not acting(view, me) then
+		return nil
+	end
+
+	if #view.stack > 0 then
+		return "상대가 카드를 내는 중이에요.\n"
+			.. "지금 대응할 수 있는 건 <b>즉시시전</b> 마법뿐이에요.\n"
+			.. "낼 게 없으면 [대응 패스] 로 넘기세요."
+	end
+
+	if view.phase == Phase.DefensePrep then
+		return "상대가 공격했어요!\n"
+			.. "막을 생물을 누른 다음, 막을 공격자를 고르세요.\n"
+			.. "여러 마리로 함께 막아도 돼요. 안 막으면 라이프가 깎여요."
+	end
+
+	return nil
+end
+
 -- 지금 단계의 말풍선. 단계가 다 끝났으면 nil (코치가 사라진다).
 function Tutorial:textOf(step, view, me)
 	if not step then
 		return nil
 	end
+
+	local situation = Tutorial.situationText(view, me)
+	if situation then
+		return situation
+	end
+
 	if type(step.text) == "function" then
 		return step.text(view, me, self)
 	end
@@ -523,6 +555,19 @@ function Tutorial.allowsButton(allow, key)
 	if allow.free then
 		return true
 	end
+
+	--[[
+		대응 창은 어느 단계에서든 닫을 수 있어야 한다.
+
+		상대가 카드를 낼 때마다 열리는데(Config.autoPassWithNoResponse = false),
+		그때 코치가 [대응 패스] 를 잠그고 있으면 사람은 아무것도 못 하고 갇힌다.
+		버튼 자체는 대응권이 있을 때만 켜지므로(buttonStates), 여기서 열어둬도
+		"아무 때나 눌리는" 일은 없다.
+	]]
+	if key == "pass" then
+		return true
+	end
+
 	return (allow.buttons or {})[key] == true
 end
 

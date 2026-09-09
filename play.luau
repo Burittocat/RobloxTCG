@@ -686,19 +686,8 @@ end
 -- 진행 루프
 --==========================================================================
 
---[[
-	지금 행동해야 하는 플레이어. 스택이 있으면 대응권자, 수비준비면 수비측,
-	그 외에는 턴 플레이어.
-]]
-local function whoActs(state)
-	if not Stack.isEmpty(state) then
-		return Stack.responderFor(state)
-	end
-	if state.phase == Phase.DefensePrep then
-		return GameState.opponentOf(state.activePlayerId)
-	end
-	return state.activePlayerId
-end
+-- 지금 행동해야 하는 플레이어. 서버·클라이언트와 같은 판정이다.
+local whoActs = Rules.whoActs
 
 local function main()
 	local seed = options.seed or os.time()

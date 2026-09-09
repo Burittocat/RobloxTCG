@@ -581,6 +581,262 @@ t:describe("크로스서버 매칭", function()
 end)
 
 --==========================================================================
+-- 튜토리얼
+--==========================================================================
+
+--[[
+	튜토리얼의 약속은 하나다. **코치가 켜준 것만 눌러도 끝까지 갈 수 있다.**
+
+	그래서 여기 테스트는 대본을 따라가지 않는다. 화면에서 "지금 눌리는 것" 만 골라
+	누르는 학생을 하나 만들어 놓고, 그 학생이 판을 이기는지 본다. 코치가 어느 단계에서든
+	아무것도 안 켜주면 학생은 거기서 멈추고, 테스트는 "진도가 안 나갔다" 로 실패한다.
+
+	흐린 카드와 꺼진 버튼은 건드리지 않는다 — 그게 잠금이 실제로 걸려 있다는 뜻이다.
+]]
+t:describe("튜토리얼", function()
+	local function openTutorial()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "튜토리얼"))
+		world:advance(2)
+		assertNoErrors(world, "튜토리얼 시작")
+
+		return world, kim
+	end
+
+	local function coachText(player)
+		local box = Screen.find(guiOf(player), "Coach")
+		if not box then
+			return nil
+		end
+		for _, child in box:GetChildren() do
+			if child.Name ~= "UICorner" and child.Name ~= "UIStroke" and child.Name ~= "UIPadding" then
+				return child.Text
+			end
+		end
+		return nil
+	end
+
+	--[[
+		이름이 prefix 로 시작하는 노드 전부. Screen.findNamed 는 첫 하나만 준다.
+	]]
+	local function allNamed(root, prefix)
+		local out = {}
+		local function walk(node)
+			if node.Name:sub(1, #prefix) == prefix then
+				table.insert(out, node)
+			end
+			for _, child in node:GetChildren() do
+				walk(child)
+			end
+		end
+		walk(root)
+		return out
+	end
+
+	--[[
+		지금 낼 수 있어 보이는 손패 카드. **흐린 카드는 세지 않는다** —
+		코치가 잠근 카드와 코스트가 모자란 카드가 그렇게 그려진다(CardView 의 dim).
+	]]
+	local function brightHandCard(player)
+		for _, node in allNamed(guiOf(player), "Hand_") do
+			if node.BackgroundTransparency < 0.4 then
+				return node
+			end
+		end
+		return nil
+	end
+
+	local function activeButton(player, text)
+		local button = Screen.findButton(guiOf(player), text)
+		if button and button.Active then
+			return button
+		end
+		return nil
+	end
+
+	--[[
+		내 생물을 눌러 보고, 화면이 대상을 물으면 골라준다.
+		공격이면 상대 자신을, 방어면 아무 공격자나 고른다. -> 눌렀나
+	]]
+	--[[
+		화면 가운데 안내문. **코치 말풍선과 구별해서** 읽어야 한다 —
+		코치도 "막을 공격자를 고르세요" 라고 말하기 때문에, 화면 전체에서 글자를 찾으면
+		아무것도 안 고르고 있을 때도 고르는 중이라고 착각한다.
+	]]
+	local function promptText(player)
+		local node = Screen.find(guiOf(player), "Prompt")
+		return node and node.Text or ""
+	end
+
+	--[[
+		초록으로 켜진 카드인가. (CardView.outlineFor — 켜진 카드만 테두리가 두껍다)
+
+		**여기가 이 테스트의 핵심이다.** 학생은 화면에서 켜진 것만 누른다. 켜졌는데
+		눌러보니 서버가 거부하면 그건 화면이 거짓말을 한 것이고, 학생은 그 자리에서
+		맴돌다 "진도가 안 나갔습니다" 로 실패한다.
+	]]
+	local function isLit(node)
+		local stroke = node:FindFirstChildOfClass("UIStroke")
+		return stroke ~= nil and stroke.Thickness >= 4
+	end
+
+	local function litCards(root)
+		local out = {}
+		for _, node in allNamed(root, "Field_") do
+			if isLit(node) then
+				table.insert(out, node)
+			end
+		end
+		return out
+	end
+
+	--[[
+		켜진 내 생물을 눌러, 화면이 대상을 물으면 골라준다. -> 눌렀나
+		공격이면 상대 자신을, 방어면 켜진 공격자를 고른다.
+	]]
+	local function tryCreature(world, player)
+		local gui = guiOf(player)
+		local myField = Screen.find(gui, "MyField")
+		if not myField then
+			return false
+		end
+
+		for _, node in litCards(myField) do
+			Screen.click(node)
+			world:advance(0.3)
+
+			if promptText(player):find("공격할 대상") then
+				local hit = Screen.find(gui, "FoePanel"):FindFirstChild("Hit")
+				Screen.click(hit)
+				world:advance(0.6)
+				return true
+			end
+
+			if promptText(player):find("막을 공격자") then
+				local attacker = litCards(Screen.find(gui, "FoeField"))[1]
+				if attacker then
+					Screen.click(attacker)
+					world:advance(0.6)
+					return true
+				end
+			end
+
+			local cancel = activeButton(player, "선택 취소")
+			if cancel then
+				Screen.click(cancel)
+				world:advance(0.2)
+			end
+		end
+
+		return false
+	end
+
+	--[[
+		"지금 눌리는 것" 을 하나 누른다. -> 눌렀나
+
+		순서는 사람이 할 법한 순서다 — 손패를 내고, 공격하고, 페이즈를 넘긴다.
+	]]
+	local function pressSomething(world, player)
+		local keep = activeButton(player, "이대로 시작")
+		if keep then
+			Screen.click(keep)
+			world:advance(0.6)
+			return true
+		end
+
+		local card = brightHandCard(player)
+		if card then
+			Screen.click(card)
+			world:advance(0.6)
+			return true
+		end
+
+		if tryCreature(world, player) then
+			return true
+		end
+
+		local endPhase = activeButton(player, "페이즈 종료")
+		if endPhase then
+			Screen.click(endPhase)
+			world:advance(0.8)
+			return true
+		end
+
+		world:advance(0.6) -- 상대가 두는 중
+		return false
+	end
+
+	--[[
+		판이 끝났는가. -> "승리" | "패배" | nil
+
+		화면 전체에서 "승리" 를 찾으면 안 된다 — 코치 말풍선이 "상대 라이프를 0 으로
+		만들면 승리예요" 라고 말하는 순간 이겼다고 착각한다. 결과 오버레이 안에서만 본다.
+	]]
+	local function outcome(player)
+		local overlay = Screen.find(guiOf(player), "EndOverlay")
+		if not overlay or not overlay.Visible then
+			return nil
+		end
+		return Screen.hasText(overlay, "승리") and "승리" or "패배"
+	end
+
+	t:it("시작 화면에서 튜토리얼을 열 수 있다", function()
+		local _, kim = openTutorial()
+		local gui = guiOf(kim)
+
+		t:truthy(Screen.hasText(gui, "턴 "), "전투 화면이 떠야 합니다")
+		t:truthy(coachText(kim), "코치 말풍선이 떠야 합니다")
+		t:truthy(Screen.hasText(gui, "튜토리얼 상대"), "튜토리얼 상대와 붙어야 합니다")
+	end)
+
+	t:it("시키지 않은 것은 잠겨 있다", function()
+		local world, kim = openTutorial()
+
+		-- 첫 단계는 멀리건이다. 여기서 페이즈를 넘길 수는 없어야 한다.
+		t:falsy(activeButton(kim, "페이즈 종료"), "멀리건 관문에서 페이즈 종료가 켜져 있습니다")
+		t:truthy(activeButton(kim, "이대로 시작"), "'이대로 시작' 은 켜져 있어야 합니다")
+
+		Screen.click(Screen.findButton(guiOf(kim), "이대로 시작"))
+		world:advance(1)
+
+		--[[
+			이제 코스트 단계다. 코스트 카드만 밝아야 한다 —
+			생물을 낼 코스트도 아직 없지만, 그건 코치의 잠금과 우연히 같은 결과일 뿐이라
+			**코스트 카드가 실제로 밝은지** 까지 같이 본다.
+		]]
+		local bright = brightHandCard(kim)
+		t:truthy(bright, "코스트 카드는 낼 수 있어야 합니다")
+		t:eq(bright.Name, "Hand_COST_BASIC", "코스트 카드 말고는 밝으면 안 됩니다")
+		t:falsy(activeButton(kim, "페이즈 종료"), "코스트를 내기 전에는 페이즈를 넘길 수 없어야 합니다")
+	end)
+
+	t:it("코치가 켜준 것만 눌러도 이길 수 있다", function()
+		local world, kim = openTutorial()
+		local gui = guiOf(kim)
+
+		local pressed = 0
+		for _ = 1, 600 do
+			if outcome(kim) then
+				break
+			end
+			if pressSomething(world, kim) then
+				pressed += 1
+			end
+		end
+
+		assertNoErrors(world, "튜토리얼 진행")
+		t:truthy(pressed > 8, ("진도가 안 나갔습니다 (%d 번만 눌렸습니다)"):format(pressed))
+		t:eq(outcome(kim), "승리", "코치가 켜준 것만 눌러도 이겨야 합니다")
+		t:falsy(coachText(kim), "다 배웠으면 말풍선은 사라져야 합니다")
+		t:truthy(Screen.hasText(gui, "다시 하기"), "끝나면 다시 할 수 있어야 합니다")
+	end)
+end)
+
+--==========================================================================
 -- 저장한 덱으로 대전
 --==========================================================================
 

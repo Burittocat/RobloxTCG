@@ -778,9 +778,41 @@ function Battle:renderCenter(state, opts)
 		instance.Parent = self.center
 	end
 
+	--[[
+		튜토리얼 코치.
+
+		보드 한가운데에 둔다 — 손패와 전장 사이라 눈이 어차피 지나가는 자리다.
+		행동 바의 hint 자리에 끼우지 않은 이유는, 그쪽은 "지금 페이즈 설명" 이라
+		매 판 떠 있어서 **처음 보는 사람이 읽어야 할 글** 과 섞이면 둘 다 안 읽힌다.
+	]]
+	if opts.coach then
+		local box = Widgets.panel({
+			Name = "Coach",
+			Size = UDim2.new(0, 520, 0, 74),
+			BackgroundColor3 = Theme.color.panelSoft,
+		}, {
+			Widgets.padding(10),
+			Widgets.stroke(Theme.color.accent, 2),
+		})
+
+		Widgets.label(opts.coach, {
+			Parent = box,
+			Size = UDim2.fromScale(1, 1),
+			TextSize = Theme.text.body,
+			TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			TextYAlignment = Enum.TextYAlignment.Center,
+		})
+
+		add(box)
+	end
+
 	-- 지금 무엇을 해야 하는가
 	if opts.prompt then
 		add(Widgets.label(opts.prompt, {
+			-- 이름을 붙여둔다. 코치 말풍선에도 같은 문구가 들어가서,
+			-- "화면에 이 글자가 있나" 로는 둘을 구별할 수 없다.
+			Name = "Prompt",
 			Size = UDim2.new(1, 0, 0, 30),
 			Font = Theme.font.bold,
 			TextSize = Theme.text.title,
@@ -890,7 +922,12 @@ function Battle:renderHand(state, opts)
 		local instance = state.cards[instanceId]
 		if instance then
 			local def = Registry.mustGet(instance.defId)
-			local playable = Rules.canPlayCard(state, self.me, instanceId)
+			--[[
+				튜토리얼이 잠근 카드는 **낼 수 없는 것처럼** 보여야 한다.
+				눌리기만 막고 멀쩡해 보이게 두면 "왜 안 되지" 로 끝난다.
+			]]
+			local locked = opts.lockedHand and opts.lockedHand[instanceId]
+			local playable = (not locked) and Rules.canPlayCard(state, self.me, instanceId)
 
 			local card = CardView.handCard(def, {
 				layoutOrder = index,
@@ -928,6 +965,8 @@ end
 		selectedId = number?,   -- 지금 고른 카드
 		prompt     = string?,   -- 가운데 안내문
 		hint       = string?,   -- 행동 바 설명
+		coach      = string?,   -- 튜토리얼 말풍선 (없으면 안 뜬다)
+		lockedHand = { [id]: true }?,  -- 튜토리얼이 잠근 손패 카드
 		busy       = boolean,   -- 상대가 두는 중
 		buttons    = { [key] = boolean },  -- 켜둘 버튼
 	}

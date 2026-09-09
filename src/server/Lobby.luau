@@ -181,6 +181,8 @@ function Lobby:onMessage(player, payload)
 		self:saveDeck(player, payload.entries)
 	elseif payload.kind == "deckReset" then
 		self:resetDeck(player)
+	elseif payload.kind == "tutorial" then
+		self:startTutorial(player)
 	elseif payload.kind == "practice" then
 		self:startPractice(player)
 	elseif payload.kind == "leave" then
@@ -256,6 +258,53 @@ function Lobby:resetDeck(player)
 		saved = ok,
 		text = ok and "스타터 덱으로 되돌렸습니다" or "되돌렸지만 저장하지 못했습니다",
 	})
+end
+
+--==========================================================================
+-- 튜토리얼
+--==========================================================================
+
+--[[
+	튜토리얼 한 판. 코치(말풍선과 잠금)는 클라이언트가 하고, 여기서는 **판을 어떤
+	조건으로 여는가** 만 정한다.
+
+	연습과 다른 점 셋.
+	  · 덱이 정해져 있다 — 저장된 덱으로 열면 무엇이 손에 올지 알 수 없어서
+	    "이제 생물을 소환하세요" 를 말할 수 없다
+	  · 상대 라이프가 낮다 — 30 을 정직하게 깎게 하면 배우는 데 열 턴이 더 든다
+	  · 상대는 Easy — 즉시시전으로 대응하지 않는다. 스택은 튜토리얼 밖에서 배운다
+
+	시드를 고정하는 이유는 재현이다. "튜토리얼 어디가 이상하다" 는 제보를 받으면
+	같은 판을 그대로 다시 열 수 있다. 다시 하기를 누르면 새 시드로 섞이지만,
+	코치는 턴 번호가 아니라 **판 상태**를 보므로 그래도 따라온다.
+]]
+local TUTORIAL_SEED = 20260909
+local TUTORIAL_FOE_LIFE = 12
+
+function Lobby:startTutorial(player)
+	if self.host:runnerFor(player) then
+		return
+	end
+	self.matchmaker:cancel(player)
+
+	local runner = MatchRunner.new(self.remotes, {
+		seats = {
+			[1] = { player = player, deck = Decks.tutorial() },
+			[2] = {
+				ai = AI.Difficulty.Easy,
+				name = "튜토리얼 상대",
+				deck = Decks.tutorialFoe(),
+				life = TUTORIAL_FOE_LIFE,
+			},
+		},
+		seed = TUTORIAL_SEED,
+		-- 배우는 사람이 선공. 처음 보는 화면이 "상대 차례" 면 아무것도 못 하고 기다린다.
+		startingPlayerId = 1,
+		allowRestart = true,
+	})
+
+	self.host:attach(runner)
+	self:setScreen(player, { screen = Screen.Battle, mode = "tutorial" })
 end
 
 --==========================================================================

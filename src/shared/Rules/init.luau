@@ -144,6 +144,30 @@ function Rules.concede(state, playerId)
 end
 
 --==========================================================================
+-- 차례 판정
+--==========================================================================
+
+--[[
+	지금 행동해야 하는 플레이어. -> 1 | 2
+
+	스택이 올라가 있으면 대응권자, 수비준비 페이즈면 수비측, 그 외에는 턴 플레이어다.
+
+	**"내 턴" 과 "내 차례" 는 다르다.** 수비준비에서는 상대 턴인데 내가 둔다.
+	서버(MatchRunner)·클라이언트(Controller·Tutorial)·터미널 클라이언트·계측 스크립트가
+	전부 이 판정을 하는데, 예전에는 각자 복사본을 들고 있었다. 한 곳만 고치면
+	"버튼은 켜져 있는데 서버가 거부" 같은 것이 생긴다.
+]]
+function Rules.whoActs(state)
+	if not Stack.isEmpty(state) then
+		return Stack.responderFor(state)
+	end
+	if state.phase == Enums.Phase.DefensePrep then
+		return GameState.opponentOf(state.activePlayerId)
+	end
+	return state.activePlayerId
+end
+
+--==========================================================================
 -- 카드 내기
 --==========================================================================
 
@@ -299,6 +323,23 @@ end
 --[[
 	target = { kind = "Player", id = playerId } | { kind = "Creature", id = instanceId }
 ]]
+--[[
+	이 생물이 이번 전투에 이미 공격을 선언했는가.
+
+	선언해도 **탭되지 않는다** — 탭은 전투가 해결될 때 일어난다. 그래서 이미 공격 중인
+	생물도 Combat.canAttack 은 계속 참이고, "또 선언할 수 있는가" 는 이 함수가 답한다.
+	화면(Controller)이 이걸 안 보면 이미 공격 중인 생물이 초록으로 계속 켜지고,
+	눌러 들어가 대상까지 고른 뒤에야 서버가 거부한다.
+]]
+function Rules.hasDeclaredAttack(state, attackerId)
+	for _, declaration in state.combat.attackers do
+		if declaration.id == attackerId then
+			return true
+		end
+	end
+	return false
+end
+
 function Rules.declareAttacker(state, playerId, attackerId, target)
 	if state.finished then
 		return false, "이미 끝난 게임입니다"
@@ -318,10 +359,8 @@ function Rules.declareAttacker(state, playerId, attackerId, target)
 		return false, "존재하지 않는 카드입니다"
 	end
 
-	for _, declaration in state.combat.attackers do
-		if declaration.id == attackerId then
-			return false, "이미 공격을 선언한 생물입니다"
-		end
+	if Rules.hasDeclaredAttack(state, attackerId) then
+		return false, "이미 공격을 선언한 생물입니다"
 	end
 
 	local ok, reason
@@ -358,6 +397,23 @@ end
 -- 방어 배정 (수비준비 페이즈)
 --==========================================================================
 
+--[[
+	이 공격자에게 방어를 더 배정할 수 있는가. (Config.maxBlockersPerAttacker)
+
+	Combat.canBlock 은 "이 생물이 저 공격자를 막을 수 있는 종류인가" 만 본다 —
+	비행·탭·아군 여부. **이미 누가 막고 있는지는 안 본다.** 그래서 화면이 이걸 같이
+	보지 않으면 이미 막힌 공격자가 계속 초록으로 켜지고, 눌러 봐야 서버가 거부한다.
+]]
+function Rules.canAssignBlockerTo(state, attackerId)
+	local count = 0
+	for _, assignedAttackerId in state.combat.blocks do
+		if assignedAttackerId == attackerId then
+			count += 1
+		end
+	end
+	return count < Config.maxBlockersPerAttacker
+end
+
 function Rules.declareBlocker(state, playerId, blockerId, attackerId)
 	if state.finished then
 		return false, "이미 끝난 게임입니다"
@@ -393,13 +449,7 @@ function Rules.declareBlocker(state, playerId, blockerId, attackerId)
 		return false, "이미 방어를 배정한 생물입니다"
 	end
 
-	local blockersOnAttacker = 0
-	for _, assignedAttackerId in state.combat.blocks do
-		if assignedAttackerId == attackerId then
-			blockersOnAttacker += 1
-		end
-	end
-	if blockersOnAttacker >= Config.maxBlockersPerAttacker then
+	if not Rules.canAssignBlockerTo(state, attackerId) then
 		return false, ("공격자 하나는 최대 %d 마리까지 막을 수 있습니다"):format(Config.maxBlockersPerAttacker)
 	end
 

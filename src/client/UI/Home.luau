@@ -3,10 +3,12 @@
 
 	기획을 로비에서 빠른 대전으로 바꾼 이유가 그대로 화면에 드러난다 —
 	돌아다닐 공간도, 방 목록도, 대기실 채팅도 없다. 접속하면 바로 이 화면이고,
-	누를 것은 둘뿐이다.
+	누를 것은 넷뿐이다.
 
 	    [ 빠른 대전 ]   큐에 서서 사람을 찾는다 (크로스서버)
+	    [ 튜토리얼  ]   코치가 붙는 한 판. 룰을 여기서 배운다
 	    [ AI 연습   ]   큐를 타지 않고 이 서버에서 바로 한 판
+	    [ 덱 편집   ]   내 덱을 짜서 저장한다
 
 	큐에 서면 두 버튼이 사라지고 경과 시간과 취소 버튼만 남는다. "찾는 중에도
 	연습을 누를 수 있는" 상태를 만들면 연습 도중에 매칭이 잡히는 사고가 난다.
@@ -26,7 +28,7 @@ function Home.new(parent)
 	local self = setmetatable({}, Home)
 
 	local noop = function() end
-	self.callbacks = { queue = noop, cancel = noop, practice = noop }
+	self.callbacks = { queue = noop, cancel = noop, tutorial = noop, practice = noop, deck = noop }
 
 	self.screen = "home"
 	self.queuedSince = nil
@@ -72,7 +74,7 @@ function Home:build(parent)
 		BackgroundTransparency = 1,
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(440, 420),
+		Size = UDim2.fromOffset(440, 474),
 	}, {
 		Widgets.listLayout(Enum.FillDirection.Vertical, 12, Enum.HorizontalAlignment.Center),
 	})
@@ -103,7 +105,7 @@ function Home:build(parent)
 		Parent = column,
 		LayoutOrder = 3,
 		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 196),
+		Size = UDim2.new(1, 0, 0, 250),
 	}, {
 		Widgets.listLayout(Enum.FillDirection.Vertical, 10, Enum.HorizontalAlignment.Center),
 	})
@@ -118,9 +120,23 @@ function Home:build(parent)
 		self.callbacks.queue()
 	end)
 
-	self.practiceButton = Widgets.button("AI 연습", {
+	--[[
+		처음 온 사람이 제일 먼저 눌러야 하는 버튼이라 빠른 대전 바로 밑에 둔다.
+		강제로 띄우지는 않는다 — 룰을 아는 사람에게 튜토리얼을 먹이면 그게 첫인상이 된다.
+	]]
+	self.tutorialButton = Widgets.button("튜토리얼", {
 		Parent = self.menu,
 		LayoutOrder = 2,
+		Size = UDim2.new(0, 320, 0, 50),
+		BackgroundColor3 = Theme.color.stack,
+		TextSize = Theme.text.title,
+	}, function()
+		self.callbacks.tutorial()
+	end)
+
+	self.practiceButton = Widgets.button("AI 연습", {
+		Parent = self.menu,
+		LayoutOrder = 3,
 		Size = UDim2.new(0, 320, 0, 50),
 		TextSize = Theme.text.title,
 	}, function()
@@ -129,7 +145,7 @@ function Home:build(parent)
 
 	self.deckButton = Widgets.button("덱 편집", {
 		Parent = self.menu,
-		LayoutOrder = 3,
+		LayoutOrder = 4,
 		Size = UDim2.new(0, 320, 0, 44),
 		TextSize = Theme.text.label,
 	}, function()
@@ -245,7 +261,7 @@ function Home:render(payload)
 
 	if screen == "home" then
 		self.subtitle.Text = "빠른 대전"
-		self.message.Text = payload.text or "상대를 찾아 바로 한 판. 사람이 없으면 AI 연습으로."
+		self.message.Text = payload.text or "처음이라면 튜토리얼부터. 상대를 찾아 바로 한 판도 됩니다."
 	elseif screen == "error" then
 		self.subtitle.Text = "빠른 대전"
 		self.message.Text = payload.text or "문제가 발생했습니다"

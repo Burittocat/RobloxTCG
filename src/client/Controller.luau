@@ -23,6 +23,8 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Rules = require(Shared.Rules)
 local Net = require(Shared.Net)
 
+local Tutorial = require(script.Parent.Tutorial)
+
 local Enums = Rules.Enums
 local GameState = Rules.GameState
 local Registry = Rules.Registry
@@ -58,7 +60,8 @@ function Controller.new(battle, remotes)
 	self.view = nil
 	self.mode = { name = "idle" }
 	self.me, self.foe = DEFAULT_ME, DEFAULT_FOE
-	self.matchMode = "practice" -- App 이 매치 종류에 따라 바꾼다 ("practice" | "pvp")
+	self.matchMode = "practice" -- App 이 매치 종류에 따라 바꾼다 ("practice" | "pvp" | "tutorial")
+	self.tutorial = Tutorial.new()
 
 	battle.callbacks.handCard = function(id)
 		self:onHandCard(id)
@@ -103,6 +106,7 @@ function Controller:start()
 	-- 지난 판의 뷰가 남아 있으면 새 판의 첫 스냅샷이 오기 전에 옛 판이 그려진다.
 	self.view = nil
 	self.mode = { name = "idle" }
+	self.tutorial:reset()
 
 	self.session = (self.session or 0) + 1
 	local session = self.session
@@ -150,6 +154,55 @@ function Controller:setMatchMode(mode)
 	end
 end
 
+--==========================================================================
+-- 튜토리얼 코치
+--==========================================================================
+
+--[[
+	지금 단계. 튜토리얼이 아니면 없다.
+
+	부를 때마다 단계를 진행시킨다(Tutorial:update). 클릭 처리 중에 불러도 되도록
+	일부러 그렇게 뒀다 — 화면을 다시 그리기 전에 이미 다음 단계인 경우가 있다.
+]]
+function Controller:coachStep()
+	if self.matchMode ~= "tutorial" or not self.view then
+		return nil
+	end
+	return self.tutorial:update(self.view, self.me)
+end
+
+--[[
+	지금 누를 수 있는 것. -> 허용표
+
+	**고르는 중(target/attack/block)에는 잠그지 않는다.** 그 순간 누를 수 있는 것은
+	이미 룰이 초록으로 좁혀놨고, 거기서 코치가 또 막으면 고르다 만 채로 갇힌다.
+]]
+function Controller:coachAllow()
+	if self.matchMode ~= "tutorial" or not self.view or self.mode.name ~= "idle" then
+		return Tutorial.FREE
+	end
+	return Tutorial.allowOf(self:coachStep(), self.view, self.me)
+end
+
+-- 코치가 잠근 손패 카드. 화면은 이걸 보고 "낼 수 없는 카드" 처럼 흐리게 그린다.
+function Controller:lockedHand(allow)
+	if allow.free then
+		return nil
+	end
+
+	local locked = {}
+	for _, instanceId in self.view.players[self.me].hand or {} do
+		if not Tutorial.allowsHand(allow, self.view, self.me, instanceId) then
+			locked[instanceId] = true
+		end
+	end
+	return locked
+end
+
+function Controller:coachToast()
+	self.battle:showToast("지금은 코치가 안내한 것부터 해 보세요", "info")
+end
+
 function Controller:endActions()
 	if self.matchMode == "pvp" then
 		return {
@@ -163,19 +216,9 @@ function Controller:endActions()
 	}
 end
 
---[[
-	지금 행동해야 하는 쪽. 서버 MatchRunner:whoActs 와 같은 규칙이다.
-	(같은 규칙을 쓰므로 "내 차례인데 버튼이 꺼져 있다" 가 생기지 않는다)
-]]
-local function whoActs(view)
-	if not Stack.isEmpty(view) then
-		return Stack.responderFor(view)
-	end
-	if view.phase == Phase.DefensePrep then
-		return GameState.opponentOf(view.activePlayerId)
-	end
-	return view.activePlayerId
-end
+-- 지금 행동해야 하는 쪽. 서버와 **같은 함수**를 부른다 —
+-- 그래서 "내 차례인데 버튼이 꺼져 있다" 가 생기지 않는다.
+local whoActs = Rules.whoActs
 
 --==========================================================================
 -- 하이라이트 / 안내문 계산
@@ -192,10 +235,16 @@ end
 	Combat.canBlock 이 전부 거부하는데, 그걸 안 보면 초록 테두리는 다 켜지고
 	눌러 들어가 봐야 고를 공격자가 없어 '선택 취소' 로만 나오게 된다.
 ]]
+local function canBlockThis(view, blocker, attacker)
+	-- canBlock 은 "막을 수 있는 종류인가" 만 본다. 이미 막고 있는 사람이 있으면
+	-- 서버가 거부하므로 여기서 같이 본다 (Rules.canAssignBlockerTo 주석 참조).
+	return Combat.canBlock(view, blocker, attacker) and Rules.canAssignBlockerTo(view, attacker.id)
+end
+
 local function canBlockAnyAttacker(view, blocker)
 	for _, declaration in view.combat.attackers do
 		local attacker = view.cards[declaration.id]
-		if attacker and Combat.canBlock(view, blocker, attacker) then
+		if attacker and canBlockThis(view, blocker, attacker) then
 			return true
 		end
 	end
@@ -257,7 +306,7 @@ function Controller:highlights()
 		if blocker then
 			for _, declaration in view.combat.attackers do
 				local attacker = view.cards[declaration.id]
-				if attacker and Combat.canBlock(view, blocker, attacker) then
+				if attacker and canBlockThis(view, blocker, attacker) then
 					out.creature[attacker.id] = true
 				end
 			end
@@ -265,19 +314,32 @@ function Controller:highlights()
 		return out
 	end
 
-	-- idle: 지금 고를 수 있는 내 생물
+	--[[
+		idle: 지금 고를 수 있는 내 생물.
+		튜토리얼이 잠근 단계에서는 켜지 않는다 — 초록으로 켜두고 눌러도 안 되면
+		"고장" 으로 읽힌다.
+	]]
+	local allow = self:coachAllow()
+
+	local function light(instance)
+		if Tutorial.allowsField(allow, view, self.me, instance.id) then
+			out.creature[instance.id] = true
+		end
+	end
+
 	if whoActs(view) == self.me and Stack.isEmpty(view) then
 		if view.phase == Phase.AttackPrep and view.activePlayerId == self.me then
 			for _, instance in GameState.creaturesOnField(view, self.me) do
-				if Combat.canAttack(view, instance) then
-					out.creature[instance.id] = true
+				-- 이미 선언한 생물은 끈다. 선언해도 탭되지 않아 canAttack 만으로는 안 걸러진다.
+				if Combat.canAttack(view, instance) and not Rules.hasDeclaredAttack(view, instance.id) then
+					light(instance)
 				end
 			end
 		elseif view.phase == Phase.DefensePrep and view.activePlayerId == self.foe then
 			for _, instance in GameState.creaturesOnField(view, self.me) do
 				-- canBlock 이 탭·필드 여부까지 보므로 여기서 또 보지 않는다.
 				if not view.combat.blocks[instance.id] and canBlockAnyAttacker(view, instance) then
-					out.creature[instance.id] = true
+					light(instance)
 				end
 			end
 		end
@@ -368,7 +430,7 @@ function Controller:buttonStates()
 	local atMulligan = (view.phase == Phase.Mulligan) and acting
 	local usedMulligan = view.mulligan and view.mulligan.used[self.me]
 
-	return {
+	local states = {
 		endPhase = acting and perms.endPhase and not stackOpen,
 		pass = acting and stackOpen,
 		cancel = self.mode.name ~= "idle",
@@ -376,6 +438,20 @@ function Controller:buttonStates()
 		mulligan = atMulligan and not usedMulligan,
 		keep = atMulligan,
 	}
+
+	--[[
+		튜토리얼은 시킨 것만 켠다. **판정을 여기 한 곳에 두는 게 요점이다** —
+		화면에서만 끄면 단축키(E · P)가 그대로 통해서 코치를 앞질러 갈 수 있다.
+		(onAction 이 같은 허용표를 다시 본다)
+	]]
+	local allow = self:coachAllow()
+	if not allow.free then
+		for key, on in states do
+			states[key] = on and Tutorial.allowsButton(allow, key)
+		end
+	end
+
+	return states
 end
 
 function Controller:refresh()
@@ -383,11 +459,15 @@ function Controller:refresh()
 		return
 	end
 
+	local allow = self:coachAllow()
+
 	self.battle:render(self.view, {
 		highlights = self:highlights(),
 		selectedId = self.mode.cardId or self.mode.attackerId or self.mode.blockerId,
 		prompt = self:promptText(),
 		hint = self:hintText(),
+		coach = Tutorial.textOf(self:coachStep(), self.view, self.me),
+		lockedHand = self:lockedHand(allow),
 		busy = (not self.view.finished) and whoActs(self.view) ~= self.me,
 		buttons = self:buttonStates(),
 		endActions = self:endActions(),
@@ -429,6 +509,11 @@ function Controller:onHandCard(instanceId)
 
 	local instance = view.cards[instanceId]
 	if not instance then
+		return
+	end
+
+	if not Tutorial.allowsHand(self:coachAllow(), view, self.me, instanceId) then
+		self:coachToast()
 		return
 	end
 
@@ -538,10 +623,19 @@ function Controller:onFieldCard(instanceId)
 		return
 	end
 
+	if not Tutorial.allowsField(self:coachAllow(), view, self.me, instanceId) then
+		self:coachToast()
+		return
+	end
+
 	if view.phase == Phase.AttackPrep and view.activePlayerId == self.me then
 		local ok, reason = Combat.canAttack(view, instance)
 		if not ok then
 			self.battle:showToast(tostring(reason), "error")
+			return
+		end
+		if Rules.hasDeclaredAttack(view, instanceId) then
+			self.battle:showToast("이미 공격을 선언한 생물입니다", "error")
 			return
 		end
 		if #Combat.legalAttackTargets(view, instance) == 0 then
@@ -605,6 +699,15 @@ end
 -- 버튼
 --==========================================================================
 
+-- 코치가 통제하는 버튼. 나가기(항복·로그·취소)는 여기 없다.
+local COACHED_KEYS = {
+	endPhase = true,
+	pass = true,
+	clear = true,
+	mulligan = true,
+	keep = true,
+}
+
 function Controller:onAction(key)
 	local view = self.view
 
@@ -631,6 +734,17 @@ function Controller:onAction(key)
 	end
 
 	if not view or view.finished then
+		return
+	end
+
+	--[[
+		단축키(E · P)는 버튼을 거치지 않으므로 꺼진 버튼을 그냥 지나친다.
+		튜토리얼에서는 여기서 한 번 더 본다 — buttonStates 와 **같은 허용표**다.
+
+		항복과 로그는 거르지 않는다. 튜토리얼 도중에 나가려면 항복이 유일한 출구다.
+	]]
+	if COACHED_KEYS[key] and not Tutorial.allowsButton(self:coachAllow(), key) then
+		self:coachToast()
 		return
 	end
 

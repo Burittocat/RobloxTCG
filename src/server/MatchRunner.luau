@@ -3,12 +3,14 @@
 
 	    MatchRunner.new(remotes, {
 	        seats = {
-	            [1] = { player = <Player> },
-	            [2] = { ai = AI.Difficulty.Normal, name = "훈련용 AI" },
+	            [1] = { player = <Player>, deck = { ... } },
+	            [2] = { ai = AI.Difficulty.Normal, name = "훈련용 AI", life = 10 },
 	        },
 	        seed = 12345,
 	        startingPlayerId = 1,
 	    })
+
+	좌석의 deck / life 는 안 주면 스타터 덱과 Config.startingLife 다.
 
 	러너는 그 차이를 거의 모른다. 좌석에 player 가 있으면 스냅샷을 쏘고 입력을 기다리고,
 	ai 가 있으면 대신 한 수를 둔다. PvP 는 "AI 좌석이 하나도 없는 매치" 일 뿐이라
@@ -156,6 +158,8 @@ function MatchRunner:start(seed)
 		players[seatId] = {
 			name = self:seatName(seatId),
 			deck = seat and seat.deck or Decks.starter(),
+			-- 좌석마다 다른 라이프. 튜토리얼 상대만 낮게 시작한다(안 주면 Config 값).
+			life = seat and seat.life,
 		}
 	end
 
@@ -243,21 +247,9 @@ end
 -- 차례 판정
 --==========================================================================
 
---[[
-	지금 행동해야 하는 좌석.
-	스택이 올라가 있으면 대응권자, 수비준비 페이즈면 수비측, 그 외에는 턴 플레이어.
-	(터미널 클라이언트 play.luau · 클라이언트 Controller 와 같은 규칙이다)
-]]
+-- 지금 행동해야 하는 좌석. 판정은 Rules 한 곳에 있다(Rules.whoActs 주석 참조).
 function MatchRunner:whoActs()
-	local state = self.state
-
-	if not Stack.isEmpty(state) then
-		return Stack.responderFor(state)
-	end
-	if state.phase == Rules.Enums.Phase.DefensePrep then
-		return GameState.opponentOf(state.activePlayerId)
-	end
-	return state.activePlayerId
+	return Rules.whoActs(self.state)
 end
 
 --[[

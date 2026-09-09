@@ -28,11 +28,11 @@ local STATE_VERSION = 1
 -- 생성
 --==========================================================================
 
-local function newPlayer(id, name)
+local function newPlayer(id, name, life)
 	return {
 		id = id,
 		name = name or ("플레이어 " .. id),
-		life = Config.startingLife,
+		life = life or Config.startingLife,
 
 		deck = {}, -- [1] 이 맨 위
 		hand = {},
@@ -49,10 +49,15 @@ end
 
 	opts = {
 		seed        = number,
-		players     = { { name = string, deck = { cardId, ... } }, ... },  -- 2명
+		players     = { { name = string, deck = { cardId, ... }, life = number? }, ... },  -- 2명
 		startingPlayerId = 1 | 2 | nil,   -- nil 이면 시드로 결정
 		strictDeck  = boolean?,           -- false 면 60장 규칙 생략(테스트/캠페인용)
 	}
+
+	players[i].life 는 **그 좌석만** 다른 라이프로 시작한다. 튜토리얼처럼 짧게 끝나야
+	하는 판에서 쓴다 — 라이프 30 을 정직하게 깎으려면 코치가 같은 말을 열 번 한다.
+	안 주면 Config.startingLife 다. 여기 말고 라이프를 바꾸는 곳을 만들면,
+	"이 판의 라이프가 왜 이건지" 를 두 군데서 찾게 된다.
 ]]
 --[[
 	선공 좌석. -> 1 | 2
@@ -104,7 +109,7 @@ function GameState.new(opts)
 	}
 
 	for index, playerOpts in opts.players do
-		local player = newPlayer(index, playerOpts.name)
+		local player = newPlayer(index, playerOpts.name, playerOpts.life)
 		state.players[index] = player
 
 		local ok, err = CardDef.validateDeck(playerOpts.deck, Registry.get, opts.strictDeck)

@@ -37,20 +37,10 @@ end
 local Phase = Rules.Enums.Phase
 local CardDef = Rules.CardDef
 local Registry = Rules.Registry
-local GameState = Rules.GameState
-local Stack = Rules.Stack
 
 --==========================================================================
 
-local function whoActs(state)
-	if not Stack.isEmpty(state) then
-		return Stack.responderFor(state)
-	end
-	if state.phase == Phase.DefensePrep then
-		return GameState.opponentOf(state.activePlayerId)
-	end
-	return state.activePlayerId
-end
+local whoActs = Rules.whoActs
 
 --[[
 	한 판을 끝까지 둔다. 매 턴 시작 때 손패 크기를 적어 둔다 —

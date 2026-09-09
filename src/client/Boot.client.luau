@@ -89,9 +89,9 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	local controller = app.controller
 
 	-- 새 판은 게임이 끝났을 때만. 진행 중에 R 을 잘못 눌러 판이 날아가면 안 된다.
-	-- PvP 에는 "새 판" 자체가 없다 (매칭을 다시 타야 한다).
+	-- PvP 에만 "새 판" 이 없다 (매칭을 다시 타야 한다). 연습과 튜토리얼은 된다.
 	if action == "restart" then
-		if controller.matchMode ~= "practice" then
+		if controller.matchMode == "pvp" then
 			return
 		end
 		if not (controller.view and controller.view.finished) then

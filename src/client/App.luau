@@ -58,6 +58,9 @@ function App.new(playerGui, remotes)
 	self.home.callbacks.cancel = function()
 		self:send({ kind = "cancel" })
 	end
+	self.home.callbacks.tutorial = function()
+		self:send({ kind = "tutorial" })
+	end
 	self.home.callbacks.practice = function()
 		self:send({ kind = "practice" })
 	end

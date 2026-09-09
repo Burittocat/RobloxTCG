@@ -684,6 +684,12 @@ t:describe("튜토리얼", function()
 		return stroke ~= nil and stroke.Thickness >= 4
 	end
 
+	-- 플레이어 패널은 테두리가 2.5 로 켜진다 (renderPlayerPanel)
+	local function isPanelLit(panel)
+		local stroke = panel and panel:FindFirstChildOfClass("UIStroke")
+		return stroke ~= nil and stroke.Thickness > 1
+	end
+
 	local function litCards(root)
 		local out = {}
 		for _, node in allNamed(root, "Field_") do
@@ -736,6 +742,40 @@ t:describe("튜토리얼", function()
 	end
 
 	--[[
+		마법을 내면 화면이 대상을 물어본다. 켜진 것 중 아무거나 골라준다.
+		고를 게 없으면 선택을 되돌린다 — 여기서 안 빠져나오면 그 다음 클릭이 전부
+		"대상 고르기" 로 먹혀서, 학생이 조용히 굳는다.
+	]]
+	local function answerTargetPrompt(world, player)
+		local gui = guiOf(player)
+		if not promptText(player):find("대상을 고르세요") then
+			return
+		end
+
+		for _, field in { "MyField", "FoeField" } do
+			local node = litCards(Screen.find(gui, field))[1]
+			if node then
+				Screen.click(node)
+				world:advance(0.4)
+				return
+			end
+		end
+
+		local foePanel = Screen.find(gui, "FoePanel")
+		if isPanelLit(foePanel) then
+			Screen.click(foePanel:FindFirstChild("Hit"))
+			world:advance(0.4)
+			return
+		end
+
+		local cancel = activeButton(player, "선택 취소")
+		if cancel then
+			Screen.click(cancel)
+			world:advance(0.2)
+		end
+	end
+
+	--[[
 		"지금 눌리는 것" 을 하나 누른다. -> 눌렀나
 
 		순서는 사람이 할 법한 순서다 — 손패를 내고, 공격하고, 페이즈를 넘긴다.
@@ -752,6 +792,7 @@ t:describe("튜토리얼", function()
 		if card then
 			Screen.click(card)
 			world:advance(0.6)
+			answerTargetPrompt(world, player)
 			return true
 		end
 
@@ -819,9 +860,15 @@ t:describe("튜토리얼", function()
 		local gui = guiOf(kim)
 
 		local pressed = 0
+		local said = {} -- 판 내내 코치가 한 말 전부
+
 		for _ = 1, 600 do
 			if outcome(kim) then
 				break
+			end
+			local line = coachText(kim)
+			if line then
+				said[line] = true
 			end
 			if pressSomething(world, kim) then
 				pressed += 1
@@ -833,6 +880,36 @@ t:describe("튜토리얼", function()
 		t:eq(outcome(kim), "승리", "코치가 켜준 것만 눌러도 이겨야 합니다")
 		t:falsy(coachText(kim), "다 배웠으면 말풍선은 사라져야 합니다")
 		t:truthy(Screen.hasText(gui, "다시 하기"), "끝나면 다시 할 수 있어야 합니다")
+		t:truthy(Screen.hasText(gui, "덱 편집"), "끝나는 자리에서 다음에 볼 곳을 알려줘야 합니다")
+
+		--[[
+			용어와 태그를 실제로 가르쳤는가.
+
+			판이 어떻게 흘렀든 탭·언탭은 반드시 나온다(생물을 한 마리도 못 내면
+			건너뛰지만, 그 판은 애초에 이기지 못한다). 태그는 판에 나온 것만 소개하므로
+			"둘 이상" 으로 본다 — 다섯 종을 다 요구하면 판마다 깜빡인다.
+		]]
+		local function saidAny(needle)
+			for line in said do
+				if line:find(needle) then
+					return true
+				end
+			end
+			return false
+		end
+
+		-- "언탭" 만 찾으면 안 된다. 신속 태그 설명에도 그 낱말이 들어 있어서,
+		-- 탭 단계를 통째로 지워도 통과한다. 탭 단계에만 있는 문장으로 본다.
+		t:truthy(saidAny("옆으로 누운"), "탭이 무엇인지 설명해야 합니다")
+		t:truthy(saidAny("내 턴이 시작할 때"), "언탭이 언제 되는지 설명해야 합니다")
+
+		local tags = 0
+		for _, name in { "도발", "비행", "원거리", "신속", "즉시시전" } do
+			if saidAny("<b>" .. name .. "</b>") then
+				tags += 1
+			end
+		end
+		t:truthy(tags >= 4, ("태그를 %d 종만 소개했습니다"):format(tags))
 	end)
 end)
 

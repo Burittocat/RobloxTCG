@@ -557,6 +557,7 @@ function Battle:makeEndOverlay(parent)
 	}, {
 		Widgets.padding(24),
 	})
+	self.endBox = box
 
 	self.endTitle = Widgets.label("", {
 		Parent = box,
@@ -573,6 +574,21 @@ function Battle:makeEndOverlay(parent)
 		Size = UDim2.new(1, 0, 0, 70),
 		TextSize = Theme.text.body,
 		TextColor3 = Theme.color.textDim,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		ZIndex = 32,
+	})
+
+	--[[
+		판이 끝난 자리에서 한 번 더 할 말. 지금은 튜토리얼이 "다음엔 여길 보세요" 로 쓴다.
+		없으면 자리를 차지하지 않는다 — 평소 결과 화면에 빈 줄이 생기면 안 된다.
+	]]
+	self.endNote = Widgets.label("", {
+		Parent = box,
+		Position = UDim2.fromOffset(0, 136),
+		Size = UDim2.new(1, 0, 0, 44),
+		TextSize = Theme.text.body,
+		TextColor3 = Theme.color.accent,
 		TextWrapped = true,
 		TextXAlignment = Enum.TextXAlignment.Center,
 		ZIndex = 32,
@@ -966,6 +982,7 @@ end
 		prompt     = string?,   -- 가운데 안내문
 		hint       = string?,   -- 행동 바 설명
 		coach      = string?,   -- 튜토리얼 말풍선 (없으면 안 뜬다)
+		endNote    = string?,   -- 결과 화면에 덧붙일 한 줄
 		lockedHand = { [id]: true }?,  -- 튜토리얼이 잠근 손패 카드
 		busy       = boolean,   -- 상대가 두는 중
 		buttons    = { [key] = boolean },  -- 켜둘 버튼
@@ -1055,6 +1072,13 @@ function Battle:render(state, opts)
 			state.players[self.foe].name,
 			state.players[self.foe].life
 		)
+		--[[
+			안내 줄이 있으면 상자를 그만큼 키운다. 250 에 그대로 끼우면
+			버튼과 겹쳐서 둘 다 못 읽는다.
+		]]
+		self.endNote.Text = opts.endNote or ""
+		self.endBox.Size = UDim2.fromOffset(420, opts.endNote and 300 or 250)
+
 		self:setEndActions(opts.endActions)
 	else
 		self.endOverlay.Visible = false

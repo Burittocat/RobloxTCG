@@ -203,6 +203,19 @@ function Controller:coachToast()
 	self.battle:showToast("지금은 코치가 안내한 것부터 해 보세요", "info")
 end
 
+--[[
+	결과 화면에 덧붙일 한 줄.
+
+	튜토리얼에서 태그를 다 만나지는 못한다 — 판에 안 나온 태그는 소개할 자리가 없다.
+	그래서 끝나는 자리에서 "나머지는 어디서 보는지" 를 알려준다.
+]]
+function Controller:endNote()
+	if self.matchMode ~= "tutorial" then
+		return nil
+	end
+	return "더 다양한 태그와 효과는 시작 화면의 [덱 편집] 에서 카드를 눌러 확인해보세요!"
+end
+
 function Controller:endActions()
 	if self.matchMode == "pvp" then
 		return {
@@ -467,6 +480,7 @@ function Controller:refresh()
 		prompt = self:promptText(),
 		hint = self:hintText(),
 		coach = Tutorial.textOf(self:coachStep(), self.view, self.me),
+		endNote = self:endNote(),
 		lockedHand = self:lockedHand(allow),
 		busy = (not self.view.finished) and whoActs(self.view) ~= self.me,
 		buttons = self:buttonStates(),

@@ -58,6 +58,7 @@ local Combat = Rules.Combat
 
 local Phase = Enums.Phase
 local CardType = Enums.CardType
+local Keyword = Enums.Keyword
 
 local FREE = { free = true }
 local NOTHING = { buttons = {} }
@@ -101,6 +102,42 @@ local function attackerIds(view, me)
 		end
 	end
 	return out
+end
+
+-- 내 전장에 탭된 카드가 있는가. (코스트를 뽑으면 그 카드가 탭된다)
+local function hasTappedCard(view, me)
+	for _, instanceId in view.players[me].field or {} do
+		local instance = view.cards[instanceId]
+		if instance and instance.tapped then
+			return true
+		end
+	end
+	return false
+end
+
+--[[
+	태그 5종을 차례로 소개한다.
+
+	처음에는 "지금 화면에 나와 있는 태그" 만 골라 설명했다. 카드를 보면서 읽는 게 낫다고
+	봤는데, 실제로 재보니 한 판에 **두 종밖에** 안 나왔다 — 손에 잡히는 카드는 판마다
+	다르고, 자유롭게 두는 구간은 열댓 턴 중 절반도 안 된다. 그래서 다섯을 고정 순서로
+	돌린다. 튜토리얼 덱에 다섯이 전부 들어 있으므로, 여기 설명은 곧 그 판에서 만나게 될
+	카드 이야기다.
+
+	넘어가는 단위는 **페이즈**다. 매 렌더마다 돌리면 읽는 중에 글이 바뀌고,
+	턴마다 돌리면 한 판에 서너 개밖에 못 보여준다.
+]]
+local TAG_ORDER = { Keyword.Taunt, Keyword.Flying, Keyword.Ranged, Keyword.Haste, Keyword.Instant }
+
+local PHASE_STEP = {
+	[Phase.Main] = 0,
+	[Phase.AttackPrep] = 1,
+	[Phase.DefensePrep] = 2,
+}
+
+local function tagForNow(view)
+	local step = view.turn * 3 + (PHASE_STEP[view.phase] or 0)
+	return TAG_ORDER[(step % #TAG_ORDER) + 1]
 end
 
 local function contains(list, value)
@@ -167,6 +204,29 @@ local STEPS = {
 		end,
 		allow = function()
 			return { buttons = {}, hand = onlyPlayable(CardType.Creature) }
+		end,
+	},
+
+	{
+		--[[
+			탭이 뭔지 여기서 말한다. 소환하면서 코스트 카드가 방금 눕는 것을 봤을 때가
+			제일 좋은 자리다 — 화면에 "탭됨" 표시가 떠 있는 상태라 글자와 그림이 붙는다.
+
+			생물을 못 낸 판(코스트가 안 탭된 판)에서는 건너뛴다. 그러면 바로 아래
+			endMain 이 같은 일(페이즈 종료)을 맡는다.
+		]]
+		key = "tap",
+		text = "생물을 내면서 코스트 카드가 <b>탭</b> 됐어요 — 옆으로 누운 카드예요.\n"
+			.. "탭된 카드는 이번 턴에 다시 못 써요. 내 턴이 시작할 때 <b>언탭</b> 돼서 다시 서요.\n"
+			.. "[페이즈 종료] 로 공격준비로 넘어가세요.",
+		skip = function(view, me)
+			return not myTurn(view, me) or not hasTappedCard(view, me)
+		end,
+		done = function(view, me)
+			return not myTurn(view, me) or view.phase ~= Phase.Main
+		end,
+		allow = function()
+			return { buttons = { endPhase = true } }
 		end,
 	},
 
@@ -255,8 +315,8 @@ local STEPS = {
 						.. "소환 멀미는 다음 턴에 풀려요. [페이즈 종료] 로 넘기세요."
 				end
 				return "공격할 수 있는 생물이 초록으로 켜졌어요.\n"
-					.. "생물을 누른 다음, 공격할 대상을 고르세요.\n"
-					.. "상대 생물도, 상대 자신도 고를 수 있어요."
+					.. "생물을 누른 다음, 공격할 대상을 고르세요 — 상대 생물도, 상대 자신도 돼요.\n"
+					.. "공격을 선언한 생물은 <b>탭</b> 돼요. 다음 내 턴에 언탭돼요."
 			end
 			return "코스트를 내고 생물을 소환한 뒤,\n[페이즈 종료] 로 <b>공격준비</b> 까지 가 보세요."
 		end,
@@ -278,8 +338,19 @@ local STEPS = {
 			end
 
 			local foe = view.players[GameState.opponentOf(me)]
-			return "기본은 다 배웠어요 — 이제 자유롭게 두세요.\n"
-				.. ("상대 라이프를 0 으로 만들면 승리예요. (남은 라이프 %d)"):format(foe.life)
+			local goal = ("상대 라이프를 0 으로 만들면 승리예요. (남은 라이프 %d)"):format(foe.life)
+
+			--[[
+				이제 잠금이 없으니 말풍선은 **태그 교실**로 쓴다. 지금 판에 나와 있는
+				태그를 턴마다 하나씩 소개한다 — 화면에 그 카드가 실제로 있을 때 읽어야
+				"이게 그거구나" 가 된다. 튜토리얼 덱에 태그 5종이 다 들어 있는 이유다.
+			]]
+			local tag = tagForNow(view)
+			if tag then
+				return ("<b>%s</b> — %s\n"):format(Enums.KeywordDisplay[tag], Enums.KeywordText[tag]) .. goal
+			end
+
+			return "기본은 다 배웠어요 — 이제 자유롭게 두세요.\n" .. goal
 		end,
 		done = function(view)
 			return view.finished == true

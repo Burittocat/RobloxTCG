@@ -255,9 +255,11 @@ end
 --[[
 	사람이 결정할 차례가 될 때까지 굴린다.
 
-	AI 좌석이면 한 수 둔다. 사람 좌석인데 **대응할 카드를 하나도 못 내는 스택 창** 이면
-	물어보지 않고 자동으로 넘긴다 — 안 그러면 "패스" 버튼만 계속 누르게 된다.
-	PvP 매치에서는 AI 가지가 한 번도 안 타므로 사실상 이 자동 패스만 남는다.
+	AI 좌석이면 한 수 둔다. 사람 좌석이면 멈춘다 — 스택 창이 열려 있어도 그렇다.
+
+	예전에는 대응할 카드가 하나도 없으면 서버가 대신 패스했다. 버튼만 누르게 하지 말자는
+	뜻이었는데, 실제로는 **상대가 무엇을 시전했는지 읽기도 전에 화면이 지나갔다.**
+	카드 게임에서 그건 정보를 잃는 것이라 껐다(Config.autoPassWithNoResponse).
 ]]
 function MatchRunner:pump()
 	if self.thinking or not self.state then
@@ -277,8 +279,11 @@ function MatchRunner:pump()
 			local seat = self.seats[mover]
 
 			if seat.player then
-				if Stack.isEmpty(self.state) or AI.hasAnyPlayableCard(self.state, mover) then
-					break -- 사람이 결정할 게 있다. 여기서 멈춘다.
+				if Stack.isEmpty(self.state) then
+					break -- 사람 차례다.
+				end
+				if not Rules.Config.autoPassWithNoResponse or AI.hasAnyPlayableCard(self.state, mover) then
+					break -- 대응 창은 사람이 직접 닫는다.
 				end
 				task.wait(AUTO_PASS_TIME)
 				if self.generation ~= generation or not self.state then

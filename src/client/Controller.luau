@@ -415,7 +415,17 @@ function Controller:hintText()
 	end
 
 	if not Stack.isEmpty(view) then
-		return "상대의 시전에 대응할 수 있습니다.\n'즉시시전' 마법만 가능."
+		--[[
+			대응할 카드가 없어도 [대응 패스] 를 눌러야 넘어간다
+			(Config.autoPassWithNoResponse). 그러면 "왜 멈춰 있지" 가 되므로
+			**낼 게 없다는 것**과 **무엇을 눌러야 하는지**를 같이 말해준다.
+		]]
+		for _, instanceId in view.players[self.me].hand or {} do
+			if Rules.canPlayCard(view, self.me, instanceId) then
+				return "상대의 시전에 대응할 수 있습니다.\n'즉시시전' 마법만 가능."
+			end
+		end
+		return "대응할 카드가 없습니다.\n[대응 패스] 로 넘기세요."
 	end
 	if view.phase == Phase.Main then
 		return "코스트 카드를 내고, 생물을 소환하고, 마법을 씁니다."

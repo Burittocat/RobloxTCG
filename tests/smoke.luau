@@ -91,6 +91,31 @@ end
 	AI 는 한 수에 0.55초씩 쓰므로 "몇 초 감고 확인" 은 AI 가 얼마나 둘 게 많은지에
 	따라 깜빡인다. 조건이 만족될 때까지 기다리고, 못 기다리면 nil 을 돌려준다.
 ]]
+--[[
+	기다리는 동안 대응 창이 열리면 넘긴다.
+
+	상대가 카드를 낼 때마다 스택이 올라가고, **서버는 사람이 [대응 패스] 를 누를 때까지
+	기다린다**(Config.autoPassWithNoResponse = false). 화면 앞에 앉은 사람은 그걸 보고
+	누르므로, 여기 학생도 그렇게 한다. 안 그러면 어떤 테스트도 두 턴을 못 넘긴다.
+]]
+local function activeButton(player, text)
+	local button = Screen.findButton(guiOf(player), text)
+	if button and button.Active then
+		return button
+	end
+	return nil
+end
+
+local function passIfResponding(world, player)
+	local pass = activeButton(player, "대응 패스")
+	if pass then
+		Screen.click(pass)
+		world:advance(0.3)
+		return true
+	end
+	return false
+end
+
 local function waitForButton(world, player, text, budget)
 	local waited = 0
 	while waited <= (budget or 30) do
@@ -98,6 +123,7 @@ local function waitForButton(world, player, text, budget)
 		if button and button.Active then
 			return button
 		end
+		passIfResponding(world, player)
 		world:advance(0.5)
 		waited += 0.5
 	end
@@ -234,6 +260,9 @@ t:describe("AI 연습", function()
 		t:truthy(passMulligan(world, kim), "멀리건 관문을 통과하지 못했습니다")
 
 		for turn = 1, 30 do
+			-- 상대가 소환할 때마다 대응 창이 열린다. 넘기지 않으면 판이 멈춘다.
+			passIfResponding(world, kim)
+
 			local button = Screen.findButton(guiOf(kim), "페이즈 종료")
 			if button and button.Active then
 				Screen.click(button)
@@ -251,6 +280,51 @@ t:describe("AI 연습", function()
 			"턴을 굴렸는데도 필드에 생물이 한 마리도 그려지지 않았습니다"
 		)
 		t:truthy(Screen.hasText(guiOf(kim), "♥ "), "라이프 표시가 살아 있어야 합니다")
+	end)
+
+	--[[
+		상대가 카드를 내면 스택에 올라가고 나에게 대응 창이 열린다.
+		**대응할 카드가 하나도 없어도 사람이 [대응 패스] 를 눌러야 넘어간다.**
+
+		예전에는 서버가 대신 눌러줬다. 버튼만 누르게 하지 말자는 뜻이었는데, 실제로는
+		상대가 무엇을 시전했는지 읽기도 전에 화면이 지나갔다.
+	]]
+	t:it("대응 패스를 누르기 전에는 넘어가지 않는다", function()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "AI 연습"))
+		world:advance(3)
+		t:truthy(passMulligan(world, kim), "멀리건 관문을 통과하지 못했습니다")
+
+		-- 상대가 무언가 낼 때까지 턴을 굴린다.
+		local opened = false
+		for _ = 1, 40 do
+			if activeButton(kim, "대응 패스") then
+				opened = true
+				break
+			end
+			local endPhase = activeButton(kim, "페이즈 종료")
+			if endPhase then
+				Screen.click(endPhase)
+			end
+			world:advance(1)
+		end
+
+		t:truthy(opened, "상대가 카드를 내면 대응 창이 열려야 합니다")
+		assertNoErrors(world, "대응 창")
+
+		-- 가만히 둬도 저 혼자 넘어가면 안 된다.
+		world:advance(10)
+		t:truthy(activeButton(kim, "대응 패스"), "누르기 전에 넘어갔습니다")
+		t:falsy(activeButton(kim, "페이즈 종료"), "대응 창이 열린 동안에는 페이즈를 넘길 수 없어야 합니다")
+
+		Screen.click(activeButton(kim, "대응 패스"))
+		world:advance(2)
+		assertNoErrors(world, "대응 패스")
+		t:falsy(activeButton(kim, "대응 패스"), "누르면 대응 창이 닫혀야 합니다")
 	end)
 
 	t:it("항복하면 결과 화면이 뜬다", function()
@@ -666,14 +740,6 @@ t:describe("튜토리얼", function()
 		return false
 	end
 
-	local function activeButton(player, text)
-		local button = Screen.findButton(guiOf(player), text)
-		if button and button.Active then
-			return button
-		end
-		return nil
-	end
-
 	--[[
 		내 생물을 눌러 보고, 화면이 대상을 물으면 골라준다.
 		공격이면 상대 자신을, 방어면 아무 공격자나 고른다. -> 눌렀나
@@ -801,6 +867,11 @@ t:describe("튜토리얼", function()
 		if keep then
 			Screen.click(keep)
 			world:advance(0.6)
+			return true
+		end
+
+		-- 상대가 카드를 내면 대응 창이 열린다. 넘기지 않으면 판이 거기서 멈춘다.
+		if passIfResponding(world, player) then
 			return true
 		end
 

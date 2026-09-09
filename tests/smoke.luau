@@ -910,6 +910,36 @@ t:describe("튜토리얼", function()
 		t:falsy(detail.Visible, "다시 누르면 닫혀야 합니다")
 	end)
 
+	--[[
+		"다시 하기" 는 같은 러너에서 새 판을 여는 것이라 Controller:start 를 거치지 않는다.
+		코치가 지난 판의 마지막 단계에 머문 채 새 판을 맞으면 안내가 통째로 어긋난다.
+	]]
+	t:it("항복하고 다시 하기를 눌러도 처음부터 안내한다", function()
+		local world, kim = openTutorial()
+		local gui = guiOf(kim)
+
+		local function line()
+			return coachText(kim) or ""
+		end
+
+		t:truthy(line():find("손패 7장"), "첫 안내는 멀리건이어야 합니다")
+
+		-- 코치를 다음 단계로 밀어둔다.
+		Screen.click(Screen.findButton(gui, "이대로 시작"))
+		world:advance(1)
+		t:truthy(line():find("코스트"), "코스트 단계로 넘어가야 합니다")
+
+		Screen.click(Screen.findButton(gui, "항복"))
+		world:advance(2)
+		t:truthy(outcome(kim), "항복하면 판이 끝나야 합니다")
+
+		Screen.click(Screen.findButton(gui, "다시 하기"))
+		world:advance(3)
+		assertNoErrors(world, "튜토리얼 다시 하기")
+
+		t:truthy(line():find("손패 7장"), ("새 판인데 안내가 %s 에 머물러 있습니다"):format(line()))
+	end)
+
 	t:it("코치가 켜준 것만 눌러도 이길 수 있다", function()
 		local world, kim = openTutorial()
 		local gui = guiOf(kim)

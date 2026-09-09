@@ -438,6 +438,28 @@ end
 function Tutorial:reset()
 	self.index = 1
 	self.inspected = false -- 카드를 오른쪽 클릭해 봤는가
+	self.lastTurn = nil
+end
+
+--[[
+	판이 새로 열렸으면 코치도 처음으로 되돌린다.
+
+	**"다시 하기" 는 Controller:start 를 거치지 않는다.** 같은 러너가 같은 자리에서
+	새 판을 열고 스냅샷만 새로 오기 때문이다. 그래서 항복하고 다시 하기를 누르면
+	코치가 지난 판의 마지막 단계에 머문 채 새 판을 맞았다 — 멀리건 관문인데
+	"코스트 카드를 내세요" 라고 하는 식이다.
+
+	턴이 뒤로 갔으면 새 판이다. 멀리건 관문은 턴 0 이라, 멀리건을 켜든 끄든 걸린다.
+	(둘째 조건은 1턴에 끝난 판까지 챙긴다)
+]]
+function Tutorial:noticeNewMatch(view)
+	local turn = view.turn or 0
+
+	if (self.lastTurn and turn < self.lastTurn) or (view.phase == Phase.Mulligan and self.index > 1) then
+		self:reset()
+	end
+
+	self.lastTurn = turn
 end
 
 --[[
@@ -450,6 +472,8 @@ function Tutorial:update(view, me)
 	if not view or not view.players[me] then
 		return nil
 	end
+
+	self:noticeNewMatch(view)
 
 	while self.index <= #STEPS do
 		local step = STEPS[self.index]

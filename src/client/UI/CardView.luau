@@ -512,7 +512,16 @@ function CardView.detail(props)
 
 		tagLabel.Text = (#names > 0) and table.concat(names, " · ") or "태그 없음"
 		tagText.Text = table.concat(rules, "\n")
-		textLabel.Text = def.text or "특별한 효과가 없습니다."
+		--[[
+			카드 고유 설명. 태그 설명은 여기 쓰지 않기로 했으므로(Sheet.luau 주석),
+			태그만 있는 카드는 이 줄이 비어 있는 게 정상이다. 그때 "특별한 효과가 없습니다"
+			라고 하면 거짓말이 된다 — 비행이라는 효과가 바로 위에 적혀 있다.
+		]]
+		local text = def.text or ""
+		if text == "" and #names == 0 then
+			text = "특별한 효과가 없습니다."
+		end
+		textLabel.Text = text
 
 		noteLabel.Text = note or ""
 		panel.Visible = true

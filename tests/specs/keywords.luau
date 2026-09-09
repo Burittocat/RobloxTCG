@@ -215,4 +215,31 @@ return function(t, ctx)
 			t:eq(target.zone, Zone.Graveyard, "4 피해를 그대로 받아 죽어야 한다")
 		end)
 	end)
+
+	--======================================================================
+	--[[
+		태그 설명은 한 곳에만 있어야 한다.
+
+		예전에는 카드 설명문(Sheet.luau)에도 "비행 — 지상 생물은…" 이 적혀 있었다.
+		카드를 오른쪽 클릭하면 태그 규칙(Enums.KeywordText)이 따로 나오므로,
+		**같은 문장이 상세 화면에 두 번 떴다.** 카드를 새로 넣을 때 다시 그러기 쉬워서
+		여기서 막는다.
+	]]
+	t:describe("설명문은 태그 설명을 되풀이하지 않는다", function()
+		t:it("카드 설명이 태그 이름으로 시작하지 않는다", function()
+			for _, def in Rules.Registry.all() do
+				local text = def.text or ""
+				for _, name in Rules.Enums.KeywordDisplay do
+					t:falsy(
+						text:sub(1, #name) == name,
+						("%s 의 설명이 '%s' 로 시작합니다 — 태그 설명은 KeywordText 가 합니다"):format(
+							def.id,
+							name
+						)
+					)
+				end
+			end
+		end)
+	end)
+
 end

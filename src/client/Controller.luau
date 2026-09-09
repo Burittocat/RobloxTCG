@@ -79,6 +79,15 @@ function Controller.new(battle, remotes)
 		self:onAction(key)
 	end
 
+	--[[
+		카드를 들여다보는 것은 화면 혼자 하는 일이라 서버로 안 간다.
+		여기서 받는 이유는 하나 — 튜토리얼 코치가 "그 손짓 배웠구나" 를 알아야 한다.
+	]]
+	battle.callbacks.inspect = function()
+		self.tutorial:markInspected()
+		self:refresh()
+	end
+
 	remotes.Sync.OnClientEvent:Connect(function(payload)
 		self:onSync(payload)
 	end)
@@ -206,14 +215,15 @@ end
 --[[
 	결과 화면에 덧붙일 한 줄.
 
-	튜토리얼에서 태그를 다 만나지는 못한다 — 판에 안 나온 태그는 소개할 자리가 없다.
-	그래서 끝나는 자리에서 "나머지는 어디서 보는지" 를 알려준다.
+	튜토리얼 한 판에서 카드와 태그를 다 만나지는 못한다. 그래서 끝나는 자리에서
+	"나머지는 어디서 보는지" 를 알려준다 — 판 안에서는 오른쪽 클릭, 판 밖에서는 덱 편집.
 ]]
 function Controller:endNote()
 	if self.matchMode ~= "tutorial" then
 		return nil
 	end
-	return "더 다양한 태그와 효과는 시작 화면의 [덱 편집] 에서 카드를 눌러 확인해보세요!"
+	return "카드를 <b>오른쪽 클릭</b> 하면 태그가 무슨 효과인지 볼 수 있어요.\n"
+		.. "더 다양한 카드는 시작 화면의 [덱 편집] 에서!"
 end
 
 function Controller:endActions()

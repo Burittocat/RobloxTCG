@@ -16,6 +16,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Rules = require(Shared.Rules)
 local Decks = require(Shared.Decks)
 
+local CardView = require(script.Parent.CardView)
 local Theme = require(script.Parent.Theme)
 local Widgets = require(script.Parent.Widgets)
 
@@ -24,13 +25,8 @@ local Registry = Rules.Registry
 local Config = Rules.Config
 local CardType = Rules.Enums.CardType
 
-local KEYWORD_KR = {
-	Haste = "신속",
-	Flying = "비행",
-	Taunt = "도발",
-	Ranged = "원거리",
-	Instant = "즉시시전",
-}
+-- 표기는 Enums 한 곳에서 온다. 여기 사본을 두면 이름을 바꿀 때 한쪽만 바뀐다.
+local KEYWORD_KR = Rules.Enums.KeywordDisplay
 
 local TYPE_ORDER = { [CardType.Cost] = 1, [CardType.Creature] = 2, [CardType.Spell] = 3 }
 local TYPE_KR = { [CardType.Cost] = "코스트", [CardType.Creature] = "생물", [CardType.Spell] = "마법" }
@@ -300,128 +296,34 @@ end
 
 	화면 가운데를 덮지 않고 오른쪽에 띄운다 — 보면서 계속 목록을 만질 수 있어야 한다.
 ]]
+--[[
+	상세 상자는 CardView 것을 쓴다. 전투 화면도 같은 상자를 띄운다 —
+	같은 카드를 어디서 열든 같은 설명이 나와야 한다.
+
+	여기서만 붙는 것은 마지막 줄("내 덱에 3장")뿐이다. 전투 중에는 덱을 못 고치므로
+	그 줄이 의미가 없다.
+]]
 function DeckEditor:buildDetail(root)
-	local panel = Widgets.panel({
-		Name = "Detail",
+	self.detail = CardView.detail({
 		Parent = root,
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -50, 0.5, 0),
-		Size = UDim2.fromOffset(300, 340),
-		Visible = false,
-		BackgroundColor3 = Theme.color.panel,
-	}, {
-		Widgets.padding(16),
-		Widgets.listLayout(Enum.FillDirection.Vertical, 8, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Top),
 	})
-	self.detail = panel
-
-	self.detailName = Widgets.label("", {
-		Name = "DetailName",
-		Parent = panel,
-		LayoutOrder = 1,
-		Size = UDim2.new(1, 0, 0, 30),
-		Font = Theme.font.bold,
-		TextSize = 24,
-	})
-
-	self.detailType = Widgets.label("", {
-		Name = "DetailType",
-		Parent = panel,
-		LayoutOrder = 2,
-		Size = UDim2.new(1, 0, 0, 20),
-		TextColor3 = Theme.color.textDim,
-		TextSize = Theme.text.label,
-	})
-
-	self.detailStat = Widgets.label("", {
-		Name = "DetailStat",
-		Parent = panel,
-		LayoutOrder = 3,
-		Size = UDim2.new(1, 0, 0, 34),
-		Font = Theme.font.bold,
-		TextColor3 = Theme.color.accent,
-		TextSize = Theme.text.stat,
-	})
-
-	self.detailTags = Widgets.label("", {
-		Name = "DetailTags",
-		Parent = panel,
-		LayoutOrder = 4,
-		Size = UDim2.new(1, 0, 0, 22),
-		TextColor3 = Theme.color.stack,
-		TextSize = Theme.text.label,
-	})
-
-	self.detailText = Widgets.label("", {
-		Name = "DetailText",
-		Parent = panel,
-		LayoutOrder = 5,
-		Size = UDim2.new(1, 0, 0, 120),
-		TextColor3 = Theme.color.text,
-		TextSize = Theme.text.body,
-		TextWrapped = true,
-		TextYAlignment = Enum.TextYAlignment.Top,
-	})
-
-	self.detailDeck = Widgets.label("", {
-		Name = "DetailDeck",
-		Parent = panel,
-		LayoutOrder = 6,
-		Size = UDim2.new(1, 0, 0, 22),
-		TextColor3 = Theme.color.me,
-		TextSize = Theme.text.label,
-	})
-
-	Widgets.button("닫기", {
-		Name = "DetailClose",
-		Parent = panel,
-		LayoutOrder = 7,
-		Size = UDim2.new(1, 0, 0, 32),
-	}, function()
-		self:hideDetail()
-	end)
 end
-
-local TYPE_LONG = {
-	[CardType.Cost] = "코스트 카드",
-	[CardType.Creature] = "생물",
-	[CardType.Spell] = "마법",
-}
 
 function DeckEditor:showDetail(def)
 	self.detailDef = def
 
-	self.detailName.Text = def.name
-	self.detailType.Text = ("%s%s"):format(
-		TYPE_LONG[def.type] or def.type,
-		def.rarity == "Rare" and "  ·  희귀" or ""
-	)
-
-	local parts = {}
-	if def.cost then
-		table.insert(parts, ("코스트 %d"):format(def.cost))
-	end
-	if def.power then
-		table.insert(parts, ("공격력 %d"):format(def.power))
-		table.insert(parts, ("생명력 %d"):format(def.toughness))
-	end
-	self.detailStat.Text = table.concat(parts, "   ")
-
-	local tags = keywordText(def)
-	self.detailTags.Text = (tags ~= "") and tags or "태그 없음"
-	self.detailText.Text = def.text or "특별한 효과가 없습니다."
-
 	local count = self.counts[def.id] or 0
 	local max = Decks.maxCopies(def.id)
-	self.detailDeck.Text = (max >= Config.deckSize)
-			and ("내 덱에 %d장 (매수 제한 없음)"):format(count)
+	local note = (max >= Config.deckSize) and ("내 덱에 %d장 (매수 제한 없음)"):format(count)
 		or ("내 덱에 %d장 / 최대 %d장"):format(count, max)
 
-	self.detail.Visible = true
+	self.detail.show(def, note)
 end
 
 function DeckEditor:hideDetail()
-	self.detail.Visible = false
+	self.detail.hide()
 	self.detailDef = nil
 end
 

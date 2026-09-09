@@ -206,6 +206,12 @@ function CardView.handCard(def, opts)
 		})
 	end
 
+	-- 오른쪽 클릭은 "들여다보기" 다. 왼쪽 클릭(내기·고르기)과 섞지 않는다 —
+	-- 한 버튼에 섞으면 "보려고 눌렀는데 카드가 나가는" 일이 생긴다.
+	if opts.onInspect then
+		button.MouseButton2Click:Connect(opts.onInspect)
+	end
+
 	if opts.onClick then
 		button.Activated:Connect(opts.onClick)
 	end
@@ -353,6 +359,12 @@ function CardView.fieldCard(state, instance, opts)
 		})
 	end
 
+	-- 오른쪽 클릭은 "들여다보기" 다. 왼쪽 클릭(내기·고르기)과 섞지 않는다 —
+	-- 한 버튼에 섞으면 "보려고 눌렀는데 카드가 나가는" 일이 생긴다.
+	if opts.onInspect then
+		button.MouseButton2Click:Connect(opts.onInspect)
+	end
+
 	if opts.onClick then
 		button.Activated:Connect(opts.onClick)
 	end
@@ -384,6 +396,133 @@ function CardView.costCard(instance, layoutOrder)
 			TextXAlignment = Enum.TextXAlignment.Center,
 		}),
 	})
+end
+
+--==========================================================================
+-- 카드 상세 — 덱 편집과 전투가 같은 것을 쓴다
+--==========================================================================
+
+local TYPE_LONG = {
+	Cost = "코스트 카드",
+	Creature = "생물",
+	Spell = "마법",
+}
+
+--[[
+	카드 상세 상자. -> { frame, show(def, note), hide() }
+
+	    detail = CardView.detail({ Parent = root, Position = ..., AnchorPoint = ... })
+	    detail.show(def, "내 덱에 3장")   note 는 없으면 그 줄이 안 뜬다
+	    detail.hide()
+
+	**태그 설명이 여기 붙는다.** 카드에 적힌 설명문은 카드마다 따로 쓰여 있어서,
+	같은 태그가 카드마다 다르게 설명되거나(창공의 매 vs 매부리) 아예 빠진다
+	(폭풍 비룡은 "비행, 신속" 이 전부다). 태그 자체의 규칙은 Enums.KeywordText
+	한 곳에서 읽는다 — 그래야 어느 카드를 열어도 같은 답이 나온다.
+
+	상자 높이는 내용에 맞춰 늘어난다(AutomaticSize). 태그가 둘이면 설명도 두 줄이라
+	고정 높이로는 잘리거나 빈 자리가 남는다.
+]]
+function CardView.detail(props)
+	local merged = {
+		Name = "Detail",
+		Size = UDim2.fromOffset(300, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Visible = false,
+		BackgroundColor3 = Theme.color.panel,
+	}
+	for key, value in props or {} do
+		merged[key] = value
+	end
+
+	local panel = Widgets.panel(merged, {
+		Widgets.padding(16),
+		Widgets.listLayout(Enum.FillDirection.Vertical, 8, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Top),
+	})
+
+	local function line(name, order, height, props2)
+		local merged2 = {
+			Name = name,
+			Parent = panel,
+			LayoutOrder = order,
+			Size = UDim2.new(1, 0, 0, height),
+		}
+		for key, value in props2 or {} do
+			merged2[key] = value
+		end
+		return Widgets.label("", merged2)
+	end
+
+	local detail = { frame = panel }
+
+	local nameLabel = line("DetailName", 1, 30, { Font = Theme.font.bold, TextSize = 24 })
+	local typeLabel = line("DetailType", 2, 20, { TextColor3 = Theme.color.textDim, TextSize = Theme.text.label })
+	local statLabel = line("DetailStat", 3, 34, {
+		Font = Theme.font.bold,
+		TextColor3 = Theme.color.accent,
+		TextSize = Theme.text.stat,
+	})
+	local tagLabel = line("DetailTags", 4, 22, { TextColor3 = Theme.color.stack, TextSize = Theme.text.label })
+
+	-- 태그 설명. 태그 수만큼 늘어나므로 높이를 내용에 맡긴다.
+	local tagText = line("DetailTagText", 5, 0, {
+		AutomaticSize = Enum.AutomaticSize.Y,
+		TextColor3 = Theme.color.textDim,
+		TextSize = Theme.text.body,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+	})
+
+	local textLabel = line("DetailText", 6, 0, {
+		AutomaticSize = Enum.AutomaticSize.Y,
+		TextSize = Theme.text.body,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+	})
+	local noteLabel = line("DetailNote", 7, 22, { TextColor3 = Theme.color.me, TextSize = Theme.text.label })
+
+	Widgets.button("닫기", {
+		Name = "DetailClose",
+		Parent = panel,
+		LayoutOrder = 8,
+		Size = UDim2.new(1, 0, 0, 32),
+	}, function()
+		detail.hide()
+	end)
+
+	function detail.show(def, note)
+		nameLabel.Text = def.name
+		typeLabel.Text = ("%s%s"):format(TYPE_LONG[def.type] or def.type, def.rarity == "Rare" and "  ·  희귀" or "")
+
+		local parts = {}
+		if def.cost then
+			table.insert(parts, ("코스트 %d"):format(def.cost))
+		end
+		if def.power then
+			table.insert(parts, ("공격력 %d"):format(def.power))
+			table.insert(parts, ("생명력 %d"):format(def.toughness))
+		end
+		statLabel.Text = table.concat(parts, "   ")
+
+		local names, rules = {}, {}
+		for _, keyword in def.keywords or {} do
+			table.insert(names, Enums.KeywordDisplay[keyword] or keyword)
+			table.insert(rules, ("<b>%s</b> — %s"):format(Enums.KeywordDisplay[keyword] or keyword, Enums.KeywordText[keyword] or ""))
+		end
+
+		tagLabel.Text = (#names > 0) and table.concat(names, " · ") or "태그 없음"
+		tagText.Text = table.concat(rules, "\n")
+		textLabel.Text = def.text or "특별한 효과가 없습니다."
+
+		noteLabel.Text = note or ""
+		panel.Visible = true
+	end
+
+	function detail.hide()
+		panel.Visible = false
+	end
+
+	return detail
 end
 
 return CardView

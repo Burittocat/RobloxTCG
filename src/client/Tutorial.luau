@@ -117,20 +117,18 @@ local function hasTappedCard(view, me)
 end
 
 --[[
-	태그 소개 — **화면에 나와 있는 것만.**
+	태그는 코치가 읊지 않는다. **찾아보는 법**을 가르친다.
 
-	한때 다섯 종을 무조건 돌린 적이 있다. 한 판에 두 종밖에 못 보여주는 게 아쉬워서였는데,
-	비행 생물이 한 마리도 없는 판에서 비행 설명이 떴다. 읽는 사람은 화면에서 그걸 찾다가
-	못 찾는다 — 설명이 아니라 헛것이 된다. 지금은 양쪽 전장과 내 손패에 실제로 있는
-	태그만 고르고, **어느 카드 이야기인지 이름을 붙인다.**
+	처음에는 말풍선으로 태그를 하나씩 설명했다. 화면에 나와 있는 것만 고르면 한 판에
+	두 종밖에 못 만나고, 그게 아쉬워서 다섯을 무조건 돌렸더니 비행 생물이 한 마리도
+	없는 판에서 비행 설명이 떴다 — 읽는 사람은 화면에서 그걸 찾다가 못 찾는다.
 
-	한 판에서 다섯을 다 만나지는 못한다. 그건 감수한다 — 나머지는 결과 화면이
-	덱 편집으로 안내한다(Controller:endNote).
+	어느 쪽도 맞지 않았다. 말풍선은 세 줄짜리라 다섯 종을 담을 수 없고, 판은 그중
+	몇 종만 보여준다. 그래서 카드를 **오른쪽 클릭**하면 태그 효과까지 나오게 하고
+	(`CardView.detail`), 코치는 그 손짓 하나만 가르친다. 그러면 궁금할 때 궁금한
+	카드를 열어보면 된다 — 코치가 그 태그를 마침 골라줬는지에 기대지 않는다.
 
-	고르는 규칙
-	  · 아직 설명 안 한 태그를 먼저 (같은 태그만 반복하면 판이 길어져도 배우는 게 없다)
-	  · 한 페이즈 동안은 바뀌지 않는다 (매 렌더마다 돌리면 읽는 중에 글이 바뀐다)
-	  · 페이즈가 넘어가면 다음 것으로
+	아래는 "예를 들면 이 카드" 를 고르는 데만 쓴다.
 ]]
 local TAG_ORDER = { Keyword.Taunt, Keyword.Flying, Keyword.Ranged, Keyword.Haste, Keyword.Instant }
 
@@ -181,6 +179,15 @@ local function visibleTags(view, me)
 		end
 	end
 	return out
+end
+
+--[[
+	"예를 들면 이 카드" — 지금 화면에 있는 태그 달린 카드 하나. -> { keyword, card } | nil
+
+	손짓을 가르칠 때 가리킬 대상이다. 화면에 없는 카드를 예로 들면 그걸 찾다가 만다.
+]]
+local function tagExample(view, me)
+	return visibleTags(view, me)[1]
 end
 
 local function contains(list, value)
@@ -388,13 +395,21 @@ local STEPS = {
 				태그를 턴마다 하나씩 소개한다 — 화면에 그 카드가 실제로 있을 때 읽어야
 				"이게 그거구나" 가 된다. 튜토리얼 덱에 태그 5종이 다 들어 있는 이유다.
 			]]
-			local tag = coach and coach:tagLesson(view, me)
-			if tag then
-				return ("%s의 <b>%s</b> — %s\n"):format(
-					tag.card,
-					Enums.KeywordDisplay[tag.keyword],
-					Enums.KeywordText[tag.keyword]
-				) .. goal
+			--[[
+				손짓을 아직 안 써봤으면 그것부터 알려준다. 한 번 써보면 잔소리를 멈춘다 —
+				배운 것을 계속 시키면 말풍선이 배경이 된다.
+			]]
+			if not (coach and coach.inspected) then
+				local example = coach and tagExample(view, me)
+				if example then
+					return "궁금한 카드는 <b>오른쪽 클릭</b> — 태그가 무슨 효과인지 나와요.\n"
+						.. ("%s의 <b>%s</b> 로 해보세요.\n"):format(
+							example.card,
+							Enums.KeywordDisplay[example.keyword]
+						)
+						.. goal
+				end
+				return "궁금한 카드는 <b>오른쪽 클릭</b> — 자세한 설명이 나와요.\n" .. goal
 			end
 
 			return "기본은 다 배웠어요 — 이제 자유롭게 두세요.\n" .. goal
@@ -422,9 +437,7 @@ end
 -- 판이 새로 열리면 처음부터. (다시 하기 · 튜토리얼 재입장)
 function Tutorial:reset()
 	self.index = 1
-	self.taught = {} -- 이미 설명한 태그
-	self.tagKey = nil -- 지금 태그를 고른 페이즈
-	self.tag = nil
+	self.inspected = false -- 카드를 오른쪽 클릭해 봤는가
 end
 
 --[[
@@ -461,36 +474,9 @@ function Tutorial:textOf(step, view, me)
 	return step.text
 end
 
---[[
-	이번 페이즈에 소개할 태그. -> { keyword, card } | nil
-
-	한 페이즈 동안은 같은 것을 돌려준다(아래 tagKey). 매 렌더마다 새로 고르면
-	읽는 중에 글이 바뀐다. 페이즈가 넘어가면 **아직 설명 안 한 태그**부터 고른다 —
-	같은 태그만 반복하면 판이 길어져도 배우는 게 없다.
-]]
-function Tutorial:tagLesson(view, me)
-	local key = ("%d:%s"):format(view.turn, tostring(view.phase))
-	if self.tagKey == key then
-		return self.tag
-	end
-
-	local tags = visibleTags(view, me)
-	if #tags == 0 then
-		self.tagKey, self.tag = key, nil
-		return nil
-	end
-
-	local pick = tags[1]
-	for _, entry in tags do
-		if not self.taught[entry.keyword] then
-			pick = entry
-			break
-		end
-	end
-
-	self.taught[pick.keyword] = true
-	self.tagKey, self.tag = key, pick
-	return pick
+-- 카드를 한 번이라도 들여다봤다. (Controller 가 오른쪽 클릭을 받으면 알려준다)
+function Tutorial:markInspected()
+	self.inspected = true
 end
 
 --[[

@@ -81,6 +81,7 @@ function Battle.new(parent)
 		player = noop,
 		stackItem = noop,
 		action = noop,
+		inspect = noop, -- 카드를 들여다봤다 (튜토리얼이 이걸 본다)
 	}
 
 	self.logOpen = false
@@ -264,6 +265,19 @@ function Battle:build(parent)
 	self:makeToast(root)
 	self:makeLogPanel(root)
 	self:makeEndOverlay(root)
+
+	--[[
+		카드 상세. 덱 편집과 **같은 상자**다 — 같은 카드를 어디서 열든 같은 설명이
+		나와야 한다. 태그가 무슨 효과인지도 여기서 읽는다.
+
+		오른쪽에는 행동 바가 있으므로 왼쪽에 띄운다.
+	]]
+	self.detail = CardView.detail({
+		Parent = root,
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 24, 0.5, 0),
+		ZIndex = 25,
+	})
 end
 
 --==========================================================================
@@ -648,6 +662,22 @@ end
 -- 알림
 --==========================================================================
 
+--[[
+	카드 상세를 연다. 서버에 물어볼 것이 없으므로 화면이 직접 처리한다.
+	같은 카드를 다시 오른쪽 클릭하면 닫힌다 — 열고 닫는 데 마우스를 옮길 필요가 없다.
+]]
+function Battle:inspect(def)
+	if self.detailDef == def then
+		self.detailDef = nil
+		self.detail.hide()
+		return
+	end
+
+	self.detailDef = def
+	self.detail.show(def)
+	self.callbacks.inspect(def)
+end
+
 function Battle:showToast(text, kind)
 	self.toastToken += 1
 	local token = self.toastToken
@@ -778,6 +808,9 @@ function Battle:renderField(row, state, playerId, opts)
 			badge = badge,
 			onClick = function()
 				self.callbacks.fieldCard(instance.id)
+			end,
+			onInspect = function()
+				self:inspect(Registry.mustGet(instance.defId))
 			end,
 		})
 		card.Parent = row
@@ -957,6 +990,9 @@ function Battle:renderHand(state, opts)
 				highlighted = opts.highlights.hand[instanceId],
 				onClick = function()
 					self.callbacks.handCard(instanceId)
+				end,
+				onInspect = function()
+					self:inspect(def)
 				end,
 			})
 			card.Parent = self.handRow

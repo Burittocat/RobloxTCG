@@ -873,12 +873,50 @@ t:describe("튜토리얼", function()
 		t:falsy(activeButton(kim, "페이즈 종료"), "코스트를 내기 전에는 페이즈를 넘길 수 없어야 합니다")
 	end)
 
+	--[[
+		전투 중에도 카드를 들여다볼 수 있어야 한다. 태그가 무슨 효과인지는 여기서 읽는다 —
+		코치 말풍선은 세 줄이라 다섯 종을 담을 수 없다.
+	]]
+	t:it("전투 중에 카드를 오른쪽 클릭하면 태그 효과가 나온다", function()
+		local world, kim = openTutorial()
+		local gui = guiOf(kim)
+
+		-- 태그가 붙은 손패 카드를 찾는다. 없으면 이 판에서는 확인할 수 없다.
+		local tagged, tagName
+		for _, node in allNamed(gui, "Hand_") do
+			for _, name in TAG_NAMES do
+				if not tagged and Screen.hasText(node, name) then
+					tagged, tagName = node, name
+				end
+			end
+		end
+		t:truthy(tagged, "튜토리얼 첫 손패에 태그 달린 카드가 있어야 합니다")
+
+		Screen.rightClick(tagged)
+		world:advance(0.3)
+		assertNoErrors(world, "전투 중 카드 상세")
+
+		-- 덱 편집 화면에도 같은 이름의 상자가 있다. 전투 화면 안에서 찾는다.
+		local detail = Screen.find(Screen.find(gui, "TCGBattle"), "Detail")
+		t:truthy(detail and detail.Visible, "상세 상자가 떠야 합니다")
+
+		local rule = Screen.find(detail, "DetailTagText")
+		t:truthy(rule and rule.Text:find(tagName), ("%s 효과가 적혀 있어야 합니다"):format(tagName))
+		t:truthy(#rule.Text > #tagName + 5, "태그 이름만 있고 설명이 없습니다")
+
+		-- 같은 카드를 다시 누르면 닫힌다.
+		Screen.rightClick(tagged)
+		world:advance(0.3)
+		t:falsy(detail.Visible, "다시 누르면 닫혀야 합니다")
+	end)
+
 	t:it("코치가 켜준 것만 눌러도 이길 수 있다", function()
 		local world, kim = openTutorial()
 		local gui = guiOf(kim)
 
 		local pressed = 0
 		local said = {} -- 판 내내 코치가 한 말 전부
+		local inspected = false
 
 		for _ = 1, 600 do
 			if outcome(kim) then
@@ -889,16 +927,25 @@ t:describe("튜토리얼", function()
 				said[line] = true
 
 				--[[
-					**여기가 이 절에서 제일 중요한 단언이다.**
-					태그 설명이 뜬 순간, 그 태그를 단 카드가 화면에 있어야 한다.
-					없으면 읽는 사람은 화면에서 그걸 찾다가 못 찾는다.
+					코치가 "이 카드로 해보세요" 라고 예를 들면, 그 카드가 화면에 있어야 한다.
+					없는 카드를 가리키면 읽는 사람은 그걸 찾다가 만다.
 				]]
 				for _, name in TAG_NAMES do
-					if line:find("<b>" .. name .. "</b>") then
+					if line:find("의 <b>" .. name .. "</b> 로 해보세요") then
 						t:truthy(
 							hasKeywordChip(kim, name),
-							("화면에 %s 카드가 없는데 %s 설명이 떴습니다"):format(name, name)
+							("화면에 %s 카드가 없는데 %s 로 해보라고 했습니다"):format(name, name)
 						)
+					end
+				end
+
+				-- 오른쪽 클릭을 배우라고 하면 한 번 해본다. 학생은 시킨 대로 한다.
+				if not inspected and line:find("오른쪽 클릭") then
+					local card = allNamed(gui, "Hand_")[1]
+					if card then
+						Screen.rightClick(card)
+						world:advance(0.3)
+						inspected = true
 					end
 				end
 			end
@@ -913,6 +960,7 @@ t:describe("튜토리얼", function()
 		t:falsy(coachText(kim), "다 배웠으면 말풍선은 사라져야 합니다")
 		t:truthy(Screen.hasText(gui, "다시 하기"), "끝나면 다시 할 수 있어야 합니다")
 		t:truthy(Screen.hasText(gui, "덱 편집"), "끝나는 자리에서 다음에 볼 곳을 알려줘야 합니다")
+		t:truthy(Screen.hasText(gui, "오른쪽 클릭"), "끝나는 자리에서 들여다보는 법을 알려줘야 합니다")
 
 		--[[
 			용어와 태그를 실제로 가르쳤는가.
@@ -936,17 +984,12 @@ t:describe("튜토리얼", function()
 		t:truthy(saidAny("내 턴이 시작할 때"), "언탭이 언제 되는지 설명해야 합니다")
 
 		--[[
-			태그는 **판에 실제로 나온 것만** 설명하므로, 한 판에서 다섯 종을 다 만나지는
-			못한다. 그래서 개수는 느슨하게 본다 — 이 절의 진짜 단언은 위쪽, 설명이 뜰 때마다
-			그 카드가 화면에 있었는지 확인한 것이다. (나머지 태그는 결과 화면이 안내한다)
+			태그는 코치가 읊지 않는다. 말풍선은 세 줄이라 다섯 종을 담을 수 없고, 판은
+			그중 몇 종만 보여준다. 대신 **찾아보는 법**을 가르쳤는지 본다.
 		]]
-		local tags = 0
-		for _, name in TAG_NAMES do
-			if saidAny("<b>" .. name .. "</b>") then
-				tags += 1
-			end
-		end
-		t:truthy(tags >= 2, ("태그를 %d 종만 소개했습니다"):format(tags))
+		t:truthy(saidAny("오른쪽 클릭"), "카드를 들여다보는 법을 알려줘야 합니다")
+		t:truthy(inspected, "말만 하고 실제로 눌러볼 카드가 없었습니다")
+		t:truthy(saidAny("기본은 다 배웠어요"), "손짓을 배운 뒤에는 잔소리를 멈춰야 합니다")
 	end)
 end)
 
@@ -1266,6 +1309,19 @@ t:describe("덱 편집", function()
 		t:truthy(Screen.hasText(gui, "코스트 2"), "코스트")
 		t:truthy(Screen.hasText(gui, "비행"), "태그")
 		t:truthy(Screen.hasText(gui, "내 덱에 3장"), "내 덱에 몇 장인지")
+
+		--[[
+			태그 이름만으로는 무슨 효과인지 알 수 없다. 규칙 문장이 같이 나와야 한다
+			(Enums.KeywordText). 카드에 적힌 설명문은 카드마다 따로 쓰여 있어서
+			같은 태그가 카드마다 다르게 설명되거나 아예 빠진다.
+		]]
+		--[[
+			**어느 화면의 상세인지 좁혀서 찾는다.** 전투 화면에도 같은 상자가 있고
+			(이름도 같다), Screen.find 는 트리에서 먼저 만난 것을 준다 —
+			범위를 안 좁히면 비어 있는 전투 쪽 상자를 읽고 "설명이 없다" 가 된다.
+		]]
+		local rule = Screen.find(Screen.find(gui, "TCGDeck"), "DetailTagText")
+		t:truthy(rule and rule.Text:find("지상 생물은"), "비행이 무슨 효과인지 적혀 있어야 합니다")
 	end)
 
 	t:it("상세를 열어둔 채 카드를 넣으면 숫자가 따라간다", function()

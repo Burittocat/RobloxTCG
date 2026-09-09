@@ -246,10 +246,25 @@ function Combat.resolve(state)
 		pendingPlayerDamage[playerId] = (pendingPlayerDamage[playerId] or 0) + amount
 	end
 
-	-- 공격자 → 방어자 역인덱스
-	local blockerOf = {}
+	--[[
+		공격자 → 방어자들. 한 공격자를 **여러 마리가 함께 막을 수 있다**
+		(Config.maxBlockersPerAttacker).
+
+		순서는 인스턴스 번호로 고정한다. blocks 는 딕셔너리라 순회 순서가 보장되지 않는데,
+		아래 배분이 순서를 보므로 그대로 두면 같은 판이 매번 다르게 끝난다.
+	]]
+	local blockersOf = {}
 	for blockerId, attackerId in state.combat.blocks do
-		blockerOf[attackerId] = blockerId
+		local blocker = GameState.getCard(state, blockerId)
+		if isCreatureOnField(blocker) then
+			blockersOf[attackerId] = blockersOf[attackerId] or {}
+			table.insert(blockersOf[attackerId], blocker)
+		end
+	end
+	for _, blockers in blockersOf do
+		table.sort(blockers, function(a, b)
+			return a.id < b.id
+		end)
 	end
 
 	for _, declaration in state.combat.attackers do
@@ -262,22 +277,54 @@ function Combat.resolve(state)
 		end
 
 		local attackerPower = Keywords.power(attacker)
-		local blocker = blockerOf[attacker.id] and GameState.getCard(state, blockerOf[attacker.id])
+		local blockers = blockersOf[attacker.id]
 
-		if blocker and isCreatureOnField(blocker) then
+		if blockers and #blockers > 0 then
 			----------------------------------------------------------------
-			-- 방어당함: 공격자 ↔ 방어자 상호 피해
+			-- 방어당함: 공격자 ↔ 방어자들 상호 피해
 			----------------------------------------------------------------
-			addCreatureDamage(blocker, attackerPower)
-			addCreatureDamage(attacker, Keywords.power(blocker))
 
-			table.insert(events, {
-				kind = "Blocked",
-				attackerId = attacker.id,
-				blockerId = blocker.id,
-				damageToBlocker = attackerPower,
-				damageToAttacker = Keywords.power(blocker),
-			})
+			--[[
+				공격력을 방어자들에게 나눠준다.
+
+				**공격자가 자기에게 유리하게 배분한 것으로 친다** — 죽일 수 있는 것부터
+				치사에 필요한 만큼만 주고, 남으면 마지막 방어자에게 몰아준다.
+				(3 공격력이 1/1 과 1/5 에게 막히면 1/1 을 죽이고 2 가 1/5 에게 간다)
+
+				배분 순서를 사람에게 물어보는 게 정석이지만, 그러려면 수비준비가 끝난 뒤에
+				공격측 입력 창이 하나 더 필요하다. 물어보지 않고 정하되 **공격측에 유리한
+				쪽**으로 고정했다 — 겹쳐 막을지는 방어측이 이미 고른 것이라, 배분까지
+				방어측에 유리하게 두면 겹쳐 막기가 언제나 이득이 된다.
+
+				방어자는 저마다 공격력을 그대로 공격자에게 돌려준다. 겹쳐 막으면
+				공격자가 죽는다 — 그게 겹쳐 막는 이유다.
+			]]
+			local order = table.clone(blockers)
+			table.sort(order, function(a, b)
+				local left, right = Keywords.remainingToughness(a), Keywords.remainingToughness(b)
+				if left ~= right then
+					return left < right
+				end
+				return a.id < b.id
+			end)
+
+			local remaining = attackerPower
+			for index, blocker in order do
+				local share = (index == #order) and remaining
+					or math.min(remaining, Keywords.remainingToughness(blocker))
+
+				addCreatureDamage(blocker, share)
+				addCreatureDamage(attacker, Keywords.power(blocker))
+				remaining -= share
+
+				table.insert(events, {
+					kind = "Blocked",
+					attackerId = attacker.id,
+					blockerId = blocker.id,
+					damageToBlocker = share,
+					damageToAttacker = Keywords.power(blocker),
+				})
+			end
 		elseif declaration.targetKind == "Player" then
 			----------------------------------------------------------------
 			-- 무방비 직접 공격: 원거리는 절반

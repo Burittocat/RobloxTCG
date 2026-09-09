@@ -1095,16 +1095,20 @@ function Battle:renderCenter(state, opts)
 				local targetName = (declaration.targetKind == "Player") and "플레이어 직접 공격"
 					or nameOf(declaration.targetId)
 
-				local blockerName
+				-- 한 공격자를 여러 마리가 함께 막을 수 있다. 이름을 전부 적는다.
+				local blockerNames = {}
 				for blockerId, attackerId in state.combat.blocks do
 					if attackerId == declaration.id then
-						blockerName = nameOf(blockerId)
+						table.insert(blockerNames, nameOf(blockerId))
 					end
 				end
+				table.sort(blockerNames)
 
 				local text = ("%s  →  %s"):format(nameOf(declaration.id), targetName)
-				if blockerName then
-					text ..= ("   <font color='#58C48E'>← %s 방어</font>"):format(blockerName)
+				if #blockerNames > 0 then
+					text ..= ("   <font color='#58C48E'>← %s 방어</font>"):format(
+						table.concat(blockerNames, " · ")
+					)
 				end
 
 				add(Widgets.label(text, {

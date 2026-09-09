@@ -581,6 +581,107 @@ t:describe("크로스서버 매칭", function()
 end)
 
 --==========================================================================
+-- 저장한 덱으로 대전
+--==========================================================================
+
+--[[
+	덱 편집은 로비 서버에서 하고, 실제 PvP 는 **예약 서버**에서 열린다.
+	그 사이를 잇는 것은 텔레포트가 아니라 DataStore 다 — 대전 서버가 도착한 사람의
+	UserId 로 직접 읽는다(Arena:loadDeck).
+
+	여기서 보는 것은 하나다. **각자 자기가 저장한 덱으로 판이 열리는가.**
+
+	손패를 읽어서 판정한다. 클라이언트에게 덱 내용은 안 내려가므로(viewFor 가 지운다)
+	화면에서 덱을 직접 셀 방법이 없다. 대신 "손에 들어온 카드가 전부 내 덱에 있는
+	카드인가" 를 본다 — 스타터로 열렸다면 내 덱에 없는 카드가 섞여 나온다.
+]]
+t:describe("저장한 덱으로 대전", function()
+	--[[
+		스타터에 한 장도 없는 카드로만 짠 덱 두 벌. 서로 겹치지 않게 나눠 놨다 —
+		좌석이 뒤바뀌어 상대 덱으로 열리는 경우도 같이 걸린다.
+	]]
+	local KIM_CARDS =
+		{ "CRE_SCOUT", "CRE_SENTRY", "CRE_HERALD", "CRE_FALCONER", "SPL_MEND", "SPL_RALLY", "SPL_RECALL" }
+	local LEE_CARDS =
+		{ "CRE_WYVERN", "CRE_SKYPIERCER", "CRE_TITAN", "SPL_BANISH", "SPL_EXECUTE", "SPL_REINFORCE", "SPL_BULWARK_UP" }
+
+	-- 같은 카드는 4장까지라, 나머지는 코스트 카드로 채운다(코스트는 매수 제한이 없다).
+	local function deckOf(cards)
+		local entries = { { id = "COST_BASIC", count = 60 - #cards * 4 } }
+		for _, id in cards do
+			table.insert(entries, { id = id, count = 4 })
+		end
+		return entries
+	end
+
+	--[[
+		편집 화면에서 60번 누르는 대신, 이미 저장해둔 상태에서 시작한다.
+		(눌러서 저장하는 경로는 위 "덱 편집" 절이 본다)
+	]]
+	local function storeDeck(world, player, cards)
+		local store = world.dataStores["PlayerDecks_v1"] or {}
+		world.dataStores["PlayerDecks_v1"] = store
+		store[("user_%d"):format(player.UserId)] = deckOf(cards)
+	end
+
+	--[[
+		손패가 전부 이 덱에서 나왔는가. -> ok, 설명
+
+		이름을 하나씩 훑는 대신 개수를 맞춘다 — "내 덱 id 로 센 합" 과 "손패 전체" 가
+		같으면 남의 카드가 한 장도 없다는 뜻이다.
+	]]
+	local function handIsFrom(player, cards)
+		local gui = guiOf(player)
+		local total = Screen.countNamed(gui, "Hand_")
+		local mine = Screen.countNamed(gui, "Hand_COST_BASIC")
+
+		for _, id in cards do
+			mine += Screen.countNamed(gui, "Hand_" .. id)
+		end
+
+		return total > 0 and total == mine,
+			("%s 의 손패 %d 장 중 %d 장만 자기 덱 카드입니다"):format(player.Name, total, mine)
+	end
+
+	t:it("예약 서버에서 각자 자기 덱으로 열린다", function()
+		local world = Roblox.newWorld({ studio = false })
+
+		local alpha = world:newServer({ jobId = "job-alpha" }):boot()
+		local beta = world:newServer({ jobId = "job-beta" }):boot()
+
+		local kim = alpha:addPlayer("Kim")
+		local lee = beta:addPlayer("Lee")
+		storeDeck(world, kim, KIM_CARDS)
+		storeDeck(world, lee, LEE_CARDS)
+		world:advance(2)
+
+		clickQueue(kim)
+		clickQueue(lee)
+		world:advance(10)
+		assertNoErrors(world, "저장한 덱으로 크로스서버 매칭")
+
+		t:truthy(Screen.hasText(guiOf(kim), "턴 "), "판이 열려야 합니다")
+		t:truthy(handIsFrom(kim, KIM_CARDS))
+		t:truthy(handIsFrom(lee, LEE_CARDS))
+	end)
+
+	t:it("AI 연습도 저장한 덱으로 열린다", function()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+
+		local kim = lobby:addPlayer("Kim")
+		storeDeck(world, kim, KIM_CARDS)
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "AI 연습"))
+		world:advance(3)
+		assertNoErrors(world, "저장한 덱으로 AI 연습")
+
+		t:truthy(handIsFrom(kim, KIM_CARDS))
+	end)
+end)
+
+--==========================================================================
 -- 화면 배율
 --==========================================================================
 

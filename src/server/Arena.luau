@@ -18,6 +18,17 @@
 	여기서 걸린다 — 어긋난 채로 시작하면 두 사람이 서로 다른 게임을 보게 된다.
 
 	--------------------------------------------------------------------------
+	덱
+
+	덱은 텔레포트 데이터로 나르지 않는다. 클라이언트가 읽고 고칠 수 있는 값이라,
+	실어 보내면 "아무 카드나 60장" 으로 판을 열 수 있다. 대신 도착한 사람의 UserId 로
+	이 서버가 DataStore 에서 직접 읽는다 — 사람마다 덱은 하나뿐이라 "어느 덱인지" 를
+	가리킬 것도 없다.
+
+	읽기는 도착할 때마다 한 번, 상대를 기다리는 동안 한다. 두 사람 덱이 다 들어온
+	뒤에 판이 열린다.
+
+	--------------------------------------------------------------------------
 	안 온 사람
 
 	먼저 도착한 쪽은 arenaWaitTimeout 만큼만 기다린다. 넘기면 부전승이 아니라 로비로
@@ -30,8 +41,10 @@ local TeleportService = game:GetService("TeleportService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Decks = require(Shared.Decks)
 local Net = require(Shared.Net)
 
+local DeckStore = require(script.Parent.DeckStore)
 local MatchRunner = require(script.Parent.MatchRunner)
 local Settings = require(script.Parent.Matchmaker.Settings)
 
@@ -46,8 +59,10 @@ function Arena.new(remotes, host)
 	self.remotes = remotes
 	self.host = host
 	self.arrivals = {} :: { [Player]: any }
+	self.decks = {} :: { [Player]: { string } }
 	self.runner = nil
 	self.closed = false
+	self.deckStore = DeckStore.new()
 
 	remotes.Lobby.OnServerEvent:Connect(function(player, payload)
 		local ok, err = pcall(function()
@@ -152,7 +167,30 @@ function Arena:onPlayerAdded(player)
 		text = ("%s 님을 기다리는 중"):format(arrival.opponentName or "상대"),
 	})
 
-	self:tryStart()
+	self:loadDeck(player)
+end
+
+--[[
+	이 사람이 이번 판에 쓸 덱을 읽어둔다.
+
+	읽기는 yield 하므로 도착 처리와 분리한다 — 여기서 기다리면 먼저 온 사람의
+	대기 화면이 저장소 응답만큼 늦게 뜬다.
+
+	DeckStore:get 은 실패해도 스타터 덱을 돌려준다(nil 이 아니다). 그래서 "덱을 못 읽어서
+	판이 안 열리는" 경우는 없다 — 저장소가 죽어 있으면 두 사람 다 스타터로 둔다.
+]]
+function Arena:loadDeck(player)
+	task.spawn(function()
+		local deck = Decks.toList(self.deckStore:get(player))
+
+		-- 읽는 사이에 나갔으면 남길 것이 없다.
+		if not self.arrivals[player] then
+			return
+		end
+
+		self.decks[player] = deck
+		self:tryStart()
+	end)
 end
 
 --==========================================================================
@@ -174,10 +212,12 @@ function Arena:tryStart()
 
 	local waiting = {}
 	for player, arrival in self.arrivals do
-		if player.Parent == Players then
-			table.insert(waiting, { player = player, arrival = arrival })
-		else
+		if player.Parent ~= Players then
 			self.arrivals[player] = nil
+			self.decks[player] = nil
+		elseif self.decks[player] then
+			-- 덱이 아직 안 읽힌 사람은 세지 않는다. 다 읽히면 loadDeck 이 다시 부른다.
+			table.insert(waiting, { player = player, arrival = arrival, deck = self.decks[player] })
 		end
 	end
 
@@ -194,8 +234,8 @@ function Arena:tryStart()
 	end
 
 	local seats = {}
-	seats[a.arrival.seat] = { player = a.player }
-	seats[b.arrival.seat] = { player = b.player }
+	seats[a.arrival.seat] = { player = a.player, deck = a.deck }
+	seats[b.arrival.seat] = { player = b.player, deck = b.deck }
 
 	--[[
 		시드는 여기서 뽑는다. 두 사람이 이미 모였으므로 서버끼리 합의할 필요가 없고,

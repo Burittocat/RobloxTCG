@@ -77,6 +77,9 @@ function Battle.new(parent)
 	]]
 	self.lastTurnKey = nil
 	self.lastLife = {}
+	self.lastStackIds = {}
+	self.stackSeeded = false
+	self.spotlightToken = 0
 
 	--[[
 		줄마다 "지금 무엇이 어떤 차례로 놓여 있나" 를 기억한다. 창 크기가 바뀌면
@@ -243,6 +246,29 @@ function Battle:build(parent)
 		ZIndex = 20,
 	})
 
+	self.board = board
+
+	--[[
+		상대가 낸 카드를 크게 보여주는 자리.
+
+		카드 상세(우클릭으로 보는 것)와 **같은 위젯**을 쓴다. 같은 정보를 두 벌로
+		만들면 한쪽만 고쳐지는 날이 온다. 저건 버튼이 아니라 패널이라 그 아래
+		카드를 가리기만 하고 클릭을 가로채지도 않는다.
+
+		읽을 시간을 주는 게 목적이다 — 대응 패스를 사람이 직접 누르기로 한 것과 같은 이유.
+	]]
+	self.spotlight = CardView.detail({
+		--[[
+			이름을 나눠준다. 기본값 그대로 두면 화면 안에 "Detail" 상자가 둘이 되고,
+			이름으로 찾는 쪽(테스트·튜토리얼)이 트리에서 앞선 이것을 집어간다.
+		]]
+		Name = "Spotlight",
+		Parent = board,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		ZIndex = 22,
+	})
+
 	local panelHeight = Theme.size.playerPanel
 	local rowHeight = Theme.size.fieldRow
 	local half = panelHeight + rowHeight + 8 -- 패널 + 필드 + 사이 여백
@@ -299,6 +325,12 @@ function Battle:build(parent)
 		Size = UDim2.new(1, -24, 1, -16),
 		Position = UDim2.fromOffset(12, 8),
 		CanvasSize = UDim2.new(),
+		--[[
+			부채꼴로 기울면 카드 모서리가 줄 높이를 넘는다(116x170 을 5도 기울이면
+			세로로 8px 쯤 커진다). 잘라내면 모서리가 싹둑 잘려 보이므로 넘치게 둔다.
+			가로 스크롤은 CanvasSize 로 도므로 클리핑을 꺼도 그대로 돈다.
+		]]
+		ClipsDescendants = false,
 		ScrollingDirection = Enum.ScrollingDirection.X,
 		ScrollBarThickness = 4,
 		ScrollBarImageColor3 = Theme.color.stroke,
@@ -934,7 +966,7 @@ function Battle:watchRowSize(row)
 		local record = self.rows[row]
 		if record then
 			-- 창 크기가 바뀌는 중이다. 미끄러지게 두면 따라오다 만 것처럼 보인다.
-			self:placeRow(row, record.cards, record.size, record.gap, record.entryFrom, false)
+			self:placeRow(row, record.cards, record.size, record.gap, record.entryFrom, false, record.fan)
 		end
 	end)
 end
@@ -947,12 +979,14 @@ end
 	  entryFrom  새 카드가 어디서 들어오는가 — "right"(덱에서 뽑아 손으로)
 	             또는 "below"(손에서 필드로 나온다)
 	  animate    자리를 옮기는 카드를 미끄러뜨릴지. 창 크기 변화 때는 false
+	  fan        손패처럼 호를 그리며 쥘지. 필드는 false 다 —
+	             필드 카드는 Rotation 을 탭 표시에 쓰고 있어서 겹치면 안 된다
 
 	줄 폭은 **배율로 나눠서** 쓴다. AbsoluteSize 는 진짜 화면 픽셀인데 우리가 넣는
 	offset 은 루트 UIScale 이 곱해진 뒤에 화면에 닿기 때문이다 (drawArrow 와 같은 이유).
 ]]
-function Battle:placeRow(row, cards, cardSize, gap, entryFrom, animate)
-	self.rows[row] = { cards = cards, size = cardSize, gap = gap, entryFrom = entryFrom }
+function Battle:placeRow(row, cards, cardSize, gap, entryFrom, animate, fan)
+	self.rows[row] = { cards = cards, size = cardSize, gap = gap, entryFrom = entryFrom, fan = fan }
 
 	local scale = (self.uiScale and self.uiScale.Scale or 1)
 	if scale <= 0 then
@@ -975,7 +1009,20 @@ function Battle:placeRow(row, cards, cardSize, gap, entryFrom, animate)
 
 	for index, card in cards do
 		local x = startX + (index - 1) * (cardSize.X + gap)
-		local target = UDim2.fromOffset(x, y)
+
+		--[[
+			부채꼴. 가운데를 0, 양 끝을 -1/+1 로 두고 그 값으로 기울기와 높이를 정한다.
+			높이는 제곱이라 가운데가 가장 높고 바깥으로 갈수록 처진다 — 쥔 손 모양이다.
+			카드가 한 장이면 기울일 이유가 없다.
+		]]
+		local tilt, drop = 0, 0
+		if fan and #cards > 1 then
+			local t = (index - 1) / (#cards - 1) * 2 - 1
+			tilt = Theme.motion.fan.angle * t
+			drop = Theme.motion.fan.arc * t * t
+		end
+
+		local target = UDim2.fromOffset(x, y + drop)
 
 		if self.freshCards[card] then
 			self.freshCards[card] = nil
@@ -991,11 +1038,12 @@ function Battle:placeRow(row, cards, cardSize, gap, entryFrom, animate)
 				card.Position = UDim2.fromOffset(math.max(rowWidth, x + cardSize.X), y)
 			end
 
-			Motion.to(card, motion.deal, { Position = target })
+			Motion.to(card, motion.deal, { Position = target, Rotation = tilt })
 		elseif animate then
-			Motion.to(card, motion.reflow, { Position = target })
+			Motion.to(card, motion.reflow, { Position = target, Rotation = tilt })
 		else
 			card.Position = target
+			card.Rotation = tilt
 		end
 	end
 end
@@ -1062,6 +1110,75 @@ function Battle:flashDamage(panel, amount)
 	})
 
 	Motion.floatAway(label, motion.rise, motion.travel)
+end
+
+--[[
+	상대가 낸 카드를 한가운데 크게 띄웠다가 물린다.
+
+	옆에서 들어와 멎고, 읽을 만큼 머물다, 올라가며 사라지고 그 자리에 고리가 퍼진다.
+	영상에서 f40~f49 사이에 일어나는 일이다.
+
+	토큰은 배너와 같은 이유다 — 상대가 연달아 두 장을 내면 먼저 것을 물리려던
+	호출이 나중 것을 지워버린다.
+]]
+function Battle:flashSpotlight(def)
+	self.spotlightToken += 1
+	local token = self.spotlightToken
+
+	local motion = Theme.motion.spotlight
+	local frame = self.spotlight.frame
+
+	self.spotlight.show(def, "상대가 냈습니다")
+
+	-- 보드 오른쪽 밖에서 들어온다.
+	frame.Position = UDim2.new(1, 200, 0.5, 0)
+	Motion.to(frame, motion.travel, { Position = UDim2.fromScale(0.5, 0.5) })
+
+	task.delay(motion.travel + motion.hold, function()
+		if token ~= self.spotlightToken then
+			return
+		end
+
+		Motion.to(frame, motion.exit, { Position = UDim2.new(0.5, 0, 0.5, -motion.rise) })
+		self:flashRing()
+
+		task.delay(motion.exit, function()
+			if token == self.spotlightToken then
+				self.spotlight.hide()
+			end
+		end)
+	end)
+end
+
+--[[
+	스포트라이트가 물러난 자리에 퍼지는 고리. 테두리 투명도 하나로 사라지므로
+	자식 투명도를 일일이 건드릴 필요가 없다.
+]]
+function Battle:flashRing()
+	local motion = Theme.motion.ring
+
+	local ring = new("Frame", {
+		Name = "Ring",
+		Parent = self.board,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(60, 60),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ZIndex = 21,
+	}, {
+		new("UICorner", { CornerRadius = UDim.new(1, 0) }),
+	})
+
+	local stroke = Widgets.stroke(Theme.color.stack, 3, 0)
+	stroke.Parent = ring
+
+	Motion.to(ring, motion.grow, { Size = UDim2.fromOffset(motion.size, motion.size) })
+	Motion.to(stroke, motion.grow, { Transparency = 1 })
+
+	task.delay(motion.grow, function()
+		ring:Destroy()
+	end)
 end
 
 function Battle:renderPlayerPanel(panel, state, playerId, opts)
@@ -1394,7 +1511,7 @@ function Battle:renderHand(state, opts)
 
 	-- 뽑은 카드는 덱 쪽(오른쪽)에서 들어온다.
 	local drawn = Reconcile.children(self.handRow, items)
-	self:placeRow(self.handRow, drawn, Theme.size.handCard, 8, "right", true)
+	self:placeRow(self.handRow, drawn, Theme.size.handCard, 8, "right", true, true)
 end
 
 function Battle:renderLog(state)
@@ -1447,6 +1564,26 @@ function Battle:render(state, opts)
 		그쪽은 수비준비 페이즈처럼 상대 턴에 내가 두는 경우까지 따라가느라 한 턴에도
 		여러 번 뒤집힌다. 그 박자로 배너를 띄우면 화면 한가운데서 글자가 계속 깜빡인다.
 	]]
+	--[[
+		상대가 스택에 올린 카드는 한 번 크게 보여준다. 내가 낸 것은 안 띄운다 —
+		내가 뭘 냈는지는 내가 안다.
+
+		첫 스냅샷은 건너뛴다. 판에 들어온 순간 스택에 뭔가 얹혀 있으면(재접속 등)
+		방금 낸 것처럼 튀어나오기 때문이다.
+	]]
+	local seenStack = {}
+	for _, item in state.stack do
+		seenStack[item.id] = true
+		if self.stackSeeded and not self.lastStackIds[item.id] and item.controllerId ~= self.me then
+			local instance = state.cards[item.instanceId]
+			if instance then
+				self:flashSpotlight(Registry.mustGet(instance.defId))
+			end
+		end
+	end
+	self.lastStackIds = seenStack
+	self.stackSeeded = true
+
 	local turnKey = ("%d:%d"):format(state.turn, state.activePlayerId)
 	if self.lastTurnKey and self.lastTurnKey ~= turnKey and not state.finished then
 		self:flashTurn(myTurn)

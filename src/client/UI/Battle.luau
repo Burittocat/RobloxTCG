@@ -21,6 +21,7 @@ local Theme = require(script.Parent.Theme)
 local Widgets = require(script.Parent.Widgets)
 local CardView = require(script.Parent.CardView)
 local Reconcile = require(script.Parent.Reconcile)
+local Motion = require(script.Parent.Motion)
 
 local new = Widgets.new
 local Enums = Rules.Enums
@@ -89,6 +90,15 @@ function Battle.new(parent)
 
 	self.logOpen = false
 	self.toastToken = 0
+	self.flashToken = 0
+
+	--[[
+		연출은 "무엇이 **바뀌었는가**" 를 봐야 하는데, 스냅샷은 현재 상태만 온다.
+		그래서 직전 값을 여기에 들고 비교한다. 첫 렌더에는 비어 있으므로
+		판이 시작하자마자 배너나 피해 숫자가 튀지 않는다.
+	]]
+	self.lastTurnKey = nil
+	self.lastLife = {}
 	self.me, self.foe = DEFAULT_ME, DEFAULT_FOE
 
 	self:build(parent)
@@ -219,6 +229,30 @@ function Battle:build(parent)
 	})
 	self.boardStroke = Widgets.stroke(Theme.color.stroke, 2)
 	self.boardStroke.Parent = board
+
+	--[[
+		턴이 바뀔 때 보드 한가운데 잠깐 뜨는 글자.
+
+		행동 바의 "내 차례" 라벨과 **다른 것**이다. 저쪽은 지금 상태를 계속 말하고,
+		이건 바뀌는 순간에만 한 번 나타난다 — 카드를 보고 있어도 턴이 넘어간 것을
+		놓치지 않게 하는 게 목적이라, 화면에서 눈이 가장 자주 가는 자리에 크게 띄운다.
+
+		TextLabel 이라 클릭을 가로채지 않는다. 보드 위에 겹쳐 떠 있어도 그 아래
+		카드를 그대로 누를 수 있다.
+	]]
+	self.turnFlashHome = UDim2.fromScale(0.5, 0.5)
+	self.turnFlash = Widgets.label("", {
+		Name = "TurnFlash",
+		Parent = board,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = self.turnFlashHome,
+		Size = UDim2.new(1, 0, 0, 60),
+		Font = Theme.font.bold,
+		TextSize = Theme.text.flash,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextTransparency = 1,
+		ZIndex = 20,
+	})
 
 	local panelHeight = Theme.size.playerPanel
 	local rowHeight = Theme.size.fieldRow
@@ -901,6 +935,70 @@ local function phaseChip(phase, current)
 	})
 end
 
+--==========================================================================
+-- 연출
+--==========================================================================
+
+--[[
+	턴이 넘어간 것을 한 번 크게 알린다.
+
+	토큰을 쓰는 이유는 토스트와 같다 — 배너가 아직 사라지는 중에 다음 턴이 오면
+	늦게 도착한 "사라져라" 가 새로 뜬 배너를 지워버린다. 자기 차례가 지났으면
+	아무것도 하지 않고 물러난다.
+]]
+function Battle:flashTurn(myTurn)
+	self.flashToken += 1
+	local token = self.flashToken
+
+	local motion = Theme.motion.turnBanner
+	local label = self.turnFlash
+
+	label.Text = myTurn and "내 턴" or "상대 턴"
+	label.TextColor3 = myTurn and Theme.color.me or Theme.color.foe
+	label.Position = self.turnFlashHome
+	label.TextTransparency = 1
+
+	Motion.to(label, motion.fadeIn, { TextTransparency = 0 })
+
+	task.delay(motion.fadeIn + motion.hold, function()
+		if token ~= self.flashToken then
+			return
+		end
+		Motion.to(label, motion.fadeOut, {
+			TextTransparency = 1,
+			Position = UDim2.new(0.5, 0, 0.5, -motion.rise),
+		})
+	end)
+end
+
+--[[
+	라이프가 깎일 때 그 자리에 깎인 만큼을 띄운다.
+
+	로그에도 남지만 로그는 접혀 있는 게 기본이라, **얼마나 맞았는지**를 판 위에서
+	바로 읽을 방법이 이것뿐이다. 회복은 띄우지 않는다 — 지금 룰에 회복이 없다.
+
+	패널은 자식을 절대 위치로 놓으므로(UIListLayout 이 없다) 여기에 라벨을 얹어도
+	패널 안 다른 것들이 밀리지 않는다.
+]]
+function Battle:flashDamage(panel, amount)
+	local motion = Theme.motion.damage
+
+	local label = Widgets.label(("-%d"):format(amount), {
+		Name = "Damage",
+		Parent = panel.frame,
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 96, 0.5, 0),
+		Size = UDim2.fromOffset(80, 40),
+		Font = Theme.font.bold,
+		TextSize = Theme.text.life,
+		TextColor3 = Theme.color.warn,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 20,
+	})
+
+	Motion.floatAway(label, motion.rise, motion.travel)
+end
+
 function Battle:renderPlayerPanel(panel, state, playerId, opts)
 	local player = state.players[playerId]
 	local available = GameState.availableCost(state, playerId)
@@ -908,6 +1006,17 @@ function Battle:renderPlayerPanel(panel, state, playerId, opts)
 
 	panel.name.Text = player.name
 	panel.life.Text = ("♥ %d"):format(player.life)
+
+	--[[
+		직전 라이프와 견줘 **깎인 만큼**을 띄운다. 첫 렌더(직전 값 없음)와
+		늘어난 경우는 건너뛴다 — 판이 새로 시작해 라이프가 돌아온 것을
+		연출로 오해하면 안 된다.
+	]]
+	local previousLife = self.lastLife[playerId]
+	if previousLife and player.life < previousLife then
+		self:flashDamage(panel, previousLife - player.life)
+	end
+	self.lastLife[playerId] = player.life
 
 	-- 라이프가 위험한 구간을 더 일찍(12 이하) 붉게 바꾼다. 30 에서 시작하는 판이라
 	-- 8 은 이미 늦다 — 한 번의 공격으로 끝나는 지점부터 눈에 띄어야 한다.
@@ -1256,6 +1365,17 @@ function Battle:render(state, opts)
 
 	self.turnLabel.Text = ("턴 %d   ·   %s"):format(state.turn, myTurn and "내 턴" or "상대 턴")
 	self.turnLabel.TextColor3 = myTurn and Theme.color.me or Theme.color.foe
+
+	--[[
+		배너는 **턴 주인이 바뀔 때만** 띄운다. 행동 바의 "내 차례" 와 방아쇠가 다르다 —
+		그쪽은 수비준비 페이즈처럼 상대 턴에 내가 두는 경우까지 따라가느라 한 턴에도
+		여러 번 뒤집힌다. 그 박자로 배너를 띄우면 화면 한가운데서 글자가 계속 깜빡인다.
+	]]
+	local turnKey = ("%d:%d"):format(state.turn, state.activePlayerId)
+	if self.lastTurnKey and self.lastTurnKey ~= turnKey and not state.finished then
+		self:flashTurn(myTurn)
+	end
+	self.lastTurnKey = turnKey
 
 	Widgets.clear(self.phaseTrack)
 	for index, phase in PHASE_TRACK do

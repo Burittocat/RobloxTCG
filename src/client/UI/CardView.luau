@@ -15,6 +15,7 @@ local Rules = require(Shared.Rules)
 
 local Theme = require(script.Parent.Theme)
 local Widgets = require(script.Parent.Widgets)
+local Motion = require(script.Parent.Motion)
 
 local new = Widgets.new
 local Enums = Rules.Enums
@@ -153,11 +154,7 @@ function CardView.paintHand(button, def, opts)
 	-- 다음 턴에 뭘 낼지 계획하는 것도 플레이의 일부다.
 	button.BackgroundTransparency = dim and 0.45 or 0.05
 
-	local stroke = button:FindFirstChildOfClass("UIStroke")
-	if stroke then
-		stroke.Color = color
-		stroke.Thickness = thickness
-	end
+	Motion.strokeTo(button:FindFirstChildOfClass("UIStroke"), color, thickness, Theme.motion.outline)
 
 	Widgets.clear(button)
 
@@ -320,15 +317,16 @@ function CardView.paintField(button, state, instance, opts)
 	button.BackgroundColor3 = typeColor(def)
 	button.BackgroundTransparency = instance.tapped and 0.55 or 0.05
 
-	-- 탭은 기울여서 표시한다. 예전 4도는 사실상 안 보였다.
-	-- 90도(진짜 TCG 방식)로 눕히면 옆 카드와 겹쳐서 12도로 타협했다.
-	button.Rotation = instance.tapped and 12 or 0
+	--[[
+		탭은 기울여서 표시한다. 예전 4도는 사실상 안 보였다.
+		90도(진짜 TCG 방식)로 눕히면 옆 카드와 겹쳐서 12도로 타협했다.
 
-	local stroke = button:FindFirstChildOfClass("UIStroke")
-	if stroke then
-		stroke.Color = color
-		stroke.Thickness = thickness
-	end
+		각도를 즉시 대입하지 않고 **눕는 동작**으로 보여준다 — 홱 바뀌면
+		"언제 눕었지" 를 놓친다. 회전은 UIListLayout 이 안 건드려서 안전하다.
+	]]
+	Motion.rotateTo(button, instance.tapped and 12 or 0, Theme.motion.tap)
+
+	Motion.strokeTo(button:FindFirstChildOfClass("UIStroke"), color, thickness, Theme.motion.outline)
 
 	Widgets.clear(button)
 
@@ -457,7 +455,7 @@ end
 ]]
 function CardView.paintCost(chip, instance)
 	chip.BackgroundTransparency = instance.tapped and 0.7 or 0.15
-	chip.Rotation = instance.tapped and 12 or 0
+	Motion.rotateTo(chip, instance.tapped and 12 or 0, Theme.motion.tap)
 
 	local stroke = chip:FindFirstChildOfClass("UIStroke")
 	if stroke then

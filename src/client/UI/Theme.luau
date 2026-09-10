@@ -90,6 +90,9 @@ Theme.text = {
 	title = 20,
 	life = 34,
 	banner = 22,
+	-- 턴이 바뀔 때 화면 한가운데 잠깐 뜨는 글자. 척도에서 가장 크다 —
+	-- 카드를 보고 있어도 읽히라고 띄우는 것이라 작으면 존재 이유가 없다.
+	flash = 42,
 }
 
 --[[
@@ -138,5 +141,38 @@ Theme.outline = {
 }
 
 Theme.tween = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+--[[
+	연출 타이밍 한 곳.
+
+	숫자의 출처는 **사용자가 준 카드 게임 플레이 영상**이다 (10fps GIF, 300프레임).
+	프레임을 세어 잰 값이라 ±0.1초 오차가 있다. "영상과 같게" 가 사용자가 정한 방향이라
+	빠르게 줄이지 않고 관측치 그대로 뒀다 — 바꿀 일이 생기면 여기 숫자만 고친다.
+
+	재는 방법: 움직임이 시작된 프레임과 멎은 프레임 번호 차 ÷ 10.
+
+	  turnBanner   턴이 바뀔 때 화면 한가운데 글자. 뜬 뒤 hold 만큼 머물고
+	               rise 만큼 위로 밀리며 사라진다 (관측 f140~f143)
+	  tap          코스트를 쓰거나 공격해서 카드가 눕는 시간
+	  outline      선택·대상 테두리가 바뀌는 시간. 눈이 따라올 만큼만 짧게
+	  damage       라이프가 깎일 때 숫자가 떠올랐다 사라지는 시간
+
+	여기 없는 것(카드가 날아다니는 연출)은 UIListLayout 이 위치를 매 프레임 덮어써서
+	아직 못 붙인다. 손패·필드 줄을 수동 배치로 바꾸는 것이 그 전제다.
+]]
+Theme.motion = {
+	turnBanner = {
+		fadeIn = 0.2,
+		hold = 0.4,
+		fadeOut = 0.35,
+		rise = 34,
+	},
+	tap = 0.18,
+	outline = 0.12,
+	damage = {
+		travel = 0.55,
+		rise = 42,
+	},
+}
 
 return Theme

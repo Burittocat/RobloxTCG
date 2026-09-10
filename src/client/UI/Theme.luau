@@ -157,8 +157,8 @@ Theme.tween = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Ou
 	  outline      선택·대상 테두리가 바뀌는 시간. 눈이 따라올 만큼만 짧게
 	  damage       라이프가 깎일 때 숫자가 떠올랐다 사라지는 시간
 
-	여기 없는 것(카드가 날아다니는 연출)은 UIListLayout 이 위치를 매 프레임 덮어써서
-	아직 못 붙인다. 손패·필드 줄을 수동 배치로 바꾸는 것이 그 전제다.
+	손패·필드 줄은 UIListLayout 을 떼고 Battle:placeRow 가 직접 배치한다.
+	그래서 카드 위치에 트윈을 걸 수 있다 — 레이아웃이 덮어쓰지 않는다.
 ]]
 Theme.motion = {
 	turnBanner = {
@@ -169,6 +169,19 @@ Theme.motion = {
 	},
 	tap = 0.18,
 	outline = 0.12,
+
+	--[[
+		카드가 자리로 들어오고 자리를 옮기는 시간.
+
+		  deal        새 카드가 줄 밖에서 제 자리로 들어오는 시간 (관측 f81~f86, 0.5초)
+		  reflow      이미 있던 카드가 자리를 다시 잡는 시간. deal 보다 짧아야 한다 —
+		              새로 온 카드에 눈이 가야지, 옆으로 밀리는 카드가 주인공이 되면 안 된다
+		  summonRise  필드에 나오는 생물이 **아래에서** 올라오는 거리(px).
+		              손패가 아래에 있으니 그쪽에서 올라오는 것으로 읽힌다
+	]]
+	deal = 0.5,
+	reflow = 0.22,
+	summonRise = 46,
 	damage = {
 		travel = 0.55,
 		rise = 42,

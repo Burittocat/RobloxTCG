@@ -45,28 +45,6 @@ local LOSS_REASON = {
 	Concede = "항복",
 }
 
---[[
-	가로로 스크롤하는 줄이 **넘칠 때만** 왼쪽으로 붙게 한다.
-
-	UIListLayout 의 가운데 정렬은 내용이 줄보다 넓어지면 양쪽으로 똑같이 넘친다.
-	그러면 왼쪽 카드가 잘리고, 캔버스는 0 부터라 스크롤로도 거기까지 못 간다.
-	손패는 드로우가 늘면 실제로 줄보다 길어진다.
-
-	그렇다고 늘 왼쪽 정렬로 두면 카드가 두세 장일 때 화면이 왼쪽으로 쏠린다.
-	그래서 넓이를 보고 그때그때 바꾼다 — 내용이 넘치면 왼쪽, 아니면 가운데.
-]]
-local function alignWhenOverflowing(scroll, layout)
-	local function update()
-		local overflowing = layout.AbsoluteContentSize.X > scroll.AbsoluteSize.X
-		layout.HorizontalAlignment = overflowing and Enum.HorizontalAlignment.Left
-			or Enum.HorizontalAlignment.Center
-	end
-
-	layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(update)
-	scroll:GetPropertyChangedSignal("AbsoluteSize"):Connect(update)
-	update()
-end
-
 local Battle = {}
 Battle.__index = Battle
 
@@ -99,6 +77,17 @@ function Battle.new(parent)
 	]]
 	self.lastTurnKey = nil
 	self.lastLife = {}
+
+	--[[
+		줄마다 "지금 무엇이 어떤 차례로 놓여 있나" 를 기억한다. 창 크기가 바뀌면
+		렌더를 기다리지 않고 여기 기록으로 다시 배치해야 한다 — 안 그러면 창을
+		줄이는 동안 카드가 옛 자리에 남는다.
+
+		freshCards 는 **이번에 새로 생긴 카드** 표시다. 약한 키라 카드가 사라지면
+		표시도 같이 사라진다. Reconcile 의 enter 가 찍고 placeRow 가 지운다.
+	]]
+	self.rows = {}
+	self.freshCards = setmetatable({}, { __mode = "k" })
 	self.me, self.foe = DEFAULT_ME, DEFAULT_FOE
 
 	self:build(parent)
@@ -302,8 +291,6 @@ function Battle:build(parent)
 		BackgroundColor3 = Theme.color.bgDeep,
 	})
 
-	local handLayout = Widgets.listLayout(Enum.FillDirection.Horizontal, 8, Enum.HorizontalAlignment.Center)
-
 	self.handRow = new("ScrollingFrame", {
 		Name = "Hand",
 		Parent = handBar,
@@ -312,15 +299,13 @@ function Battle:build(parent)
 		Size = UDim2.new(1, -24, 1, -16),
 		Position = UDim2.fromOffset(12, 8),
 		CanvasSize = UDim2.new(),
-		AutomaticCanvasSize = Enum.AutomaticSize.X,
 		ScrollingDirection = Enum.ScrollingDirection.X,
 		ScrollBarThickness = 4,
 		ScrollBarImageColor3 = Theme.color.stroke,
 	}, {
-		handLayout,
 	})
 
-	alignWhenOverflowing(self.handRow, handLayout)
+	self:watchRowSize(self.handRow)
 
 	--------------------------------------------------------------------
 	-- 겹쳐 뜨는 것들
@@ -455,8 +440,6 @@ function Battle:makePlayerPanel(parent, slot, position)
 end
 
 function Battle:makeFieldRow(parent, name, position)
-	local layout = Widgets.listLayout(Enum.FillDirection.Horizontal, 8, Enum.HorizontalAlignment.Center)
-
 	local row = new("ScrollingFrame", {
 		Name = name,
 		Parent = parent,
@@ -465,16 +448,12 @@ function Battle:makeFieldRow(parent, name, position)
 		Position = position,
 		Size = UDim2.new(1, 0, 0, 132),
 		CanvasSize = UDim2.new(),
-		AutomaticCanvasSize = Enum.AutomaticSize.X,
 		ScrollingDirection = Enum.ScrollingDirection.X,
 		ScrollBarThickness = 3,
 		ScrollBarImageColor3 = Theme.color.stroke,
-	}, {
-		layout,
 	})
 
-	-- 필드도 생물이 늘어나면 줄보다 길어진다.
-	alignWhenOverflowing(row, layout)
+	self:watchRowSize(row)
 
 	return row
 end
@@ -936,6 +915,92 @@ local function phaseChip(phase, current)
 end
 
 --==========================================================================
+-- 줄 배치
+--==========================================================================
+
+--[[
+	카드 줄은 **UIListLayout 을 쓰지 않는다.**
+
+	레이아웃은 매 프레임 자식의 Position 을 자기가 다시 정한다. 그러면 카드 위치에
+	트윈을 걸어도 다음 프레임에 덮어써져서, 카드가 날아가는 연출이 원리적으로 안 된다.
+	그래서 자리 계산을 여기로 가져왔다.
+
+	예전 alignWhenOverflowing 이 하던 일도 여기서 같이 한다 — 내용이 줄보다 넓으면
+	왼쪽부터, 아니면 가운데. (가운데 정렬로 넘치면 왼쪽 카드가 잘리는데 캔버스는
+	0 부터라 스크롤로도 거기까지 못 간다)
+]]
+function Battle:watchRowSize(row)
+	row:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		local record = self.rows[row]
+		if record then
+			-- 창 크기가 바뀌는 중이다. 미끄러지게 두면 따라오다 만 것처럼 보인다.
+			self:placeRow(row, record.cards, record.size, record.gap, record.entryFrom, false)
+		end
+	end)
+end
+
+--[[
+	cards 를 줄에 나란히 놓는다.
+
+	  cardSize   Theme.size 의 카드 치수
+	  gap        카드 사이 간격
+	  entryFrom  새 카드가 어디서 들어오는가 — "right"(덱에서 뽑아 손으로)
+	             또는 "below"(손에서 필드로 나온다)
+	  animate    자리를 옮기는 카드를 미끄러뜨릴지. 창 크기 변화 때는 false
+
+	줄 폭은 **배율로 나눠서** 쓴다. AbsoluteSize 는 진짜 화면 픽셀인데 우리가 넣는
+	offset 은 루트 UIScale 이 곱해진 뒤에 화면에 닿기 때문이다 (drawArrow 와 같은 이유).
+]]
+function Battle:placeRow(row, cards, cardSize, gap, entryFrom, animate)
+	self.rows[row] = { cards = cards, size = cardSize, gap = gap, entryFrom = entryFrom }
+
+	local scale = (self.uiScale and self.uiScale.Scale or 1)
+	if scale <= 0 then
+		scale = 1
+	end
+
+	local count = #cards
+	local total = count > 0 and (count * cardSize.X + (count - 1) * gap) or 0
+
+	row.CanvasSize = UDim2.fromOffset(total, 0)
+
+	local rowWidth = row.AbsoluteSize.X / scale
+	local rowHeight = row.AbsoluteSize.Y / scale
+
+	local startX = math.max(0, (rowWidth - total) / 2)
+	-- 세로는 가운데. 하네스처럼 줄 크기를 모르는 곳에서는 0 으로 떨어진다.
+	local y = math.max(0, (rowHeight - cardSize.Y) / 2)
+
+	local motion = Theme.motion
+
+	for index, card in cards do
+		local x = startX + (index - 1) * (cardSize.X + gap)
+		local target = UDim2.fromOffset(x, y)
+
+		if self.freshCards[card] then
+			self.freshCards[card] = nil
+
+			--[[
+				새 카드는 제 자리 **밖에서** 출발한다. 어디서 오는지가 그 카드가
+				무엇인지를 말해준다 — 손패는 오른쪽(덱) 에서 들어오고, 필드는
+				아래(손패) 에서 올라온다.
+			]]
+			if entryFrom == "below" then
+				card.Position = UDim2.fromOffset(x, y + motion.summonRise)
+			else
+				card.Position = UDim2.fromOffset(math.max(rowWidth, x + cardSize.X), y)
+			end
+
+			Motion.to(card, motion.deal, { Position = target })
+		elseif animate then
+			Motion.to(card, motion.reflow, { Position = target })
+		else
+			card.Position = target
+		end
+	end
+end
+
+--==========================================================================
 -- 연출
 --==========================================================================
 
@@ -1110,6 +1175,9 @@ function Battle:renderField(row, state, playerId, opts)
 			paint = function(card)
 				CardView.paintField(card, state, instance, cardOpts)
 			end,
+			enter = function(card)
+				self.freshCards[card] = true
+			end,
 		})
 	end
 
@@ -1118,6 +1186,9 @@ function Battle:renderField(row, state, playerId, opts)
 	for index, card in drawn do
 		self.fieldNodes[items[index].key] = card
 	end
+
+	-- 생물은 손패에서 나오므로 아래에서 올라온다.
+	self:placeRow(row, drawn, Theme.size.fieldCard, 8, "below", true)
 end
 
 function Battle:renderCenter(state, opts)
@@ -1314,11 +1385,16 @@ function Battle:renderHand(state, opts)
 				paint = function(card)
 					CardView.paintHand(card, def, cardOpts)
 				end,
+				enter = function(card)
+					self.freshCards[card] = true
+				end,
 			})
 		end
 	end
 
-	Reconcile.children(self.handRow, items)
+	-- 뽑은 카드는 덱 쪽(오른쪽)에서 들어온다.
+	local drawn = Reconcile.children(self.handRow, items)
+	self:placeRow(self.handRow, drawn, Theme.size.handCard, 8, "right", true)
 end
 
 function Battle:renderLog(state)

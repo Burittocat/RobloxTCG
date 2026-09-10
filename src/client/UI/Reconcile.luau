@@ -34,7 +34,8 @@ local books = setmetatable({}, { __mode = "k" })
 
 	  key    이 자리의 신원. 같은 key 면 같은 인스턴스를 계속 쓴다
 	  build  없을 때 만드는 함수 -> Instance
-	  paint  있을 때 현재 상태를 입히는 함수 (선택)
+	  paint  있을 때(그리고 만든 직후) 현재 상태를 입히는 함수 (선택)
+	  enter  **새로 생겼을 때만** 한 번 불린다 — 등장 연출 자리 (선택)
 
 	돌려주는 것: 그려진 인스턴스 배열(items 와 같은 순서).
 	화살표처럼 "그 카드가 화면 어디에 있나" 를 알아야 하는 쪽이 이걸 쓴다.
@@ -72,6 +73,15 @@ function Reconcile.children(container, items)
 			book[item.key] = instance
 		elseif item.paint then
 			item.paint(instance)
+		end
+
+		--[[
+			등장 연출은 **부모에 붙기 전에** 걸어둔다. 붙는 순간이 화면에 처음
+			나타나는 순간이라, 그 뒤에 초기값을 넣으면 한 프레임 동안 완성된 모습이
+			번쩍였다가 연출이 시작된다.
+		]]
+		if isNew and item.enter then
+			item.enter(instance)
 		end
 
 		instance.LayoutOrder = order

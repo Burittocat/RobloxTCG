@@ -1771,8 +1771,14 @@ end)
 	캔버스는 0 부터라 스크롤로도 거기까지 못 간다. 그렇다고 늘 왼쪽이면 카드가
 	두세 장일 때 화면이 왼쪽으로 쏠린다.
 
-	이 하네스는 레이아웃을 계산하지 않으므로(AbsoluteSize 는 항상 0) 넓이를 직접 넣어
-	상황을 만든다. 확인하는 것은 "그 상황에서 정렬이 바뀌는가" 다.
+	예전에는 UIListLayout 의 HorizontalAlignment 를 갈아끼워서 이걸 했다. 지금은
+	줄에 레이아웃이 없다 — 카드에 위치 트윈을 걸려면 레이아웃이 없어야 해서,
+	Battle:placeRow 가 자리를 직접 계산한다. 그래서 **재는 대상도 카드의 실제 x 좌표**다.
+	요구사항은 그대로고 확인하는 방법만 바뀌었다.
+
+	이 하네스는 레이아웃을 계산하지 않으므로(AbsoluteSize 는 항상 0) 줄 넓이를 직접
+	넣어 상황을 만든다. 카드 장수는 판이 정하므로 좌표를 숫자로 못 박지 않고,
+	"왼쪽 끝인가(0) / 안쪽으로 들어왔는가(>0)" 만 본다.
 ]]
 t:describe("넘치는 줄", function()
 	local function handRow()
@@ -1785,54 +1791,53 @@ t:describe("넘치는 줄", function()
 		world:advance(3)
 		t:truthy(passMulligan(world, kim), "멀리건 관문을 통과하지 못했습니다")
 
-		local row = Screen.find(guiOf(kim), "Hand")
-		local layout
+		return world, kim, Screen.find(guiOf(kim), "Hand")
+	end
+
+	-- 줄에서 가장 왼쪽 카드의 x. 카드가 한 장도 없으면 실패시킨다.
+	local function leftmostX(row)
+		local best
 		for _, child in row:GetChildren() do
-			if child.ClassName == "UIListLayout" then
-				layout = child
+			if child.ClassName == "TextButton" then
+				if not best or child.LayoutOrder < best.LayoutOrder then
+					best = child
+				end
 			end
 		end
+		t:truthy(best, "손패에 카드가 없습니다")
+		return best.Position.X.Offset
+	end
 
-		return world, row, layout
+	local function setWidth(world, row, width)
+		row.AbsoluteSize = Roblox.Datatypes.Vector2.new(width, 190)
+		world:advance(0.2)
 	end
 
 	t:it("평소에는 가운데로 모은다", function()
-		local _, _, layout = handRow()
+		local world, _, row = handRow()
 
-		t:eq(
-			tostring(layout.HorizontalAlignment),
-			tostring(Roblox.Datatypes.Enum.HorizontalAlignment.Center),
-			"카드가 몇 장 없을 때 왼쪽으로 쏠리면 안 됩니다"
-		)
+		setWidth(world, row, 4000)
+
+		t:truthy(leftmostX(row) > 0, "카드가 몇 장 없을 때 왼쪽으로 쏠리면 안 됩니다")
 	end)
 
 	t:it("줄보다 길어지면 왼쪽으로 붙는다", function()
-		local world, row, layout = handRow()
+		local world, _, row = handRow()
 
-		row.AbsoluteSize = Roblox.Datatypes.Vector2.new(800, 150)
-		layout.AbsoluteContentSize = Roblox.Datatypes.Vector2.new(1400, 150)
-		world:advance(0.2)
+		setWidth(world, row, 100)
 
-		t:eq(
-			tostring(layout.HorizontalAlignment),
-			tostring(Roblox.Datatypes.Enum.HorizontalAlignment.Left),
-			"넘치는데 가운데로 두면 왼쪽 카드가 잘리고 스크롤로도 못 간다"
-		)
+		t:eq(leftmostX(row), 0, "넘치는데 가운데로 두면 왼쪽 카드가 잘리고 스크롤로도 못 간다")
 	end)
 
 	t:it("다시 줄어들면 가운데로 돌아온다", function()
-		local world, row, layout = handRow()
+		local world, _, row = handRow()
 
-		row.AbsoluteSize = Roblox.Datatypes.Vector2.new(800, 150)
-		layout.AbsoluteContentSize = Roblox.Datatypes.Vector2.new(1400, 150)
-		world:advance(0.2)
-		layout.AbsoluteContentSize = Roblox.Datatypes.Vector2.new(300, 150)
-		world:advance(0.2)
+		setWidth(world, row, 100)
+		t:eq(leftmostX(row), 0, "먼저 넘치는 상황을 만들지 못했습니다")
 
-		t:eq(
-			tostring(layout.HorizontalAlignment),
-			tostring(Roblox.Datatypes.Enum.HorizontalAlignment.Center)
-		)
+		setWidth(world, row, 4000)
+
+		t:truthy(leftmostX(row) > 0, "줄이 넓어졌으면 다시 가운데로 모여야 합니다")
 	end)
 end)
 

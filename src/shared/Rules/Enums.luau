@@ -5,6 +5,11 @@
 	숫자 ID 처럼 나중에 순서가 밀려 깨지지 않는다.
 ]]
 
+--[[
+	태그 설명이 Config 를 읽는다. Config 는 아무것도 require 하지 않으므로 순환은 없다.
+]]
+local Config = require(script.Parent.Config)
+
 local Enums = {}
 
 --==========================================================================
@@ -45,11 +50,53 @@ Enums.KeywordDisplay = table.freeze({
 	튜토리얼 코치가 이걸 읽어준다. 여기 문장이 곧 규칙 설명이므로,
 	Config 로 룰을 바꾸면 이 표도 같이 봐야 한다.
 ]]
+--[[
+	태그 규칙 설명 — 카드를 오른쪽 클릭하면 여기서 읽어온다.
+
+	**Config 를 읽어서 만든다.** README 의 ★ 표에 있는 값(비행끼리 방어 · 직공 반올림 ·
+	도발의 직공 차단)은 사용자가 바꿀 수 있는 것들이고, 바꿨는데 설명이 옛말을 하고
+	있으면 그게 제일 나쁜 거짓말이다 — 화면이 규칙을 알려주는 유일한 자리다.
+
+	실제로 도발 설명이 **'원거리'는 무시한다는 예외를 빼먹고** 있었다. 같은 게임 안에서
+	공격이 거부될 때는 "('원거리'만 무시 가능)" 이라고 말하면서 태그 설명만 딴소리를 했다.
+]]
+
+-- 비행 공격을 막을 수 있는 쪽
+local function flyingBlockers()
+	if Config.flyingCanBlockFlying then
+		return "'비행'과 '원거리'"
+	end
+	return "'원거리'"
+end
+
+-- 원거리가 플레이어를 직접 칠 때 들어가는 몫
+local function directShare()
+	local divisor = Config.rangedDirectDamageDivisor
+	local portion = (divisor == 2) and "절반" or ("%d 분의 1"):format(divisor)
+	local rounding = (Config.rangedDirectDamageRounding == "ceil") and "올림" or "내림"
+	return ("%s(%s)"):format(portion, rounding)
+end
+
+local function flyingText()
+	local reach = ("%s만 이 생물을 상대할 수 있다."):format(flyingBlockers())
+	if Config.groundCannotAttackFlying then
+		return ("지상 생물은 이 생물을 공격할 수 없고, 이 생물의 공격을 막을 수도 없다. %s"):format(reach)
+	end
+	return ("이 생물의 공격은 %s만 막을 수 있다."):format(flyingBlockers())
+end
+
+local function tauntText()
+	if not Config.tauntBlocksDirectAttack then
+		return "지금 설정에서는 플레이어 직접 공격을 막지 않는다."
+	end
+	return "이 생물이 전장에 있는 한, 상대는 플레이어를 직접 공격할 수 없다. 다만 '원거리' 생물은 이를 무시한다."
+end
+
 Enums.KeywordText = table.freeze({
 	Haste = "소환한 턴에 바로 공격할 수 있다. 수비준비 페이즈에도 언탭으로 등장한다.",
-	Flying = "지상 생물은 이 생물을 공격하거나 방어할 수 없다. 비행과 원거리만 상대한다.",
-	Taunt = "이 생물이 전장에 있는 한, 상대는 플레이어를 직접 공격할 수 없다.",
-	Ranged = "비행을 상대할 수 있고 도발을 무시한다. 플레이어 직접 공격은 데미지 절반.",
+	Flying = flyingText(),
+	Taunt = tauntText(),
+	Ranged = ("'비행'을 상대할 수 있고 '도발'을 무시한다. 플레이어 직접 공격은 데미지 %s."):format(directShare()),
 	Instant = "내 턴이 아니어도, 상대의 시전에 대응해서 쓸 수 있다.",
 })
 

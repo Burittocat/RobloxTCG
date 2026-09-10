@@ -187,6 +187,33 @@ return function(t, ctx)
 			t:eq(Rules.Combat.directDamageToPlayer(archer), 2, "4 의 절반")
 		end)
 
+		--[[
+			카드 상세 화면은 공격력 옆에 "플레이어 N" 을 같이 적는다. 장궁 사수가
+			공격력 4 라고 크게 적혀 있는데 플레이어에게는 2 만 들어가는 것이,
+			읽는 사람에게는 화면이 거짓말하는 것으로 보였기 때문이다.
+
+			그 숫자는 **룰이 쓰는 것과 같은 함수**로 뽑아야 한다. 화면이 자기 계산을
+			따로 들면 Config 의 반올림을 바꾸는 날 둘이 갈라지고, 갈라진 쪽이
+			조용히 거짓말을 시작한다.
+		]]
+		t:it("화면이 쓰는 반감 계산은 룰이 쓰는 것과 같다", function()
+			local state = Fixture.match(Rules)
+			local archer = Fixture.spawn(Rules, state, 1, "CRE_ARCHER", Field) -- 4/2
+
+			t:eq(
+				Rules.Combat.rangedDirectDamage(Rules.Keywords.power(archer)),
+				Rules.Combat.directDamageToPlayer(archer),
+				"상세 화면과 실제 피해가 다른 값을 말하면 안 된다"
+			)
+
+			-- 홀수에서도 갈라지면 안 된다 (반올림 방향이 걸리는 자리다)
+			archer.powerMod = 1 -- 5
+			t:eq(
+				Rules.Combat.rangedDirectDamage(Rules.Keywords.power(archer)),
+				Rules.Combat.directDamageToPlayer(archer)
+			)
+		end)
+
 		t:it("원거리가 아니면 절반 규칙이 적용되지 않는다", function()
 			local state = Fixture.match(Rules)
 			local guard = Fixture.spawn(Rules, state, 1, "CRE_GUARD", Field) -- 2/3

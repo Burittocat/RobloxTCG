@@ -21,6 +21,7 @@ local new = Widgets.new
 local Enums = Rules.Enums
 local Registry = Rules.Registry
 local Keywords = Rules.Keywords
+local Combat = Rules.Combat
 local CardType = Enums.CardType
 
 local CardView = {}
@@ -594,7 +595,30 @@ function CardView.detail(props)
 			table.insert(parts, ("코스트 %d"):format(def.cost))
 		end
 		if def.power then
-			table.insert(parts, ("공격력 %d"):format(def.power))
+			--[[
+				'원거리' 는 **카드에 적힌 공격력과 플레이어에게 실제로 들어가는 값이 다르다.**
+				장궁 사수는 공격력 4 인데 플레이어를 치면 2 가 들어간다.
+
+				태그 설명에 "절반(내림)" 이라고 적혀 있어도, 카드마다 그 값을 사람이
+				암산하게 두면 화면이 큰 글자로 4 라고 말하는 동안 게임은 2 를 준다.
+				실제 숫자를 옆에 붙여서 그 어긋남을 없앤다.
+			]]
+			local ranged = false
+			for _, keyword in def.keywords or {} do
+				if keyword == Enums.Keyword.Ranged then
+					ranged = true
+				end
+			end
+
+			if ranged then
+				table.insert(
+					parts,
+					("공격력 %d (플레이어 %d)"):format(def.power, Combat.rangedDirectDamage(def.power))
+				)
+			else
+				table.insert(parts, ("공격력 %d"):format(def.power))
+			end
+
 			table.insert(parts, ("생명력 %d"):format(def.toughness))
 		end
 		statLabel.Text = table.concat(parts, "   ")

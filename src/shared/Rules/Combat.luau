@@ -203,6 +203,21 @@ end
 	                 공격력 수치의 반만 적용되어 데미지가 들어간다"
 	★ 반올림 방향 미지정 → Config.rangedDirectDamageRounding (기본 내림)
 ]]
+--[[
+	'원거리' 가 플레이어를 직접 칠 때 실제로 들어가는 값. 공격력만 있으면 계산된다.
+
+	**카드 상세 화면도 이 함수를 쓴다.** 카드에 적힌 공격력과 플레이어에게 실제로
+	들어가는 값이 다르다는 게 원거리의 핵심인데, 계산이 두 벌이 되면 그중 하나가
+	반드시 거짓말을 하게 된다. 반올림 방향은 Config 가 정한다(README ★2).
+]]
+function Combat.rangedDirectDamage(power)
+	local halved = power / Config.rangedDirectDamageDivisor
+	if Config.rangedDirectDamageRounding == "ceil" then
+		return math.ceil(halved)
+	end
+	return math.floor(halved)
+end
+
 function Combat.directDamageToPlayer(attacker)
 	local power = Keywords.power(attacker)
 
@@ -210,11 +225,7 @@ function Combat.directDamageToPlayer(attacker)
 		return power
 	end
 
-	local halved = power / Config.rangedDirectDamageDivisor
-	if Config.rangedDirectDamageRounding == "ceil" then
-		return math.ceil(halved)
-	end
-	return math.floor(halved)
+	return Combat.rangedDirectDamage(power)
 end
 
 --==========================================================================

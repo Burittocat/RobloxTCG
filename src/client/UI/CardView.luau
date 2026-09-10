@@ -133,29 +133,35 @@ end
 -- 손패 카드
 --==========================================================================
 
-function CardView.handCard(def, opts)
+--[[
+	겉 프레임은 그대로 두고 **속만 다시 칠한다.**
+
+	렌더마다 카드를 새로 만들면 트윈을 걸 대상이 매번 바뀌어 연출이 불가능하다
+	(자세한 이유는 Reconcile.luau). 그래서 프레임의 신원은 유지하고 내용만 갱신한다.
+
+	`Widgets.clear` 는 UIComponent(모서리·테두리·여백)를 남기므로, 그 셋은 여기서
+	다시 만들지 않고 **값만 고친다.**
+]]
+function CardView.paintHand(button, def, opts)
 	opts = opts or {}
 
-	local size = Theme.size.handCard
 	local color, thickness = outlineFor(opts)
 	local dim = (opts.playable == false)
 
-	local button = new("TextButton", {
-		Name = "Hand_" .. def.id,
-		Size = UDim2.fromOffset(size.X, size.Y),
-		BackgroundColor3 = typeColor(def),
-		-- 못 내는 카드는 흐리게. 다만 "무슨 카드인지" 는 계속 읽혀야 한다 —
-		-- 다음 턴에 뭘 낼지 계획하는 것도 플레이의 일부다.
-		BackgroundTransparency = dim and 0.45 or 0.05,
-		BorderSizePixel = 0,
-		AutoButtonColor = false,
-		Text = "",
-		LayoutOrder = opts.layoutOrder or 0,
-	}, {
-		Widgets.corner(8),
-		Widgets.stroke(color, thickness),
-		Widgets.padding(7),
+	button.BackgroundColor3 = typeColor(def)
+	-- 못 내는 카드는 흐리게. 다만 "무슨 카드인지" 는 계속 읽혀야 한다 —
+	-- 다음 턴에 뭘 낼지 계획하는 것도 플레이의 일부다.
+	button.BackgroundTransparency = dim and 0.45 or 0.05
 
+	local stroke = button:FindFirstChildOfClass("UIStroke")
+	if stroke then
+		stroke.Color = color
+		stroke.Thickness = thickness
+	end
+
+	Widgets.clear(button)
+
+	local kids = {
 		costChip(def.type == CardType.Cost and "-" or (def.cost or 0)),
 
 		Widgets.label(TYPE_NAME[def.type] or def.type, {
@@ -186,28 +192,66 @@ function CardView.handCard(def, opts)
 			TextYAlignment = Enum.TextYAlignment.Top,
 			TextTransparency = dim and 0.3 or 0,
 		}),
-	})
+	}
 
 	if def.keywords and #def.keywords > 0 then
 		local row = keywordRow(def.keywords, 17)
 		row.Position = UDim2.fromOffset(0, 70)
-		row.Parent = button
+		table.insert(kids, row)
 	end
 
 	if def.type == CardType.Creature then
-		Widgets.label(("%d / %d"):format(def.power, def.toughness), {
-			Parent = button,
-			Position = UDim2.new(0, 0, 1, -28),
-			Size = UDim2.new(1, 0, 0, 26),
-			Font = Theme.font.bold,
-			TextSize = Theme.text.stat,
-			TextXAlignment = Enum.TextXAlignment.Right,
-			TextTransparency = dim and 0.25 or 0,
-		})
+		table.insert(
+			kids,
+			Widgets.label(("%d / %d"):format(def.power, def.toughness), {
+				Position = UDim2.new(0, 0, 1, -28),
+				Size = UDim2.new(1, 0, 0, 26),
+				Font = Theme.font.bold,
+				TextSize = Theme.text.stat,
+				TextXAlignment = Enum.TextXAlignment.Right,
+				TextTransparency = dim and 0.25 or 0,
+			})
+		)
 	end
 
-	-- 오른쪽 클릭은 "들여다보기" 다. 왼쪽 클릭(내기·고르기)과 섞지 않는다 —
-	-- 한 버튼에 섞으면 "보려고 눌렀는데 카드가 나가는" 일이 생긴다.
+	for _, kid in kids do
+		kid.Parent = button
+	end
+
+	return button
+end
+
+function CardView.handCard(def, opts)
+	opts = opts or {}
+
+	local size = Theme.size.handCard
+
+	--[[
+		여기서 만드는 것은 **변하지 않는 것들뿐이다.** 상태에 따라 달라지는 색·투명도·
+		테두리는 paintHand 가 매 렌더마다 다시 칠한다.
+	]]
+	local button = new("TextButton", {
+		Name = "Hand_" .. def.id,
+		Size = UDim2.fromOffset(size.X, size.Y),
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		LayoutOrder = opts.layoutOrder or 0,
+	}, {
+		Widgets.corner(8),
+		Widgets.stroke(Theme.color.stroke, Theme.outline.idle),
+		Widgets.padding(7),
+	})
+
+	CardView.paintHand(button, def, opts)
+
+	--[[
+		연결은 **만들 때 한 번만** 한다. 콜백이 잡는 것은 카드 인스턴스 id 뿐이고
+		그건 이 프레임이 사는 내내 같은 값이라, 다시 칠할 때 갈아끼울 필요가 없다.
+
+		오른쪽 클릭은 "들여다보기" 다. 왼쪽 클릭(내기·고르기)과 섞지 않는다 —
+		한 버튼에 섞으면 "보려고 눌렀는데 카드가 나가는" 일이 생긴다.
+	]]
 	if opts.onInspect then
 		button.MouseButton2Click:Connect(opts.onInspect)
 	end
@@ -239,11 +283,16 @@ end
 -- 필드 위 생물
 --==========================================================================
 
-function CardView.fieldCard(state, instance, opts)
+--[[
+	필드 카드도 겉 프레임을 유지하고 속만 다시 칠한다 (이유는 CardView.paintHand).
+
+	필드 카드는 손패보다 상태가 많다 — 탭 여부로 기울기·투명도가 바뀌고, 전투가
+	짜이면 배지가 붙었다 떨어진다. 전부 여기서 갱신한다.
+]]
+function CardView.paintField(button, state, instance, opts)
 	opts = opts or {}
 
 	local def = Registry.mustGet(instance.defId)
-	local size = Theme.size.fieldCard
 	local color, thickness = outlineFor(opts)
 
 	local power = Keywords.power(instance)
@@ -268,23 +317,22 @@ function CardView.fieldCard(state, instance, opts)
 		status, statusColor = "공격 불가", Theme.color.accent
 	end
 
-	local button = new("TextButton", {
-		Name = "Field_" .. instance.id,
-		Size = UDim2.fromOffset(size.X, size.Y),
-		BackgroundColor3 = typeColor(def),
-		BackgroundTransparency = instance.tapped and 0.55 or 0.05,
-		BorderSizePixel = 0,
-		AutoButtonColor = false,
-		Text = "",
-		-- 탭은 기울여서 표시한다. 예전 4도는 사실상 안 보였다.
-		-- 90도(진짜 TCG 방식)로 눕히면 옆 카드와 겹쳐서 12도로 타협했다.
-		Rotation = instance.tapped and 12 or 0,
-		LayoutOrder = opts.layoutOrder or 0,
-	}, {
-		Widgets.corner(7),
-		Widgets.stroke(color, thickness),
-		Widgets.padding(6),
+	button.BackgroundColor3 = typeColor(def)
+	button.BackgroundTransparency = instance.tapped and 0.55 or 0.05
 
+	-- 탭은 기울여서 표시한다. 예전 4도는 사실상 안 보였다.
+	-- 90도(진짜 TCG 방식)로 눕히면 옆 카드와 겹쳐서 12도로 타협했다.
+	button.Rotation = instance.tapped and 12 or 0
+
+	local stroke = button:FindFirstChildOfClass("UIStroke")
+	if stroke then
+		stroke.Color = color
+		stroke.Thickness = thickness
+	end
+
+	Widgets.clear(button)
+
+	local kids = {
 		Widgets.label(def.name, {
 			Size = UDim2.new(1, 0, 0, 28),
 			Font = Theme.font.bold,
@@ -301,7 +349,11 @@ function CardView.fieldCard(state, instance, opts)
 			TextColor3 = hurt and Theme.color.warn or Theme.color.text,
 			TextXAlignment = Enum.TextXAlignment.Center,
 		}),
-	})
+	}
+
+	for _, kid in kids do
+		kid.Parent = button
+	end
 
 	local row = keywordRow(Keywords.effective(instance), 16)
 	row.Position = UDim2.fromOffset(0, 32)
@@ -359,8 +411,31 @@ function CardView.fieldCard(state, instance, opts)
 		})
 	end
 
-	-- 오른쪽 클릭은 "들여다보기" 다. 왼쪽 클릭(내기·고르기)과 섞지 않는다 —
-	-- 한 버튼에 섞으면 "보려고 눌렀는데 카드가 나가는" 일이 생긴다.
+	return button
+end
+
+function CardView.fieldCard(state, instance, opts)
+	opts = opts or {}
+
+	local size = Theme.size.fieldCard
+
+	-- 변하지 않는 것만 여기서. 나머지는 paintField 가 매 렌더마다 다시 칠한다.
+	local button = new("TextButton", {
+		Name = "Field_" .. instance.id,
+		Size = UDim2.fromOffset(size.X, size.Y),
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		LayoutOrder = opts.layoutOrder or 0,
+	}, {
+		Widgets.corner(7),
+		Widgets.stroke(Theme.color.stroke, Theme.outline.idle),
+		Widgets.padding(6),
+	})
+
+	CardView.paintField(button, state, instance, opts)
+
+	-- 연결은 만들 때 한 번만 (이유는 CardView.handCard).
 	if opts.onInspect then
 		button.MouseButton2Click:Connect(opts.onInspect)
 	end
@@ -376,26 +451,48 @@ end
 -- 필드 위 코스트 카드 (작은 칩)
 --==========================================================================
 
+--[[
+	코스트 칩도 상태가 바뀐다 — 코스트를 쓰면 탭되고, 턴이 넘어오면 풀린다.
+	칩 자체는 그대로 두고 그 두 모습만 갈아끼운다.
+]]
+function CardView.paintCost(chip, instance)
+	chip.BackgroundTransparency = instance.tapped and 0.7 or 0.15
+	chip.Rotation = instance.tapped and 12 or 0
+
+	local stroke = chip:FindFirstChildOfClass("UIStroke")
+	if stroke then
+		stroke.Transparency = instance.tapped and 0.5 or 0
+	end
+
+	local pip = chip:FindFirstChild("Pip")
+	if pip then
+		pip.Text = instance.tapped and "○" or "●"
+		pip.TextColor3 = instance.tapped and Theme.color.textFaint or Theme.color.accent
+	end
+
+	return chip
+end
+
 function CardView.costCard(instance, layoutOrder)
 	local size = Theme.size.costChip
 
-	return new("Frame", {
+	local chip = new("Frame", {
 		Size = UDim2.fromOffset(size.X, size.Y),
 		BackgroundColor3 = Theme.color.cost,
-		BackgroundTransparency = instance.tapped and 0.7 or 0.15,
 		BorderSizePixel = 0,
-		Rotation = instance.tapped and 12 or 0,
 		LayoutOrder = layoutOrder or 0,
 	}, {
 		Widgets.corner(5),
-		Widgets.stroke(Theme.color.stroke, 1, instance.tapped and 0.5 or 0),
-		Widgets.label(instance.tapped and "○" or "●", {
+		Widgets.stroke(Theme.color.stroke, 1, 0),
+		Widgets.label("●", {
+			Name = "Pip",
 			Size = UDim2.fromScale(1, 1),
 			TextSize = 22,
-			TextColor3 = instance.tapped and Theme.color.textFaint or Theme.color.accent,
 			TextXAlignment = Enum.TextXAlignment.Center,
 		}),
 	})
+
+	return CardView.paintCost(chip, instance)
 end
 
 --==========================================================================

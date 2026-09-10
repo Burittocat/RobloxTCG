@@ -5,8 +5,10 @@
 	전부 Controller 가 정한다. 그래서 여기에는 룰 판정이 한 줄도 없다 —
 	하이라이트할 카드 목록조차 Controller 가 계산해서 넘겨준다.
 
-	렌더링은 매번 전부 다시 그린다. 카드가 수십 장 수준이라 이게 가장 단순하고,
-	"서버 상태 = 화면" 이 어긋날 여지가 없다.
+	렌더링은 매번 화면 전체를 훑는다 — "서버 상태 = 화면" 이 어긋날 여지가 없다.
+	다만 **카드는 지웠다 다시 만들지 않는다.** 같은 카드는 같은 인스턴스를 계속 쓰고
+	내용만 갈아끼운다 (Reconcile.luau). 그래야 카드에 연출을 붙일 수 있다 —
+	날아가는 도중에 다음 스냅샷이 와도 그 카드가 사라지지 않는다.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -18,6 +20,7 @@ local Rules = require(Shared.Rules)
 local Theme = require(script.Parent.Theme)
 local Widgets = require(script.Parent.Widgets)
 local CardView = require(script.Parent.CardView)
+local Reconcile = require(script.Parent.Reconcile)
 
 local new = Widgets.new
 local Enums = Rules.Enums
@@ -924,30 +927,50 @@ function Battle:renderPlayerPanel(panel, state, playerId, opts)
 		panel.stroke.Thickness = targeted and 2.5 or 1
 	end
 
-	-- 코스트 카드 칩 + (상대라면) 손패 뒷면
-	Widgets.clear(panel.cards)
+	--[[
+		코스트 카드 칩 + (상대라면) 손패 뒷면.
 
-	local order = 0
+		한 줄에 성격이 다른 둘이 섞이므로 키에 접두사를 붙인다. 접두사가 없으면
+		코스트 카드 id 1 과 뒷면 1번이 같은 키가 되어 서로를 덮어쓴다.
+	]]
+	local items = {}
+
 	for _, instance in GameState.costCardsOnField(state, playerId) do
-		order += 1
-		CardView.costCard(instance, order).Parent = panel.cards
+		table.insert(items, {
+			key = "cost:" .. instance.id,
+			build = function()
+				return CardView.costCard(instance, 0)
+			end,
+			paint = function(chip)
+				CardView.paintCost(chip, instance)
+			end,
+		})
 	end
 
 	if playerId ~= self.me then
+		--[[
+			뒷면은 **장수만** 보여준다. 어느 뒷면이 어느 카드인지는 알 수도 없고
+			알아서도 안 되므로, 키를 자리 번호로 준다 — 상대가 카드를 내면
+			마지막 자리가 사라지는 모습이 된다.
+		]]
 		for index = 1, math.min(player.handCount, 12) do
-			order += 1
-			CardView.cardBack(order + index).Parent = panel.cards
+			table.insert(items, {
+				key = "back:" .. index,
+				build = function()
+					return CardView.cardBack(0)
+				end,
+			})
 		end
 	end
+
+	Reconcile.children(panel.cards, items)
 end
 
 function Battle:renderField(row, state, playerId, opts)
-	Widgets.clear(row)
+	local creatures = GameState.creaturesOnField(state, playerId)
+	local items = table.create(#creatures)
 
-	local order = 0
-	for _, instance in GameState.creaturesOnField(state, playerId) do
-		order += 1
-
+	for _, instance in creatures do
 		local badge = nil
 		for _, declaration in state.combat.attackers do
 			if declaration.id == instance.id then
@@ -958,8 +981,7 @@ function Battle:renderField(row, state, playerId, opts)
 			badge = "방어"
 		end
 
-		local card = CardView.fieldCard(state, instance, {
-			layoutOrder = order,
+		local cardOpts = {
 			highlighted = opts.highlights.creature[instance.id],
 			selected = opts.selectedId == instance.id,
 			badge = badge,
@@ -969,11 +991,23 @@ function Battle:renderField(row, state, playerId, opts)
 			onInspect = function()
 				self:inspect(Registry.mustGet(instance.defId))
 			end,
-		})
-		card.Parent = row
+		}
 
-		-- 화살표가 어디서 어디로 갈지 정하려면 카드 노드를 알아야 한다.
-		self.fieldNodes[instance.id] = card
+		table.insert(items, {
+			key = instance.id,
+			build = function()
+				return CardView.fieldCard(state, instance, cardOpts)
+			end,
+			paint = function(card)
+				CardView.paintField(card, state, instance, cardOpts)
+			end,
+		})
+	end
+
+	-- 화살표가 어디서 어디로 갈지 정하려면 카드 노드를 알아야 한다.
+	local drawn = Reconcile.children(row, items)
+	for index, card in drawn do
+		self.fieldNodes[items[index].key] = card
 	end
 end
 
@@ -1132,11 +1166,10 @@ function Battle:renderCenter(state, opts)
 end
 
 function Battle:renderHand(state, opts)
-	Widgets.clear(self.handRow)
-
 	local hand = state.players[self.me].hand or {}
+	local items = {}
 
-	for index, instanceId in hand do
+	for _, instanceId in hand do
 		local instance = state.cards[instanceId]
 		if instance then
 			local def = Registry.mustGet(instance.defId)
@@ -1147,8 +1180,7 @@ function Battle:renderHand(state, opts)
 			local locked = opts.lockedHand and opts.lockedHand[instanceId]
 			local playable = (not locked) and Rules.canPlayCard(state, self.me, instanceId)
 
-			local card = CardView.handCard(def, {
-				layoutOrder = index,
+			local cardOpts = {
 				playable = playable,
 				selected = opts.selectedId == instanceId,
 				highlighted = opts.highlights.hand[instanceId],
@@ -1158,10 +1190,26 @@ function Battle:renderHand(state, opts)
 				onInspect = function()
 					self:inspect(def)
 				end,
+			}
+
+			table.insert(items, {
+				--[[
+					키는 **카드 정의(defId)가 아니라 인스턴스 id** 다. 같은 카드를
+					덱에 4장까지 넣을 수 있으므로 defId 로 잡으면 같은 이름의 카드
+					둘이 한 자리를 놓고 싸운다.
+				]]
+				key = instanceId,
+				build = function()
+					return CardView.handCard(def, cardOpts)
+				end,
+				paint = function(card)
+					CardView.paintHand(card, def, cardOpts)
+				end,
 			})
-			card.Parent = self.handRow
 		end
 	end
+
+	Reconcile.children(self.handRow, items)
 end
 
 function Battle:renderLog(state)

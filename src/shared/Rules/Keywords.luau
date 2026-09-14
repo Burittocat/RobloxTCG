@@ -92,9 +92,20 @@ function Keywords.toughness(instance)
 	return math.max(0, (def.toughness or 0) + (instance.toughnessMod or 0))
 end
 
--- 남은 체력. 0 이하면 파괴된다.
-function Keywords.remainingToughness(instance)
-	return Keywords.toughness(instance) - (instance.damage or 0)
+--[[
+	남은 체력. 0 이하면 파괴된다.
+
+	damageOverride 는 화면이 쓴다. 전투 결과는 스냅샷으로 한꺼번에 오는데,
+	때리는 장면은 그보다 늦게 재생되므로 그 사이에는 **예전 피해량으로** 같은
+	수치를 그려야 한다. 빼기를 화면에서 따로 하면 계산이 두 벌이 된다.
+]]
+function Keywords.remainingToughness(instance, damageOverride)
+	local damage = damageOverride
+	if damage == nil then
+		damage = instance.damage or 0
+	end
+
+	return Keywords.toughness(instance) - damage
 end
 
 function Keywords.isLethallyDamaged(instance)

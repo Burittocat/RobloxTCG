@@ -28,6 +28,7 @@ local Enums = Rules.Enums
 local GameState = Rules.GameState
 local Registry = Rules.Registry
 local Phase = Enums.Phase
+local Zone = Enums.Zone
 
 --[[
 	"나" 와 "상대" 는 고정된 번호가 아니다. PvP 에서 나는 1번 좌석일 수도 2번일 수도 있고,
@@ -91,6 +92,42 @@ function Battle.new(parent)
 	]]
 	self.rows = {}
 	self.freshCards = setmetatable({}, { __mode = "k" })
+
+	--[[
+		연출이 위치를 쥐고 있는 카드. **줄 배치가 건드리면 안 된다** —
+		돌진 트윈과 재배치 트윈이 같은 Position 을 두고 싸우면 카드가 떨린다.
+		연출이 끝나면 표시를 지우고 그 줄을 다시 배치한다.
+
+		죽어서 사라지는 중인 카드도 들고 있는다. 스냅샷에는 이미 없지만
+		**때리는 장면이 그 뒤에 재생되므로** 맞을 대상으로 필요하다.
+	]]
+	self.busyCards = setmetatable({}, { __mode = "k" })
+	self.dyingNodes = {}
+
+	-- 이미 재생한 전투. 같은 것을 두 번 재생하지 않는다.
+	self.lastCombatSeq = nil
+	self.combatSeeded = false
+	self.pendingStrike = 0
+
+	--[[
+		생물 수치(공격력 / 남은 체력)를 **화면이 지금 무엇을 보여주고 있는가** 로
+		따로 들고 있는다. 스냅샷의 값과 다를 수 있다.
+
+		전투 결과는 한꺼번에 오지만 때리는 장면은 그보다 늦게 재생된다. 수치를
+		스냅샷대로 바로 바꾸면 공격자가 아직 달려오는 중인데 맞을 카드의 체력이
+		먼저 깎인다 — 플레이어 라이프 숫자를 미룬 것과 같은 문제다.
+
+		  shownDamage  그 카드가 지금 몇 의 피해를 입은 것으로 그려져 있는가
+		  statHold     이번 스냅샷에서 **맞는 순간까지 예전 수치를 들고 있을** 카드
+		  statReveal   그때 다시 칠하는 데 쓸 카드 데이터
+
+		겹쳐 막기처럼 한 카드가 여러 번 맞으면 피해를 **한 번에 하나씩 더한다.**
+		최종값으로 바로 뛰면 첫 타격에 두 대 분이 깎여서 수가 안 맞는다.
+	]]
+	self.shownDamage = {}
+	self.statHold = {}
+	self.statReveal = {}
+	self.statToken = 0
 	self.me, self.foe = DEFAULT_ME, DEFAULT_FOE
 
 	self:build(parent)
@@ -302,6 +339,27 @@ function Battle:build(parent)
 		Size = UDim2.fromScale(1, 1),
 		ZIndex = 15,
 	})
+
+	--[[
+		화살표 조각 풀. 곡선 하나가 조각 수십 개라 매 프레임 만들고 버리면 안 된다
+		(takeFrom 주석 참조). 쓴 개수는 그릴 때마다 0 부터 다시 센다.
+
+		**역할마다 따로 둔다.** 한 풀에 섞으면 이름만으로는 윤곽인지 색인지 알 수
+		없어서, 화면을 읽는 쪽(테스트)이 어두운 윤곽을 파란 방어선으로 오해한다.
+	]]
+	--[[
+		shown 은 **지난 프레임에 몇 개가 켜져 있었나** 다. 이만큼만 끄면 된다.
+
+		이게 없으면 조각 전부를 훑으며 Visible = false 를 다시 쓴다. 전투가
+		없는 동안에도 매 프레임 그 일을 하는데, 화살표가 한 번이라도 많이
+		그려졌던 판에서는 조각이 수백 개까지 늘어난 뒤다.
+	]]
+	self.arrowPool = {
+		shade = { items = {}, used = 0, shown = 0 },
+		line = { items = {}, used = 0, shown = 0 },
+		headShade = { items = {}, used = 0, shown = 0 },
+		headTip = { items = {}, used = 0, shown = 0 },
+	}
 
 	self:makeActionBar(body)
 
@@ -757,16 +815,129 @@ end
 --==========================================================================
 
 --[[
-	화살표 하나. from → to (둘 다 화면 절대 좌표), 색은 공격/방어에 따라 다르다.
+	Roblox 에는 선을 긋는 위젯이 없다. 가로로 긴 Frame 을 두 점 사이에 놓고 각도만큼
+	돌리면 선이 된다. **곡선은 그 조각을 여러 개 이어서** 만든다.
 
-	Roblox 에는 선을 긋는 위젯이 없다. 가로로 긴 Frame 을 두 점의 중간에 놓고
-	각도만큼 돌리면 선이 된다. 화살촉은 끝점에 같은 각도로 돌린 글자를 얹는다.
+	곧은 막대 하나로 긋다가 바꿨다. 이유가 셋이다.
+
+	  · 보드는 가로줄·세로줄로 차 있다. 곧은 선은 그 격자에 섞여 화살표로 안 읽힌다
+	  · 내 필드와 상대 필드는 위아래로 마주 본다 — 두 카드를 곧게 이으면 거의 수직선이
+	    되어 길이만 있고 방향이 없다
+	  · 여러 화살표가 같은 대상을 겨누면 전부 겹쳐서 몇 개인지 셀 수 없다.
+	    휘어 있으면 갈라진다
+
+	조각은 **끝으로 갈수록 굵어진다**(tail → head). 화살촉을 찾기 전에 어느 쪽이
+	가리키는 쪽인지 읽힌다.
+
+	밑에는 같은 곡선을 더 굵은 어두운 색으로 한 번 더 깐다. 선이 카드 위를 지날 때
+	카드 색에 붙어버리는 것을 막는 윤곽이다. UIStroke 를 조각마다 붙이지 않는 이유는
+	조각 경계마다 테두리가 그어져 곡선이 마디로 보이기 때문이다.
 ]]
-local ARROW_THICKNESS = 4
 
 --[[
-	좌표는 Vector2 가 아니라 숫자 두 개로 다룬다. 벡터 연산(빼기·나누기)을 쓰면
-	테스트 하네스의 Vector2 흉내에서 걸린다 — 거기엔 연산자가 없다.
+	조각의 이름. 화면을 읽는 쪽이 **역할을 이름으로** 알아볼 수 있어야 한다 —
+	어두운 윤곽과 색 선을 구분 못 하면 "방어 화살표가 몇 개인가" 를 셀 수 없다.
+]]
+local ARROW_PIECE_NAME = {
+	shade = "ArrowShade",
+	line = "ArrowLine",
+	headShade = "ArrowHeadShade",
+	headTip = "ArrowHeadTip",
+}
+
+-- 2차 베지에. 성분으로 계산한다 — 하네스의 Vector2 에는 연산자가 없다.
+local function bezier(t, a, b, c)
+	local inv = 1 - t
+	return inv * inv * a + 2 * inv * t * b + t * t * c
+end
+
+--[[
+	선을 따라 흐르는 밝은 띠.
+
+	화살표가 **살아 있게** 보이는 것은 이것 때문이다. 멎어 있는 선은 화면에 찍힌
+	그림이지만, 흐르는 선은 "지금 일어나는 일" 로 읽힌다. 방향도 여기서 한 번 더
+	나온다 — 띠가 공격자에서 대상 쪽으로 흐른다.
+
+	t 는 선 위의 위치(0~1), flow 는 지금 띠가 어디쯤인지. 끝에서 처음으로 이어지므로
+	순환 거리로 잰다.
+]]
+local function pulseAt(t, flow, width)
+	local distance = math.abs(t - flow)
+	distance = math.min(distance, 1 - distance)
+	return math.max(0, 1 - distance / width)
+end
+
+--[[
+	조각은 매 프레임 다시 만들지 않고 **돌려 쓴다.**
+
+	화살표는 매 프레임 다시 그린다(카드가 움직이니까). 곡선 하나가 조각 스무 개이고
+	윤곽까지 두 겹이니, 공격 셋에 방어 둘이면 프레임마다 인스턴스 이백 개를 만들고
+	버리게 된다. 만들어 두고 숨겼다 켜면 그 일이 없다.
+
+	풀은 self.arrows 의 자식이다. 이 화면이 Destroy 되면 같이 사라진다 —
+	따로 치울 것이 없다.
+]]
+local function takeFrom(pool, make)
+	pool.used += 1
+
+	local piece = pool.items[pool.used]
+	if not piece then
+		piece = make(pool.used)
+		pool.items[pool.used] = piece
+	end
+
+	piece.Visible = true
+	return piece
+end
+
+--[[
+	이번 프레임에 안 쓴 조각을 숨긴다.
+
+	Destroy 하지 않는다 — 다음 프레임에 다시 필요할 가능성이 높다(공격이 하나
+	늘었다 줄었다 한다). 숨겨 둔 것은 화면에도 안 나온다.
+]]
+local function hideRest(pool)
+	for index = pool.used + 1, pool.shown do
+		pool.items[index].Visible = false
+	end
+
+	pool.shown = pool.used
+end
+
+function Battle:arrowPiece(kind)
+	local pool = self.arrowPool[kind]
+
+	return takeFrom(pool, function(index)
+		return new("Frame", {
+			Name = ARROW_PIECE_NAME[kind] .. index,
+			Parent = self.arrows,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BorderSizePixel = 0,
+		}, {
+			-- 두께보다 큰 반지름은 알아서 반원이 된다. 조각 끝이 둥글어야
+			-- 이어 붙인 자리가 각지지 않는다.
+			Widgets.corner(99),
+		})
+	end)
+end
+
+function Battle:arrowHead(kind)
+	local pool = self.arrowPool[kind]
+
+	return takeFrom(pool, function(index)
+		return Widgets.label("▶", {
+			Name = ARROW_PIECE_NAME[kind] .. index,
+			Parent = self.arrows,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.fromOffset(Theme.arrow.headSize * 2, Theme.arrow.headSize * 2),
+			TextSize = Theme.arrow.headSize,
+			TextXAlignment = Enum.TextXAlignment.Center,
+		})
+	end)
+end
+
+--[[
+	곡선 하나. from → to 는 화면 절대 좌표, bowSign 은 어느 쪽으로 휠지(+1/-1).
 
 	--------------------------------------------------------------------------
 	배율을 나눠야 한다
@@ -776,47 +947,116 @@ local ARROW_THICKNESS = 4
 	잰 거리를 그대로 offset 에 넣으면 배율만큼 어긋난다 — 1080 화면(배율 1.2)에서는
 	화살표가 카드에서 20% 씩 밀려나 아무 데도 안 닿는다.
 
-	잰 값을 배율로 나눠서 "루트 안쪽 좌표" 로 바꾼 뒤에 넣는다. 두께(4)와 화살촉 크기(22)는
+	잰 값을 배율로 나눠 "루트 안쪽 좌표" 로 바꾼 뒤에 넣는다. 두께와 화살촉 크기는
 	원래부터 안쪽 좌표라 그대로 둔다 — 그건 배율과 함께 커져야 맞다.
 ]]
-function Battle:drawArrow(originX, originY, fromX, fromY, toX, toY, color, name)
+function Battle:drawArrow(originX, originY, fromX, fromY, toX, toY, color, bowSign, flow)
 	local scale = (self.uiScale and self.uiScale.Scale or 1)
 	if scale <= 0 then
 		scale = 1
 	end
 
-	local dx, dy = toX - fromX, toY - fromY
-	local length = math.sqrt(dx * dx + dy * dy) / scale
-	local angle = math.deg(math.atan2(dy, dx))
-	local midX, midY = fromX + dx * 0.5, fromY + dy * 0.5
+	local arrow = Theme.arrow
 
-	new("Frame", {
-		Name = name,
-		Parent = self.arrows,
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromOffset((midX - originX) / scale, (midY - originY) / scale),
-		Size = UDim2.fromOffset(length, ARROW_THICKNESS),
-		Rotation = angle,
-		BackgroundColor3 = color,
-		BackgroundTransparency = 0.15,
-		BorderSizePixel = 0,
-		ZIndex = 15,
-	}, {
-		Widgets.corner(2),
-	})
+	local ax, ay = (fromX - originX) / scale, (fromY - originY) / scale
+	local cx, cy = (toX - originX) / scale, (toY - originY) / scale
 
-	Widgets.label("▶", {
-		Name = name .. "Head",
-		Parent = self.arrows,
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromOffset((toX - originX) / scale, (toY - originY) / scale),
-		Size = UDim2.fromOffset(22, 22),
-		Rotation = angle,
-		TextSize = 20,
-		TextColor3 = color,
-		TextXAlignment = Enum.TextXAlignment.Center,
-		ZIndex = 16,
-	})
+	local dx, dy = cx - ax, cy - ay
+	local length = math.sqrt(dx * dx + dy * dy)
+
+	--[[
+		두 점이 겹쳐 있다. 그릴 곡선이 없고, 아래에서 0 으로 나누게 된다.
+
+		**화살촉은 그린다.** 여기서 통째로 물러나면 "공격 선언은 있는데 화면에
+		화살표가 없는" 상태가 된다 — 레이아웃이 아직 안 잡힌 첫 프레임이 정확히
+		그 경우고, 그 프레임에 화살표가 통째로 깜빡인다.
+	]]
+	if length < 1 then
+		local onlyHead = self:arrowHead("headTip")
+		onlyHead.Position = UDim2.fromOffset(cx, cy)
+		onlyHead.Rotation = 0
+		onlyHead.TextColor3 = color
+		onlyHead.TextSize = arrow.headSize
+		onlyHead.ZIndex = 17
+
+		local onlyShade = self:arrowHead("headShade")
+		onlyShade.Position = UDim2.fromOffset(cx, cy)
+		onlyShade.Rotation = 0
+		onlyShade.TextColor3 = Theme.color.arrowShade
+		onlyShade.TextSize = arrow.headSize + arrow.outline * 2
+		onlyShade.ZIndex = 16
+
+		return
+	end
+
+	--[[
+		제어점은 두 점의 한가운데에서 **선과 직각으로** 밀어낸 자리다.
+		그 방향이 휘는 쪽이고, 미는 거리가 곧 곡률이다. 거리에 비례시켜야
+		짧은 화살표가 과장되게 휘지 않는다.
+	]]
+	local bow = length * arrow.bow * bowSign
+	local bx = (ax + cx) / 2 + (-dy / length) * bow
+	local by = (ay + cy) / 2 + (dx / length) * bow
+
+	local count = math.clamp(math.floor(length / arrow.segment), 3, arrow.maxSegments)
+
+	local prevX, prevY = ax, ay
+	local angle = 0
+
+	for index = 1, count do
+		local t = index / count
+		local px, py = bezier(t, ax, bx, cx), bezier(t, ay, by, cy)
+
+		local sx, sy = px - prevX, py - prevY
+		local pieceLength = math.sqrt(sx * sx + sy * sy)
+		angle = math.deg(math.atan2(sy, sx))
+
+		local midX, midY = (prevX + px) / 2, (prevY + py) / 2
+
+		-- 이 조각이 선 위의 어디쯤인가. 두께와 흐르는 띠 둘 다 이 값을 쓴다.
+		local at = (index - 0.5) / count
+		local wave = pulseAt(at, flow, arrow.pulse.width)
+
+		local thickness = (arrow.tail + (arrow.head - arrow.tail) * at) * (1 + wave * 0.3)
+
+		-- 조각을 실제 길이보다 늘여 서로 겹치게 한다. 안 겹치면 곡선 안쪽에
+		-- 톱니 같은 틈이 생긴다.
+		local drawLength = pieceLength * arrow.overlap
+
+		local shade = self:arrowPiece("shade")
+		shade.Position = UDim2.fromOffset(midX, midY)
+		shade.Size = UDim2.fromOffset(drawLength, thickness + arrow.outline)
+		shade.Rotation = angle
+		shade.BackgroundColor3 = Theme.color.arrowShade
+		shade.BackgroundTransparency = 0.25
+		shade.ZIndex = 15
+
+		local bar = self:arrowPiece("line")
+		bar.Position = UDim2.fromOffset(midX, midY)
+		bar.Size = UDim2.fromOffset(drawLength, thickness)
+		bar.Rotation = angle
+		bar.BackgroundColor3 = color
+		bar.BackgroundTransparency = arrow.transparency * (1 - wave * arrow.pulse.depth)
+		bar.ZIndex = 16
+
+		prevX, prevY = px, py
+	end
+
+	-- 화살촉은 **마지막 조각의** 각도를 쓴다. 곡선이라 시작~끝 직선 각도와 다르다 —
+	-- 직선 각도를 쓰면 화살촉만 딴 데를 가리킨다.
+	local headShade = self:arrowHead("headShade")
+	headShade.Position = UDim2.fromOffset(cx, cy)
+	headShade.Rotation = angle
+	headShade.TextColor3 = Theme.color.arrowShade
+	headShade.TextSize = arrow.headSize + arrow.outline * 2
+	headShade.ZIndex = 16
+
+	local head = self:arrowHead("headTip")
+	head.Position = UDim2.fromOffset(cx, cy)
+	head.Rotation = angle
+	head.TextColor3 = color
+	head.TextSize = arrow.headSize
+	head.ZIndex = 17
 end
 
 local function centerOf(node)
@@ -831,29 +1071,37 @@ end
 	    방어  파랑   방어자 → 막는 공격자
 
 	**매 프레임 다시 그린다.** 카드 위치는 레이아웃이 잡은 뒤에야 정해지고
-	(AbsolutePosition), 필드가 넘쳐 스크롤되면 그때그때 움직인다. 한 번 그려놓고
-	두면 카드는 옮겨 갔는데 화살표만 남는다.
+	(AbsolutePosition), 필드가 넘쳐 스크롤되거나 카드가 돌진하면 그때그때 움직인다.
+	한 번 그려놓고 두면 카드는 옮겨 갔는데 화살표만 남는다.
+
+	공격과 방어는 **반대쪽으로 휜다.** 방어는 늘 공격의 되돌이라 같은 두 카드를
+	잇는데, 같은 쪽으로 휘면 두 선이 정확히 포개져 하나로 보인다.
 ]]
+function Battle:hideUnusedArrows()
+	for _, pool in self.arrowPool do
+		hideRest(pool)
+	end
+end
+
 function Battle:drawArrows()
 	local state = self.state
 	local combat = state and state.combat
 
+	for _, pool in self.arrowPool do
+		pool.used = 0
+	end
+
 	local wanted = combat and (#combat.attackers > 0 or next(combat.blocks) ~= nil)
 	if not wanted then
-		-- 그릴 게 없다. 이미 비어 있으면 매 프레임 손대지 않는다.
-		if self.arrowsDrawn then
-			Widgets.clear(self.arrows)
-			self.arrowsDrawn = false
-		end
+		self:hideUnusedArrows()
 		return
 	end
 
-	Widgets.clear(self.arrows)
-	self.arrowsDrawn = true
-
 	local origin = self.arrows.AbsolutePosition
 	local originX, originY = origin.X, origin.Y
-	local index = 0
+
+	-- 띠가 지금 선 위의 어디쯤인지. 모든 화살표가 같은 박자로 흐른다.
+	local flow = (os.clock() * Theme.arrow.pulse.speed) % 1
 
 	for _, declaration in combat.attackers do
 		local attacker = self.fieldNodes[declaration.id]
@@ -862,25 +1110,24 @@ function Battle:drawArrows()
 			or self.fieldNodes[declaration.targetId]
 
 		if attacker and target then
-			index += 1
 			local fromX, fromY = centerOf(attacker)
 			local toX, toY = centerOf(target)
-			self:drawArrow(originX, originY, fromX, fromY, toX, toY, Theme.color.arrowAttack, "ArrowAttack" .. index)
+			self:drawArrow(originX, originY, fromX, fromY, toX, toY, Theme.color.arrowAttack, 1, flow)
 		end
 	end
 
-	index = 0
 	for blockerId, attackerId in combat.blocks do
 		local blocker = self.fieldNodes[blockerId]
 		local attacker = self.fieldNodes[attackerId]
 
 		if blocker and attacker then
-			index += 1
 			local fromX, fromY = centerOf(blocker)
 			local toX, toY = centerOf(attacker)
-			self:drawArrow(originX, originY, fromX, fromY, toX, toY, Theme.color.arrowBlock, "ArrowBlock" .. index)
+			self:drawArrow(originX, originY, fromX, fromY, toX, toY, Theme.color.arrowBlock, -1, flow)
 		end
 	end
+
+	self:hideUnusedArrows()
 end
 
 function Battle:showToast(text, kind)
@@ -1009,6 +1256,15 @@ function Battle:placeRow(row, cards, cardSize, gap, entryFrom, animate, fan)
 
 	for index, card in cards do
 		local x = startX + (index - 1) * (cardSize.X + gap)
+
+		--[[
+			돌진하거나 흔들리는 중이면 자리를 건드리지 않는다. 지금 재배치하면
+			연출 트윈과 같은 Position 을 두고 싸워서 카드가 제자리에서 떤다.
+			연출이 끝날 때 그쪽이 이 줄을 다시 그리게 한다(refreshRow).
+		]]
+		if self.busyCards[card] then
+			continue
+		end
 
 		--[[
 			부채꼴. 가운데를 0, 양 끝을 -1/+1 로 두고 그 값으로 기울기와 높이를 정한다.
@@ -1181,6 +1437,303 @@ function Battle:flashRing()
 	end)
 end
 
+--==========================================================================
+-- 전투 연출
+--==========================================================================
+
+--[[
+	줄을 지금 기록대로 다시 배치한다.
+
+	연출이 끝난 카드를 제자리로 돌려보내는 데 쓴다. placeRow 가 그 카드를 비켜
+	가는 동안 옆 카드들은 이미 옮겨졌을 수 있어서, 돌아갈 자리는 **지금** 다시
+	계산해야 한다 — 연출을 시작할 때의 자리가 아니다.
+]]
+function Battle:refreshRow(row)
+	local record = row and self.rows[row]
+	if not record then
+		return
+	end
+
+	self:placeRow(row, record.cards, record.size, record.gap, record.entryFrom, true, record.fan)
+end
+
+--[[
+	전투에 등장하는 카드 노드를 찾는다.
+
+	죽은 것까지 찾아야 한다. 서버는 전투를 통째로 해결하고 결과만 보내므로,
+	화면이 때리는 장면을 재생할 때 맞는 쪽은 **이미 스냅샷에서 사라져 있다.**
+	Reconcile 의 exit 가 그것을 잠깐 붙잡아 두고, 여기서 그 노드를 쓴다.
+]]
+function Battle:combatNode(instanceId)
+	return self.fieldNodes[instanceId] or self.dyingNodes[instanceId]
+end
+
+--[[
+	카드가 받은 피해를 그 카드 위에 띄운다.
+
+	라벨을 카드가 아니라 **줄에** 붙인다. 카드에 붙이면 맞고 죽는 카드가 사라질 때
+	숫자도 같이 사라진다 — 정작 그 숫자가 왜 죽었는지를 말해주는데.
+
+	플레이어가 받은 피해는 flashDamage 가 패널에 띄운다. 이건 생물 몫이다.
+]]
+function Battle:flashCardDamage(card, amount)
+	local row = card.Parent
+	if not row then
+		return
+	end
+
+	local motion = Theme.motion.damage
+	local home = card.Position
+
+	local label = Widgets.label(("-%d"):format(amount), {
+		Name = "CardDamage",
+		Parent = row,
+		Position = UDim2.new(
+			home.X.Scale,
+			home.X.Offset + Theme.size.fieldCard.X / 2 - 20,
+			home.Y.Scale,
+			home.Y.Offset - 6
+		),
+		Size = UDim2.fromOffset(40, 30),
+		Font = Theme.font.bold,
+		TextSize = Theme.text.stat,
+		TextColor3 = Theme.color.warn,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		ZIndex = 20,
+	})
+
+	Motion.floatAway(label, motion.rise, motion.travel)
+end
+
+--[[
+	붙잡아 둔 수치를 스냅샷의 진짜 값으로 되돌린다.
+
+	홀드는 **맞는 순간까지만** 살아 있어야 한다. 그런데 임팩트는 0.23초 뒤에
+	오는 task.delay 라, 그 사이에 때리는 장면이 끊길 수 있다 — 카드가 죽어서
+	노드가 없거나, 공격자가 이미 다른 연출에 붙잡혀 있으면 임팩트가 아예 안 온다.
+	그러면 그 카드는 맞기 전 수치를 **영원히** 들고 있게 된다.
+
+	그래서 때리는 장면이 끝날 때쯤 한 번 쓸어담는다. 화면이 거짓말을 계속하느니
+	연출을 놓치고 진짜 값을 보여주는 쪽이 낫다.
+]]
+function Battle:settleStats()
+	for instanceId, instance in self.statReveal do
+		local card = self.fieldNodes[instanceId]
+		if card then
+			CardView.paintStat(card, instance, nil)
+		end
+		self.shownDamage[instanceId] = instance.damage or 0
+	end
+
+	self.statHold = {}
+	self.statReveal = {}
+end
+
+--[[
+	맞은 생물의 수치를 **부딪히는 순간에** 바꾼다. 1 / 2 가 1 / 1 로, 붉게.
+
+	renderField 가 이 카드를 예전 수치로 그려둔 상태다(statHold). 여기서 이번
+	타격분만 더해 다시 칠한다 — 스냅샷의 최종값으로 바로 뛰지 않는 이유는
+	겹쳐 막기다. 세 마리가 한 카드를 때리면 한 대씩 깎여야 수가 맞는다.
+
+	죽는 카드는 지나간다. 스냅샷에 이미 없어서 그릴 데이터가 없고, 그쪽은
+	쓰러지는 연출과 떠오르는 피해 숫자가 이미 말해주고 있다.
+]]
+function Battle:revealStat(instanceId, amount)
+	if not instanceId or not amount or amount <= 0 then
+		return
+	end
+
+	local instance = self.statReveal[instanceId]
+	local card = self.fieldNodes[instanceId]
+	if not instance or not card then
+		return
+	end
+
+	local shown = (self.shownDamage[instanceId] or 0) + amount
+	self.shownDamage[instanceId] = shown
+
+	-- 이 카드는 제 몫을 다 보여줬다. 다음 렌더부터는 평소대로 그린다.
+	self.statHold[instanceId] = nil
+	self.statReveal[instanceId] = nil
+
+	local pop = Theme.motion.statHit
+	Motion.popText(CardView.paintStat(card, instance, shown), pop.grow, pop.settle)
+end
+
+--[[
+	맞은 쪽이 흔들린다.
+
+	흔드는 동안에도 줄 배치는 비켜 가야 한다(busyCards). 패널은 줄이 아니라
+	refreshRow 가 아무것도 하지 않는다 — 그쪽은 Motion.shake 가 제자리로 돌려놓는다.
+]]
+function Battle:shakeCard(node)
+	if self.busyCards[node] then
+		return
+	end
+
+	local shake = Theme.motion.shake
+	self.busyCards[node] = true
+
+	Motion.shake(node, shake.distance, shake.times, shake.each, function()
+		self.busyCards[node] = nil
+		self:refreshRow(node.Parent)
+	end)
+end
+
+--[[
+	공격자가 대상까지 달려갔다 돌아온다. 임팩트에 맞춰 대상이 흔들리고 숫자가 뜬다.
+
+	거리는 **화면 픽셀로 재서 배율로 나눈다** — drawArrow 와 같은 이유다.
+	AbsolutePosition 은 진짜 화면 픽셀이고 Position.Offset 은 UIScale 이 곱해지기
+	전의 값이다.
+]]
+function Battle:strikeAt(attacker, target, damageToTarget, damageToAttacker, ids)
+	if self.busyCards[attacker] then
+		return
+	end
+
+	local scale = (self.uiScale and self.uiScale.Scale or 1)
+	if scale <= 0 then
+		scale = 1
+	end
+
+	local strike = Theme.motion.strike
+
+	local ax, ay = centerOf(attacker)
+	local tx, ty = centerOf(target)
+
+	local dx = (tx - ax) / scale * strike.reach
+	local dy = (ty - ay) / scale * strike.reach
+
+	self.busyCards[attacker] = true
+
+	Motion.strike(attacker, dx, dy, strike, function()
+		--[[
+			부딪힌 순간. 숫자와 흔들림이 **여기** 있어야 한다 — 먼저 뜨면
+			맞기도 전에 아파하고, 늦게 뜨면 무엇에 맞았는지 모른다.
+		]]
+		if damageToTarget and damageToTarget > 0 then
+			self:flashCardDamage(target, damageToTarget)
+			self:revealStat(ids and ids.target, damageToTarget)
+		end
+		if damageToAttacker and damageToAttacker > 0 then
+			self:flashCardDamage(attacker, damageToAttacker)
+			self:revealStat(ids and ids.attacker, damageToAttacker)
+		end
+
+		self:shakeCard(target)
+	end, function()
+		self.busyCards[attacker] = nil
+		self:refreshRow(attacker.Parent)
+	end)
+end
+
+--[[
+	죽는 카드. 쓰러지며 가라앉는다.
+
+	투명도로 지우지 않는 이유: 카드는 프레임 하나가 아니라 글자와 칩이 얹힌
+	묶음이라, 배경만 투명하게 하면 글자가 허공에 남는다. 로블록스에는 묶음째
+	흐리게 하는 것(CanvasGroup)이 있지만 테스트 하네스에는 없어서, 쓰면
+	Studio 에서만 도는 코드가 된다.
+
+	delay 는 **맞는 순간까지 기다리는 시간**이다. 전투로 죽었으면 때리는 동작이
+	끝난 뒤에 쓰러져야 한다. 전투가 아닌 죽음(주문 등)이면 0 이라 바로 쓰러진다.
+]]
+function Battle:playDeath(card, key, delay)
+	local death = Theme.motion.death
+	self.dyingNodes[key] = card
+
+	task.delay(delay, function()
+		if not card.Parent then
+			return
+		end
+
+		local home = card.Position
+
+		-- 다른 카드 뒤로 내린다. 쓰러지는 것이 산 것을 가리면 안 된다.
+		card.ZIndex = 1
+
+		Motion.to(card, death.fade, {
+			Position = UDim2.new(home.X.Scale, home.X.Offset, home.Y.Scale, home.Y.Offset + death.drop),
+			Rotation = card.Rotation + death.spin,
+		})
+	end)
+
+	task.delay(delay + death.fade, function()
+		self.dyingNodes[key] = nil
+	end)
+
+	return delay + death.fade
+end
+
+--[[
+	전투 결과를 한 번 재생한다.
+
+	서버가 보내는 events 는 Combat.resolve 가 만든 것이다 — 누가 누구를 몇 대
+	때렸는지가 거기 다 있다. 스냅샷만 보면 그걸 복원할 수 없다.
+
+	  Blocked      공격자 ↔ 방어자. 서로 때린다
+	  HitCreature  무방비 생물을 친다
+	  HitPlayer    플레이어를 친다. 숫자는 패널 쪽 flashDamage 가 띄운다
+	  AttackFizzled / Destroyed  움직일 것이 없다
+
+	여럿이 동시에 공격하면 **시차를 준다**(strike.stagger). 전부 한꺼번에 움직이면
+	무슨 일이 일어났는지 눈이 못 따라간다.
+]]
+function Battle:playCombat(events)
+	local strike = Theme.motion.strike
+	local order = 0
+
+	for _, event in events do
+		local attacker = self:combatNode(event.attackerId)
+		local target, toTarget, toAttacker
+
+		-- 수치를 고칠 카드. 플레이어를 때리는 경우에는 대상이 카드가 아니라 패널이다.
+		local ids = { attacker = event.attackerId, target = nil }
+
+		if event.kind == "Blocked" then
+			target = self:combatNode(event.blockerId)
+			toTarget, toAttacker = event.damageToBlocker, event.damageToAttacker
+			ids.target = event.blockerId
+		elseif event.kind == "HitCreature" then
+			target = self:combatNode(event.targetId)
+			toTarget = event.damageToTarget
+			ids.target = event.targetId
+		elseif event.kind == "HitPlayer" then
+			target = (event.playerId == self.me) and self.myPanel.frame or self.foePanel.frame
+		end
+
+		if attacker and target then
+			order += 1
+
+			local delay = (order - 1) * strike.stagger
+			task.delay(delay, function()
+				self:strikeAt(attacker, target, toTarget, toAttacker, ids)
+			end)
+		end
+	end
+
+	--[[
+		때리는 장면이 다 끝날 때쯤 남은 홀드를 정리한다 (이유는 settleStats).
+
+		토큰으로 가린다 — 이 사이에 다음 전투가 시작되면 그쪽 홀드를 건드리면
+		안 된다. 스포트라이트가 쓰는 방식과 같다.
+	]]
+	local token = self.statToken
+	local total = math.max(0, order - 1) * strike.stagger
+		+ strike.windup
+		+ strike.dash
+		+ strike.hold
+		+ strike.recover
+
+	task.delay(total, function()
+		if self.statToken == token then
+			self:settleStats()
+		end
+	end)
+end
+
 function Battle:renderPlayerPanel(panel, state, playerId, opts)
 	local player = state.players[playerId]
 	local available = GameState.availableCost(state, playerId)
@@ -1196,7 +1749,21 @@ function Battle:renderPlayerPanel(panel, state, playerId, opts)
 	]]
 	local previousLife = self.lastLife[playerId]
 	if previousLife and player.life < previousLife then
-		self:flashDamage(panel, previousLife - player.life)
+		local amount = previousLife - player.life
+
+		--[[
+			전투로 깎인 것이면 **때리는 동작이 닿는 순간**에 띄운다. 바로 띄우면
+			공격자가 아직 달려가는 중인데 라이프가 먼저 깎여서, 무엇 때문에 깎였는지
+			연결되지 않는다. 전투가 아닌 피해(주문 등)는 pendingStrike 가 0 이라
+			예전처럼 즉시 뜬다.
+		]]
+		if self.pendingStrike > 0 then
+			task.delay(self.pendingStrike, function()
+				self:flashDamage(panel, amount)
+			end)
+		else
+			self:flashDamage(panel, amount)
+		end
 	end
 	self.lastLife[playerId] = player.life
 
@@ -1224,7 +1791,8 @@ function Battle:renderPlayerPanel(panel, state, playerId, opts)
 		한 줄에 성격이 다른 둘이 섞이므로 키에 접두사를 붙인다. 접두사가 없으면
 		코스트 카드 id 1 과 뒷면 1번이 같은 키가 되어 서로를 덮어쓴다.
 	]]
-	local items = {}
+	-- Reconcile 항목은 paint 가 선택이다 (뒷면 카드는 칠할 게 없다).
+	local items: { any } = {}
 
 	for _, instance in GameState.costCardsOnField(state, playerId) do
 		table.insert(items, {
@@ -1272,10 +1840,17 @@ function Battle:renderField(row, state, playerId, opts)
 			badge = "방어"
 		end
 
+		--[[
+			shownDamage 가 있으면 카드가 **맞기 전 수치**로 그려진다.
+			맞는 순간에 Battle:revealStat 가 진짜 값으로 다시 칠한다.
+		]]
+		local held = self.statHold[instance.id] and self.shownDamage[instance.id] or nil
+
 		local cardOpts = {
 			highlighted = opts.highlights.creature[instance.id],
 			selected = opts.selectedId == instance.id,
 			badge = badge,
+			shownDamage = held,
 			onClick = function()
 				self.callbacks.fieldCard(instance.id)
 			end,
@@ -1283,6 +1858,10 @@ function Battle:renderField(row, state, playerId, opts)
 				self:inspect(Registry.mustGet(instance.defId))
 			end,
 		}
+
+		if held == nil then
+			self.shownDamage[instance.id] = instance.damage or 0
+		end
 
 		table.insert(items, {
 			key = instance.id,
@@ -1298,8 +1877,17 @@ function Battle:renderField(row, state, playerId, opts)
 		})
 	end
 
-	-- 화살표가 어디서 어디로 갈지 정하려면 카드 노드를 알아야 한다.
-	local drawn = Reconcile.children(row, items)
+	--[[
+		화살표가 어디서 어디로 갈지 정하려면 카드 노드를 알아야 한다.
+
+		exit 는 **죽은 카드를 잠깐 붙잡아 둔다.** 스냅샷에서 사라졌다고 바로 지우면
+		때리는 장면이 재생될 때 맞을 대상이 없다 — 공격자가 허공을 친다.
+	]]
+	local drawn = Reconcile.children(row, items, {
+		exit = function(card, key)
+			return self:playDeath(card, key, self.pendingStrike)
+		end,
+	})
 	for index, card in drawn do
 		self.fieldNodes[items[index].key] = card
 	end
@@ -1624,10 +2212,92 @@ function Battle:render(state, opts)
 	-- 지난 판(또는 지난 갱신)의 카드 노드는 버린다. 죽은 생물의 화살표가 남으면 안 된다.
 	self.fieldNodes = {}
 
+	--[[
+		이번 스냅샷에 새 전투 결과가 실려 있는가.
+
+		seq 로 가린다. 렌더는 전투와 상관없는 이유로도 여러 번 도는데(버튼 하나만
+		바뀌어도), 그때마다 재생하면 같은 전투가 반복된다.
+
+		첫 스냅샷은 건너뛴다 — 판에 들어온 순간 직전 전투가 실려 있으면(재접속)
+		방금 일어난 일처럼 카드가 달려든다. 스포트라이트와 같은 이유다.
+
+		pendingStrike 는 **맞는 순간까지 걸리는 시간**이다. 죽는 카드를 얼마나
+		붙잡아 둘지(playDeath), 플레이어 피해 숫자를 언제 띄울지가 이 값을 본다.
+		연출이 끝난 뒤에 사라져야 맞고 죽는 순서가 보인다.
+	]]
+	local combatEvents = nil
+	local lastCombat = state.lastCombat
+
+	if lastCombat and lastCombat.seq ~= self.lastCombatSeq then
+		if self.combatSeeded then
+			combatEvents = lastCombat.events
+		end
+		self.lastCombatSeq = lastCombat.seq
+	end
+	self.combatSeeded = true
+
+	local strike = Theme.motion.strike
+	self.pendingStrike = combatEvents and (strike.windup + strike.dash) or 0
+
+	--[[
+		이번 전투로 피해를 입을 생물을 미리 골라둔다. renderField 가 이 표를 보고
+		**그 카드만** 예전 수치로 그린다 — 나머지는 평소대로 스냅샷대로 그린다.
+
+		처음 보는 카드는 들고 있지 않는다. 들고 있을 예전 값이 없어서 0 으로
+		가정하면, 이미 이번 턴에 맞아둔 생물이 멀쩡한 척했다가 갑자기 깎인다.
+	]]
+	if combatEvents then
+		--[[
+			지난 전투의 잔여분을 먼저 정리한다. 여기서는 노드가 이미 버려져
+			(fieldNodes = {}) 다시 칠하지 않지만, 바로 아래 renderField 가
+			진짜 값으로 칠해주므로 표만 비우면 된다.
+		]]
+		self:settleStats()
+		self.statToken += 1
+
+		local function hold(instanceId, amount)
+			if not instanceId or not amount or amount <= 0 then
+				return
+			end
+			--[[
+				state.cards 에는 **무덤으로 간 카드도 남아 있다.** 이번 전투에 죽은
+				생물까지 붙잡으면 맞는 순간에 칠할 노드가 없어 헛일이 된다 —
+				그쪽은 쓰러지는 연출과 떠오르는 피해 숫자가 이미 말해주고 있다.
+			]]
+			local card = state.cards[instanceId]
+			if not card or card.zone ~= Zone.Field then
+				return
+			end
+			if self.shownDamage[instanceId] == nil then
+				return
+			end
+
+			self.statHold[instanceId] = true
+			self.statReveal[instanceId] = card
+		end
+
+		for _, event in combatEvents do
+			if event.kind == "Blocked" then
+				hold(event.blockerId, event.damageToBlocker)
+				hold(event.attackerId, event.damageToAttacker)
+			elseif event.kind == "HitCreature" then
+				hold(event.targetId, event.damageToTarget)
+			end
+		end
+	end
+
 	self:renderPlayerPanel(self.foePanel, state, self.foe, opts)
 	self:renderPlayerPanel(self.myPanel, state, self.me, opts)
 	self:renderField(self.foeField, state, self.foe, opts)
 	self:renderField(self.myField, state, self.me, opts)
+
+	--[[
+		카드 노드가 다 자리를 잡은 **뒤에** 재생한다. 그 전에 부르면 이번에 죽은
+		카드가 아직 붙잡히지 않아 맞을 대상이 없다.
+	]]
+	if combatEvents then
+		self:playCombat(combatEvents)
+	end
 	self:renderCenter(state, opts)
 	self:renderHand(state, opts)
 	self:renderLog(state)

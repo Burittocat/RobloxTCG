@@ -132,12 +132,6 @@ end
 ]]
 local TAG_ORDER = { Keyword.Taunt, Keyword.Flying, Keyword.Ranged, Keyword.Haste, Keyword.Instant }
 
-local PHASE_STEP = {
-	[Phase.Main] = 0,
-	[Phase.AttackPrep] = 1,
-	[Phase.DefensePrep] = 2,
-}
-
 --[[
 	지금 화면에 나와 있는 태그. -> { { keyword = ..., card = "창공의 매" }, ... }
 

@@ -514,6 +514,12 @@ function Rules.viewFor(state, playerId)
 		viewerId = playerId,
 		stack = {},
 		combat = state.combat,
+
+		--[[
+			직전 전투의 결과. 화면이 돌진·충격 연출을 재생하는 데 쓴다.
+			양쪽에게 똑같이 내려간다 — 누가 누구를 때렸는지는 어차피 공개 정보다.
+		]]
+		lastCombat = state.lastCombat,
 		cards = {},
 		players = {},
 

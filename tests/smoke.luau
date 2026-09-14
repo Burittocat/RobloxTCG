@@ -1277,10 +1277,37 @@ t:describe("전투 화살표", function()
 			return count
 		end
 
-		local function arrowLines(player, prefix)
+		--[[
+			화살표는 곡선이라 **선 하나가 조각 여럿**이다(Battle.drawArrow). 그래서
+			조각을 세면 화살표 개수가 안 나온다 — 화살촉으로 센다. 화살촉은 곡선
+			하나에 정확히 하나다.
+
+			조각은 풀에서 돌려 쓴다. 안 쓰는 것은 지우지 않고 숨기므로 Visible 을
+			봐야 한다 — 안 보면 "한때 화살표가 셋이었다" 가 계속 셋으로 읽힌다.
+		]]
+		local function piecesNamed(player, prefix)
 			local out = {}
 			for _, node in Screen.find(guiOf(player), "Arrows"):GetChildren() do
-				if node.Name:sub(1, #prefix) == prefix and not node.Name:find("Head$") then
+				if node.Visible and node.Name:sub(1, #prefix) == prefix then
+					table.insert(out, node)
+				end
+			end
+			return out
+		end
+
+		--[[
+			공격이냐 방어냐는 **색으로** 가린다. 풀을 돌려 쓰므로 이름의 번호는
+			그리는 순서일 뿐이고, 그 번호가 공격인지 방어인지는 말해주지 않는다.
+
+			팔레트 값을 여기 베껴 두면 색을 조금만 손봐도 테스트가 깨진다.
+			"붉은 계열인가 · 푸른 계열인가" 만 본다.
+		]]
+		local function arrowHeads(player, attacking)
+			local out = {}
+			for _, node in piecesNamed(player, "ArrowHeadTip") do
+				local color = node.TextColor3
+				local isAttack = color.R > color.B
+				if isAttack == attacking then
 					table.insert(out, node)
 				end
 			end
@@ -1288,7 +1315,7 @@ t:describe("전투 화살표", function()
 		end
 
 		for _, player in both do
-			t:eq(#arrowLines(player, "Arrow"), 0, "전투 전에는 화살표가 없어야 합니다")
+			t:eq(#piecesNamed(player, "Arrow"), 0, "전투 전에는 화살표가 없어야 합니다")
 		end
 
 		-- 둘 다 학생처럼 둔다. 공격이 선언될 때까지.
@@ -1306,18 +1333,9 @@ t:describe("전투 화살표", function()
 		assertNoErrors(world, "공격 선언")
 
 		for _, player in both do
-			local lines = arrowLines(player, "ArrowAttack")
-			t:eq(#lines, badges(player, "공격"), ("%s 화면: 공격 선언 수만큼 화살표"):format(player.Name))
-			t:truthy(#lines > 0, ("%s 화면에도 공격 화살표가 보여야 합니다"):format(player.Name))
-
-			for _, node in lines do
-				--[[
-					팔레트 값을 여기 베껴 두면 색을 조금만 손봐도 테스트가 깨진다.
-					"붉은 계열인가" 만 본다 — 파란 방어 화살표와 헷갈릴 일이 없다.
-				]]
-				local color = node.BackgroundColor3
-				t:truthy(color.R > color.B, "공격 화살표는 붉은 계열이어야 합니다")
-			end
+			local heads = arrowHeads(player, true)
+			t:eq(#heads, badges(player, "공격"), ("%s 화면: 공격 선언 수만큼 화살표"):format(player.Name))
+			t:truthy(#heads > 0, ("%s 화면에도 공격 화살표가 보여야 합니다"):format(player.Name))
 		end
 
 		-- 이어서 방어. 막은 쪽이 누구든 상관없다.
@@ -1335,14 +1353,9 @@ t:describe("전투 화살표", function()
 		assertNoErrors(world, "방어 배정")
 
 		for _, player in both do
-			local lines = arrowLines(player, "ArrowBlock")
-			t:eq(#lines, badges(player, "방어"), ("%s 화면: 방어 배정 수만큼 화살표"):format(player.Name))
-			t:truthy(#lines > 0, ("%s 화면에도 방어 화살표가 보여야 합니다"):format(player.Name))
-
-			for _, node in lines do
-				local color = node.BackgroundColor3
-				t:truthy(color.B > color.R, "방어 화살표는 파란 계열이어야 합니다")
-			end
+			local heads = arrowHeads(player, false)
+			t:eq(#heads, badges(player, "방어"), ("%s 화면: 방어 배정 수만큼 화살표"):format(player.Name))
+			t:truthy(#heads > 0, ("%s 화면에도 방어 화살표가 보여야 합니다"):format(player.Name))
 		end
 
 		--[[
@@ -1354,6 +1367,10 @@ t:describe("전투 화살표", function()
 			이 단언이 잡는 것: 화면 픽셀로 잰 거리를 그대로 offset 에 넣는 실수.
 			루트에 UIScale 이 걸려 있어서(Widgets.autoScale) 배율로 나누지 않으면
 			1080 화면에서 화살표가 카드에서 20% 씩 밀려난다.
+
+			곡선이라 **중점·길이·각도로는 못 잡는다** — 그 값들은 휜 정도(Theme.arrow.bow)
+			에 따라 변한다. 대신 화살촉을 본다. 화살촉은 곡선이 어떻게 휘든 정확히
+			대상의 한가운데 있어야 하는 유일한 조각이다.
 		]]
 		do
 			local gui = guiOf(kim)
@@ -1361,10 +1378,8 @@ t:describe("전투 화살표", function()
 			local uiScale = Screen.find(gui, "Root"):FindFirstChildOfClass("UIScale")
 			local scale = uiScale.Scale
 
-			local declaration = arrowLines(kim, "ArrowAttack")[1]
-			t:truthy(declaration, "공격 화살표가 있어야 합니다")
+			t:truthy(#arrowHeads(kim, true) > 0, "공격 화살표가 있어야 합니다")
 
-			-- 이름에서 몇 번째 화살표인지 찾아, 그 공격자와 대상의 자리를 직접 정한다.
 			local attackerCard = litCards(Screen.find(gui, "MyField"))[1]
 				or allNamedIn(Screen.find(gui, "MyField"), "Field_")[1]
 			t:truthy(attackerCard, "내 생물이 화면에 있어야 합니다")
@@ -1385,29 +1400,90 @@ t:describe("전투 화살표", function()
 
 			world:advance(0.2) -- 한 프레임 이상. 화살표는 매 프레임 다시 그린다
 
-			local line = arrowLines(kim, "ArrowAttack")[1]
-			t:truthy(line, "다시 그린 뒤에도 화살표가 있어야 합니다")
-
 			--[[
 				공격자 가운데 (250, 550) → 대상 가운데 (250, 150).
-				중점은 (250, 350), 판 기준으로 (150, 250), 배율로 나누면 그 값 / scale.
-				길이는 400 / scale, 각도는 위로 곧게 -90 도.
+				판이 (100, 100) 에서 시작하므로 대상은 판 기준 (150, 50),
+				배율로 나누면 그 값 / scale.
 			]]
-			t:eq(line.Position.X.Offset, 150 / scale, "화살표 중점 X")
-			t:eq(line.Position.Y.Offset, 250 / scale, "화살표 중점 Y")
-			t:eq(line.Size.X.Offset, 400 / scale, "화살표 길이")
-			t:eq(line.Rotation, -90, "공격자에서 대상 쪽으로 향해야 합니다")
+			local head = arrowHeads(kim, true)[1]
+			t:truthy(head, "다시 그린 뒤에도 공격 화살표가 있어야 합니다")
+
+			t:eq(head.Position.X.Offset, 150 / scale, "화살촉은 대상 한가운데 X")
+			t:eq(head.Position.Y.Offset, 50 / scale, "화살촉은 대상 한가운데 Y")
+
+			--[[
+				위를 향하는가. 대상이 공격자보다 위에 있으니 화살촉은 위쪽 반원을
+				가리켜야 한다. 정확한 각도를 박지 않는 이유는 bow 를 바꾸면 달라지기
+				때문이다 — 바꿔도 **위를 향한다**는 것은 변하지 않는다.
+			]]
+			t:truthy(head.Rotation < 0 and head.Rotation > -180, "화살촉이 대상 쪽을 향해야 합니다")
+
+			--[[
+				곡선인가. 조각이 둘뿐이면 그냥 꺾인 직선이다.
+				(조각 수는 Theme.arrow.segment 가 정한다)
+			]]
+			local lines = piecesNamed(kim, "ArrowLine")
+			t:truthy(#lines >= 3, "곡선은 조각 셋 이상으로 그려져야 합니다")
+
+			--[[
+				조각이 공격자에서 대상까지 **걸쳐 있는가.** 화살촉만 맞고 몸통이
+				엉뚱한 데 있으면 선이 두 카드를 잇지 않는다.
+			]]
+			local top, bottom = math.huge, -math.huge
+			for _, node in lines do
+				top = math.min(top, node.Position.Y.Offset)
+				bottom = math.max(bottom, node.Position.Y.Offset)
+			end
+
+			t:truthy(top < 150 / scale, "선의 윗끝이 대상에 닿아야 합니다")
+			t:truthy(bottom > 350 / scale, "선의 아랫끝이 공격자에 닿아야 합니다")
 		end
 
-		-- 선 하나에 화살촉 하나.
-		local arrows = Screen.find(guiOf(kim), "Arrows"):GetChildren()
-		local heads = 0
-		for _, node in arrows do
-			if node.Name:find("Head$") then
-				heads += 1
+		--[[
+			화살촉마다 윤곽이 하나씩. 조각도 마찬가지다 — 색 선 밑에는 반드시
+			더 굵은 어두운 선이 깔려 있어야 카드 위에서 묻히지 않는다.
+		]]
+		t:eq(
+			#piecesNamed(kim, "ArrowHeadTip"),
+			#piecesNamed(kim, "ArrowHeadShade"),
+			"화살촉마다 윤곽이 하나씩 있어야 합니다"
+		)
+		t:eq(
+			#piecesNamed(kim, "ArrowLine"),
+			#piecesNamed(kim, "ArrowShade"),
+			"선 조각마다 윤곽이 하나씩 있어야 합니다"
+		)
+
+		--[[
+			**화살표가 줄어들면 남은 것은 숨겨져야 한다.**
+
+			조각은 지우지 않고 숨겨서 돌려 쓴다(hideRest). 안 숨기면 전투가 끝난
+			뒤에도 화살표가 화면에 남는다.
+
+			위의 단언들만으로는 이걸 못 잡는다 — 화살표가 **늘어나는** 동안만 보기
+			때문이다. 실제로 hideRest 가 아무것도 안 숨기게 고쳐도 전부 초록불이었다.
+		]]
+		local cleared = false
+		for _ = 1, 400 do
+			if badges(kim, "공격") == 0 and badges(kim, "방어") == 0 then
+				cleared = true
+				break
 			end
+			pressSomething(world, kim)
+			pressSomething(world, lee)
 		end
-		t:eq(heads, #arrows - heads, "선 하나에 화살촉 하나")
+
+		t:truthy(cleared, "전투가 한 번은 끝나야 합니다")
+		assertNoErrors(world, "전투 종료")
+		world:advance(0.2) -- 화살표는 매 프레임 다시 그린다
+
+		for _, player in both do
+			t:eq(
+				#piecesNamed(player, "Arrow"),
+				0,
+				("%s 화면: 전투가 끝나면 화살표가 남으면 안 됩니다"):format(player.Name)
+			)
+		end
 	end)
 end)
 

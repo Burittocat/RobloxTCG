@@ -154,12 +154,25 @@ local function onEnterDraw(state)
 	GameState.drawCard(state, state.activePlayerId)
 end
 
+--[[
+	전투 해결.
+
+	events 를 state 에 남기는 이유는 **화면이 그것을 연출로 재생하기 때문**이다.
+	스냅샷만 보면 "누가 누구를 때렸는가" 를 복원할 수 없다 — 도착한 상태에는
+	이미 피해가 적용돼 있고 죽은 생물은 무덤에 가 있다. 공격자와 대상을 잇는
+	정보는 이 순간에만 있다.
+
+	seq 를 같이 붙인다. 화면은 스냅샷을 여러 번 받을 수 있으므로(다른 이유로도
+	렌더가 돈다) **같은 전투를 두 번 재생하지 않으려면** 번호가 필요하다.
+]]
 local function onEnterCombat(state)
 	local events = Combat.resolve(state)
 	for _, event in events do
 		GameState.log(state, "전투: " .. event.kind)
 	end
-	state.lastCombatEvents = events
+
+	state.combatSeq = (state.combatSeq or 0) + 1
+	state.lastCombat = { seq = state.combatSeq, events = events }
 end
 
 local function onEnterEndTurn(state)

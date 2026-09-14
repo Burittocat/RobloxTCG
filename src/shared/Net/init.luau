@@ -168,6 +168,14 @@ function Net.packView(view, logTail)
 		blocks = blocks,
 		mulligan = view.mulligan,
 		log = logTail or {},
+
+		--[[
+			직전 전투의 결과. 화면이 돌진·충격 연출을 재생하는 데 쓴다.
+
+			이미 순수 데이터다 — Combat.resolve 가 만드는 이벤트는 숫자와 문자열만
+			들고 있어서 손볼 것이 없다.
+		]]
+		lastCombat = view.lastCombat,
 	}
 end
 
@@ -194,6 +202,7 @@ function Net.unpackView(payload)
 		combat = { attackers = payload.attackers or {}, blocks = {} },
 		mulligan = payload.mulligan,
 		log = payload.log or {},
+		lastCombat = payload.lastCombat,
 	}
 
 	for _, player in payload.players do

@@ -269,4 +269,28 @@ return function(t, ctx)
 		end)
 	end)
 
+	--======================================================================
+	--[[
+		화면은 전투 결과가 온 뒤에도 **맞기 전 수치**를 잠깐 들고 있어야 한다.
+		때리는 장면이 스냅샷보다 늦게 재생되기 때문이다 (Battle:revealStat).
+
+		루아는 남는 인자를 조용히 버린다 — damageOverride 를 다시 없애도
+		부르는 쪽은 에러 없이 돌고, 수치만 맞기도 전에 깎인다. 그래서 못 박아둔다.
+	]]
+	t:describe("남은 체력", function()
+		t:it("damageOverride 를 주면 그 피해량 기준으로 센다", function()
+			local state = Fixture.match(Rules)
+			Fixture.giveCost(Rules, state, 1, 3)
+			local card = Fixture.giveHand(Rules, state, 1, "CRE_RAIDER")
+			t:allowed(Fixture.playAndSettle(Rules, state, 1, card.id))
+
+			local full = Rules.Keywords.toughness(card)
+			card.damage = 1
+
+			t:eq(Rules.Keywords.remainingToughness(card), full - 1, "평소에는 instance.damage 로 센다")
+			t:eq(Rules.Keywords.remainingToughness(card, 0), full, "맞기 전 수치 — 화면이 이걸로 그린다")
+			t:eq(Rules.Keywords.remainingToughness(card, 2), full - 2)
+		end)
+	end)
+
 end

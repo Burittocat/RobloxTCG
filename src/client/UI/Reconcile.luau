@@ -39,8 +39,19 @@ local books = setmetatable({}, { __mode = "k" })
 
 	돌려주는 것: 그려진 인스턴스 배열(items 와 같은 순서).
 	화살표처럼 "그 카드가 화면 어디에 있나" 를 알아야 하는 쪽이 이걸 쓴다.
+
+	opts.exit 는 **사라진 것**마다 불린다 — `exit(instance, key)`. 숫자를 돌려주면
+	그만큼 기다렸다 Destroy 하고, 아무것도 안 돌려주면 지금 지운다.
+
+	이게 필요한 이유는 전투 연출이다. 생물이 죽으면 다음 스냅샷에는 이미 없는데,
+	**때리는 장면은 그 뒤에 재생된다.** 맞고 죽는 카드가 맞기 전에 사라져 있으면
+	공격자가 허공을 치게 된다.
+
+	떠나는 동안에도 인스턴스는 컨테이너에 남아 있다(자리는 지킨다). 장부에서는
+	바로 빠지므로, 같은 키가 그 사이에 돌아오면 새 인스턴스가 생겨 잠깐 겹친다 —
+	지금 룰에 생물이 무덤에서 곧장 돌아오는 길은 없어서 그대로 뒀다.
 ]]
-function Reconcile.children(container, items)
+function Reconcile.children(container, items, opts)
 	local book = books[container]
 	if not book then
 		book = {}
@@ -100,10 +111,20 @@ function Reconcile.children(container, items)
 	end
 
 	-- 이번에 안 나온 것 = 그 존을 떠난 것. 지운다.
+	local leaving = opts and opts.exit
+
 	for key, instance in book do
 		if not seen[key] then
 			book[key] = nil
-			instance:Destroy()
+
+			local hold = leaving and leaving(instance, key)
+			if hold then
+				task.delay(hold, function()
+					instance:Destroy()
+				end)
+			else
+				instance:Destroy()
+			end
 		end
 	end
 

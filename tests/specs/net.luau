@@ -107,6 +107,50 @@ return function(t, ctx)
 			t:eq(#view.combat.attackers, 1)
 		end)
 
+		--[[
+			**전투 결과가 화면까지 가는가.**
+
+			화면은 이걸로 돌진·충격 연출을 재생한다(Battle.playCombat). 스냅샷만
+			보면 "누가 누구를 때렸는가" 를 복원할 수 없다 — 도착한 상태에는 이미
+			피해가 적용돼 있고 죽은 생물은 무덤에 가 있다.
+
+			실제로 이 자리에서 한 번 끊겼다. Rules.viewFor 까지는 실었는데
+			Net.packView 가 필드를 하나씩 골라 담는 곳이라 거기서 빠졌고, **아무도
+			에러를 내지 않았다.** 연출이 통째로 죽은 채로 전부 초록불이었다.
+		]]
+		t:it("전투 결과가 왕복에서 살아남는다", function()
+			local state = Fixture.match(Rules)
+			Fixture.setPhase(state, Phase.Main, 1)
+
+			local mine = Fixture.spawn(Rules, state, 1, "CRE_RAIDER", Zone.Field)
+			local theirs = Fixture.spawn(Rules, state, 2, "CRE_GUARD", Zone.Field)
+
+			mine.summonedOnTurn = 0
+			state.combat.attackers = {
+				{ id = mine.id, targetKind = "Creature", targetId = theirs.id },
+			}
+
+			local events = Rules.Combat.resolve(state)
+			state.combatSeq = 1
+			state.lastCombat = { seq = 1, events = events }
+
+			local view = Net.unpackView(Net.packView(Rules.viewFor(state, 1), state.log))
+
+			t:truthy(view.lastCombat, "전투 결과가 스냅샷에 실려야 합니다")
+			t:eq(view.lastCombat.seq, 1, "같은 전투를 두 번 재생하지 않으려면 번호가 필요합니다")
+			t:eq(#view.lastCombat.events, #events, "이벤트가 하나도 빠지면 안 됩니다")
+
+			--[[
+				연출이 실제로 쓰는 칸들. kind 만 와도 "무슨 일이 있었다" 는 알지만,
+				**누가 누구를** 때렸는지 없으면 카드를 움직일 수 없다.
+			]]
+			local hit = view.lastCombat.events[1]
+			t:eq(hit.kind, "HitCreature")
+			t:eq(hit.attackerId, mine.id, "공격자 id 가 있어야 그 카드를 움직인다")
+			t:eq(hit.targetId, theirs.id, "대상 id 가 있어야 어디로 달려갈지 안다")
+			t:truthy(hit.damageToTarget > 0, "피해량이 있어야 숫자를 띄운다")
+		end)
+
 		t:it("스택 항목과 대상이 그대로 온다", function()
 			local state, _, theirs = scenario()
 			local view = Net.unpackView(Net.packView(Rules.viewFor(state, 1), state.log))

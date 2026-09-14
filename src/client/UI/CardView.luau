@@ -282,6 +282,38 @@ end
 --==========================================================================
 
 --[[
+	생물의 공격력 / 체력 표기. 매직 더 개더링과 같은 방식이다 —
+	체력 칸은 **남은** 체력을 보여주고, 피해를 받은 동안에는 붉다.
+	1/2 생물이 1 을 맞으면 `1 / 1` 이 붉게 뜨고, 턴이 끝나면 `1 / 2` 로 돌아온다.
+
+	shownDamage 를 주면 그 피해량 기준으로 그린다. 전투 결과는 스냅샷으로
+	한꺼번에 오는데 때리는 장면은 그보다 늦게 재생되므로, 그 사이에는
+	**맞기 전 수치**를 들고 있어야 한다 (Battle:revealStat 가 제때 다시 부른다).
+
+	칠하는 자리를 이 함수 하나로 모은 이유: 맞는 순간에 숫자를 바꾸는 쪽과
+	카드를 처음 그리는 쪽이 각자 글자를 만들면, 둘 중 하나가 조용히 달라진다.
+]]
+function CardView.paintStat(card, instance, shownDamage)
+	local label = card:FindFirstChild("Stat")
+	if not label then
+		return nil
+	end
+
+	local damage = shownDamage
+	if damage == nil then
+		damage = instance.damage or 0
+	end
+
+	label.Text = ("%d / %d"):format(
+		Keywords.power(instance),
+		Keywords.remainingToughness(instance, damage)
+	)
+	label.TextColor3 = (damage > 0) and Theme.color.warn or Theme.color.text
+
+	return label
+end
+
+--[[
 	필드 카드도 겉 프레임을 유지하고 속만 다시 칠한다 (이유는 CardView.paintHand).
 
 	필드 카드는 손패보다 상태가 많다 — 탭 여부로 기울기·투명도가 바뀌고, 전투가
@@ -293,9 +325,6 @@ function CardView.paintField(button, state, instance, opts)
 	local def = Registry.mustGet(instance.defId)
 	local color, thickness = outlineFor(opts)
 
-	local power = Keywords.power(instance)
-	local remaining = Keywords.remainingToughness(instance)
-	local hurt = remaining < Keywords.toughness(instance)
 
 	--[[
 		상태 표시. 예전에는 흐린 글자 한 줄이라 놓치기 쉬웠는데, 이 둘은
@@ -340,12 +369,13 @@ function CardView.paintField(button, state, instance, opts)
 			TextYAlignment = Enum.TextYAlignment.Top,
 		}),
 
-		Widgets.label(("%d / %d"):format(power, remaining), {
+		-- 글자와 색은 CardView.paintStat 이 채운다 (아래에서 부른다).
+		Widgets.label("", {
+			Name = "Stat",
 			Position = UDim2.new(0, 0, 1, -26),
 			Size = UDim2.new(1, 0, 0, 26),
 			Font = Theme.font.bold,
 			TextSize = Theme.text.stat,
-			TextColor3 = hurt and Theme.color.warn or Theme.color.text,
 			TextXAlignment = Enum.TextXAlignment.Center,
 		}),
 	}
@@ -353,6 +383,8 @@ function CardView.paintField(button, state, instance, opts)
 	for _, kid in kids do
 		kid.Parent = button
 	end
+
+	CardView.paintStat(button, instance, opts.shownDamage)
 
 	local row = keywordRow(Keywords.effective(instance), 16)
 	row.Position = UDim2.fromOffset(0, 32)
@@ -551,6 +583,12 @@ function CardView.detail(props)
 
 	local detail = { frame = panel }
 
+	-- 닫기 버튼이 아래에서 이걸 부른다. **쓰기 전에** 정의해야 한다 —
+	-- 나중에 붙이면 루아가 detail 의 모양을 먼저 굳혀서 hide 를 모르는 것으로 본다.
+	function detail.hide()
+		panel.Visible = false
+	end
+
 	local nameLabel = line("DetailName", 1, 30, { Font = Theme.font.bold, TextSize = 24 })
 	local typeLabel = line("DetailType", 2, 20, { TextColor3 = Theme.color.textDim, TextSize = Theme.text.label })
 	local statLabel = line("DetailStat", 3, 34, {
@@ -644,10 +682,6 @@ function CardView.detail(props)
 
 		noteLabel.Text = note or ""
 		panel.Visible = true
-	end
-
-	function detail.hide()
-		panel.Visible = false
 	end
 
 	return detail

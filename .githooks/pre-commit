@@ -1,6 +1,7 @@
 #!/bin/sh
 #
-# 커밋 직전에 로컬 CI 를 돌린다. 세 단계 합쳐 0.5초쯤이라 체감되지 않는다.
+# 커밋 직전에 로컬 CI 를 돌린다. 몇 단계 합쳐 0.5초쯤이라 체감되지 않는다.
+# 그 전에 docs-sync.sh 가 "코드는 바뀌었는데 문서는 그대로" 인 곳을 알려준다 (막지는 않는다).
 #
 #   켜기            git config core.hooksPath .githooks
 #   끄기            git config --unset core.hooksPath
@@ -15,5 +16,7 @@
 if ! git diff --quiet; then
 	printf '\033[33m! 스테이지되지 않은 변경이 있습니다 — 검사는 작업 트리 기준입니다.\033[0m\n'
 fi
+
+sh "$(git rev-parse --show-toplevel)/scripts/docs-sync.sh"
 
 exec sh "$(git rev-parse --show-toplevel)/scripts/ci.sh" --quiet

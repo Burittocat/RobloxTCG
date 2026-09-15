@@ -1,83 +1,87 @@
-#
-# 푸시 / PR 마다 도는 검사.
-#
-# 이 프로젝트는 Studio 없이도 거의 전부 검증할 수 있게 짜여 있어서
-# CI 가 실제로 의미 있는 일을 한다.
-#
-#   1. 문법 검사   전체 .luau 컴파일
-#   2. 룰 테스트   룰 엔진 + AI 자기대국 + 네트워크 스냅샷 + 매칭 짝짓기 (127개)
-#   3. 스모크      서버와 클라이언트를 가짜 Roblox 위에서 **실제로 실행**한다 (25개)
-#   4. 빌드        Rojo 프로젝트가 실제 플레이스로 만들어지는지
-#
-# 3번 결과물(build.rbxlx)은 아티팩트로 올라간다 —
-# 받아서 더블클릭하면 그 커밋 상태의 게임이 Studio 에서 바로 열린다.
-#
-name: CI
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-
-# 같은 브랜치에 연달아 푸시하면 이전 실행은 취소한다.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-jobs:
-  test:
-    name: 룰 엔진 · 빌드
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      # aftman.toml 에 적힌 rojo 7.7.0 / lune 0.10.4 를 그대로 설치한다.
-      # 로컬과 CI 가 다른 버전을 쓰면 "내 컴에선 되는데" 가 생긴다.
-      - name: 툴체인 설치 (aftman.toml 그대로)
-        uses: ok-nick/setup-aftman@v0.4.2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 버전 확인
-        run: |
-          rojo --version
-          lune --version
-
-      - name: 문법 검사 (전체 .luau)
-        run: lune run tests/check.luau
-
-      - name: 룰 엔진 테스트
-        run: lune run tests/run.luau
-
-      - name: 스모크 테스트 (서버 + 클라이언트 실행)
-        run: lune run tests/smoke.luau
-
-      - name: 플레이스 빌드
-        run: rojo build --output build.rbxlx
-
-      - name: 플레이스 아티팩트 업로드
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-rbxlx
-          path: build.rbxlx
-          retention-days: 14
-
-  format:
-    name: 코드 서식 (권고)
-    runs-on: ubuntu-latest
-
-    # 아직 StyLua 를 한 번도 안 돌린 코드베이스라 처음엔 빨간 줄이 뜰 수 있다.
-    # 로컬에서 `stylua src tests play.luau` 를 한 번 돌려 정렬하고 커밋한 뒤,
-    # 이 continue-on-error 줄을 지우면 그때부터 서식도 강제된다.
-    continue-on-error: true
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: StyLua 검사
-        uses: JohnnyMorganz/stylua-action@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          version: latest
-          args: --check src tests play.luau
+#
+# 푸시 / PR 마다 도는 검사.
+#
+# 이 프로젝트는 Studio 없이도 거의 전부 검증할 수 있게 짜여 있어서
+# CI 가 실제로 의미 있는 일을 한다.
+#
+#   1. 문법 검사   전체 .luau 컴파일
+#   2. 룰 테스트   룰 엔진 + AI 자기대국 + 네트워크 스냅샷 + 매칭 짝짓기 (127개)
+#   3. 스모크      서버와 클라이언트를 가짜 Roblox 위에서 **실제로 실행**한다 (25개)
+#   4. 문서        문서가 가리키는 파일 경로와 링크가 실제로 있는지
+#   5. 빌드        Rojo 프로젝트가 실제 플레이스로 만들어지는지
+#
+# 빌드 결과물(build.rbxlx)은 아티팩트로 올라간다 —
+# 받아서 더블클릭하면 그 커밋 상태의 게임이 Studio 에서 바로 열린다.
+#
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 같은 브랜치에 연달아 푸시하면 이전 실행은 취소한다.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 룰 엔진 · 빌드
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # aftman.toml 에 적힌 rojo 7.7.0 / lune 0.10.4 를 그대로 설치한다.
+      # 로컬과 CI 가 다른 버전을 쓰면 "내 컴에선 되는데" 가 생긴다.
+      - name: 툴체인 설치 (aftman.toml 그대로)
+        uses: ok-nick/setup-aftman@v0.4.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 버전 확인
+        run: |
+          rojo --version
+          lune --version
+
+      - name: 문법 검사 (전체 .luau)
+        run: lune run tests/check.luau
+
+      - name: 룰 엔진 테스트
+        run: lune run tests/run.luau
+
+      - name: 스모크 테스트 (서버 + 클라이언트 실행)
+        run: lune run tests/smoke.luau
+
+      - name: 문서 검사 (경로·링크)
+        run: lune run tests/docs.luau
+
+      - name: 플레이스 빌드
+        run: rojo build --output build.rbxlx
+
+      - name: 플레이스 아티팩트 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-rbxlx
+          path: build.rbxlx
+          retention-days: 14
+
+  format:
+    name: 코드 서식 (권고)
+    runs-on: ubuntu-latest
+
+    # 아직 StyLua 를 한 번도 안 돌린 코드베이스라 처음엔 빨간 줄이 뜰 수 있다.
+    # 로컬에서 `stylua src tests play.luau` 를 한 번 돌려 정렬하고 커밋한 뒤,
+    # 이 continue-on-error 줄을 지우면 그때부터 서식도 강제된다.
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: StyLua 검사
+        uses: JohnnyMorganz/stylua-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: latest
+          args: --check src tests play.luau

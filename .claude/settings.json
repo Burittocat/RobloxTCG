@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PROJECT_DIR:-.}/scripts/docs-sync.sh\" --worktree || true",
+            "statusMessage": "문서 동기화 확인",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

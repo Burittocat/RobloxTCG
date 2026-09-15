@@ -60,6 +60,7 @@ run() {
 run "문법 검사 (전체 .luau)" lune run tests/check.luau
 run "룰 엔진 테스트" lune run tests/run.luau
 run "스모크 테스트 (서버+클라 실행)" lune run tests/smoke.luau
+run "문서 검사 (경로·링크)" lune run tests/docs.luau
 run "플레이스 빌드" rojo build --output build.rbxlx
 
 printf "${GREEN}로컬 CI 통과${RESET}\n"

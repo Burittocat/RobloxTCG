@@ -5,88 +5,20 @@ Studio 에서 게임을 켜는 법, 터미널에서 한 판 돌리는 법, VS Co
 
 ---
 
-## 아무것도 깔려 있지 않은 컴퓨터에서 (학교 컴퓨터 등)
+## 처음 쓰는 컴퓨터라면
 
-**관리자 권한은 필요 없다.** 아래 전부 내 계정 폴더 안에서 끝난다.
+학교 컴퓨터처럼 아무것도 깔려 있지 않은 환경은 **[새 컴퓨터에서 처음부터](new-machine.md)**
+한 문서에 모아 뒀다 — 무엇을 어디서 받고, 확장을 어떻게 맞추고, 막혔을 때 증상별로
+무엇이 원인인지까지. 관리자 권한은 어디에도 필요 없다.
 
-손으로 깔아야 하는 것은 **Git · VS Code · (화면을 볼 거면) Roblox Studio** 셋뿐이다.
-rojo·lune 은 `scripts/bootstrap.cmd` 가 받아온다.
-
-**Git 은 빼놓을 수 없다.** VS Code 는 git 을 들고 오지 않고, "Download ZIP" 으로 받으면
-커밋도 푸시도 훅도 안 된다 — 작업을 이어서 하려면 결국 푸시를 해야 한다.
-
-### 1. Git 과 VS Code
-
-| | 받는 것 | 어디로 들어가나 |
-|---|---|---|
-| Git | **PortableGit** (`.7z.exe` — 설치가 아니라 압축 해제다) | 원하는 폴더 |
-| VS Code | **User Installer** (System Installer 가 아니다) | `%LOCALAPPDATA%\Programs` |
-
-둘 다 관리자 권한을 묻지 않는다. System Installer 를 고르면 그때부터 막힌다.
-
-### 2. 저장소와 도구
+요약하면 손으로 깔 것은 **Git · VS Code · (화면을 볼 거면) Roblox Studio** 셋이고,
+rojo·lune 은 `scripts/bootstrap.cmd` 가 `aftman.toml` 에 적힌 버전 그대로 받아온다.
 
 ```powershell
 git clone https://github.com/Burittocat/RobloxTCG.git
 cd RobloxTCG
-scripts\bootstrap.cmd
+scripts\bootstrap.cmd -Persist
 ```
-
-`bootstrap.cmd` 가 하는 일:
-
-- `aftman.toml` 을 읽어 **거기 적힌 버전 그대로** rojo·lune 을 받아 `.tools\` 에 넣는다
-  (CI 와 같은 버전이 보장된다 — 버전이 갈리면 "내 컴에선 되는데" 가 생긴다)
-- 커밋 훅을 켠다 (`git config core.hooksPath .githooks`)
-- `lune setup` 으로 에디터용 타입 정의를 만든다
-
-**GitHub 의 "Download ZIP" 으로 받지 않는다.** `.git` 이 없으면 커밋도 훅도 안 되고,
-bootstrap 이 그 사실을 알려주고 훅 설정을 건너뛴다. 반드시 클론한다.
-
-```powershell
-scripts\bootstrap.cmd -Persist   # 새 창에서도 쓰도록 사용자 PATH 에 얹는다 (HKCU, 관리자 불필요)
-scripts\bootstrap.cmd -Force     # 이미 받은 것도 다시 받는다
-```
-
-`-Persist` 를 안 쓰면 **그 창에서만** PATH 가 잡힌다. `scripts\ci.cmd` 나 VS Code 작업은
-`.tools\` 를 직접 찾으므로 그대로 돌아간다.
-
-**aftman 은 쓰지 않는다.** 처음 도구를 부를 때 "이 도구를 믿습니까" 를 물어서 스크립트가
-대신 답할 수 없고, 어차피 필요한 건 실행 파일 두 개뿐이다. 집 컴퓨터처럼 이미 aftman 이
-깔려 있다면 그쪽이 그대로 쓰인다 — `scripts/ci.sh` 가 두 곳을 다 본다.
-
-### 3. Roblox Studio (화면을 봐야 할 때만)
-
-Studio 는 `%LOCALAPPDATA%\Roblox` 로 들어가므로 보통 관리자 권한이 필요 없다.
-다만 **학교 네트워크가 Roblox 를 막아둔 경우** 설치도 로그인도 안 된다.
-
-Rojo 의 **Studio 플러그인은 따로 넣지 않아도 된다.** VS Code 확장
-`evaera.vscode-rojo` 가 `%LOCALAPPDATA%\Roblox\Plugins\RojoManagedPlugin.rbxm` 으로
-알아서 넣고 버전도 맞춰준다 (아래 4번의 권장 확장에 들어 있다).
-
-확장을 안 쓴다면 [Rojo 릴리스](https://github.com/rojo-rbx/rojo/releases)의 `Rojo.rbxm` 을
-받아 같은 폴더에 복사하면 된다. 어느 쪽이든 마켓플레이스를 거치지 않는다.
-
-### 4. VS Code 확장
-
-폴더를 열면 `.vscode/extensions.json` 이 셋을 권한다 — `luau-lsp` · `vscode-rojo` · `stylua`.
-같은 파일이 **끄라고 표시해둔 둘**도 있다: `undermywheel.roblox-lua` 와 `sumneko.lua` 는
-`.luau` 를 두고 luau-lsp 와 다툰다. 깔려 있으면 확장 탭 → 톱니 → "사용 안 함(작업 영역)".
-
-`bootstrap.cmd -Persist` 로 PATH 를 얹었다면 **VS Code 를 껐다 켜야** 새 PATH 를 본다.
-
-### Studio 없이 할 수 있는 것
-
-| | 필요한 것 |
-|---|---|
-| 테스트 152개 (`scripts\ci.cmd`) | **lune 만** |
-| 터미널에서 한 판 (`lune run play`) | **lune 만** |
-| AI 자기대국 · 카드 표 확인 | **lune 만** |
-| 플레이스 빌드 · 에디터 자동완성 | + rojo |
-| **연출을 눈으로 확인** | **Studio 가 있어야 한다** |
-
-룰·AI·네트워크는 전부 Studio 없이 검증된다. 반대로 **순수 연출은 테스트가 못 잡으므로**
-(`Theme.motion` 의 숫자가 맞는지는 돌려봐야 안다) Studio 가 없는 환경에서는
-연출 작업을 잡지 않는 편이 낫다.
 
 ---
 

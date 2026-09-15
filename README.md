@@ -36,6 +36,9 @@ rojo build --output build.rbxlx    # 이 파일을 Studio 로 열면 바로 플�
 터미널에서 AI 와 한 판 두려면 `lune run play.luau`. Studio 연동·개발 환경은
 [실행하고 개발하기](docs/getting-started.md) 에 있다.
 
+아무것도 깔려 있지 않은 컴퓨터라면 [새 컴퓨터에서 처음부터](docs/new-machine.md) —
+관리자 권한 없이 `scripts\bootstrap.cmd` 한 줄로 끝난다.
+
 ## 문서
 
 전부 [`docs/`](docs/) 에. 자주 여는 것 셋:

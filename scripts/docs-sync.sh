@@ -36,7 +36,8 @@ src/shared/Matchmaking/* src/server/Matchmaker/* src/server/Arena.luau src/serve
 src/client/UI/DeckEditor.luau src/server/DeckStore.luau|docs/decks.md
 src/client/Tutorial.luau|docs/tutorial.md
 src/client/UI/* src/client/Controller.luau src/client/App.luau src/shared/Net/*|docs/architecture.md
-tests/* scripts/* .github/workflows/*|docs/testing.md
+tests/* .github/workflows/*|docs/testing.md
+scripts/*|docs/testing.md docs/getting-started.md
 '
 
 hits=""

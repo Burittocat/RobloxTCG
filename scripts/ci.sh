@@ -11,9 +11,11 @@
 
 cd "$(dirname "$0")/.." || exit 1
 
-# aftman 이 깐 도구는 ~/.aftman/bin 에 있다.
+# 도구가 있을 만한 곳 둘을 직접 얹는다.
+#   ~/.aftman/bin   aftman 으로 깐 경우
+#   ./.tools        scripts/bootstrap.cmd 로 받은 경우 (관리자 권한 없는 환경)
 # 에디터가 띄운 셸은 로그인 셸과 PATH 가 다를 수 있어 직접 얹어둔다.
-PATH="$HOME/.aftman/bin:$PATH"
+PATH="$HOME/.aftman/bin:$PWD/.tools:$PATH"
 export PATH
 
 GREEN='\033[32m'

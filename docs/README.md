@@ -32,7 +32,8 @@
 | `src/client/Tutorial.luau` | [tutorial.md](tutorial.md) |
 | `src/server/DeckStore.luau` · `src/client/UI/DeckEditor.luau` | [decks.md](decks.md) |
 | `src/shared/Net/**` | [architecture.md](architecture.md) |
-| `tests/**` · `scripts/**` · `.github/workflows/**` | [testing.md](testing.md) |
+| `tests/**` · `.github/workflows/**` | [testing.md](testing.md) |
+| `scripts/**` | [testing.md](testing.md) · [getting-started.md](getting-started.md) |
 
 검사는 **막지 않고 알려주기만 한다.** 문서가 필요 없는 수정(오타·리팩터)도 있는데
 그때마다 커밋이 막히면 사람이 `--no-verify` 를 습관으로 쓰게 되고, 그러면 훅 전체가

@@ -1,3 +1,7 @@
+# scripts/bootstrap.cmd 가 받아 놓는 rojo·lune 실행 파일.
+# 버전은 aftman.toml 이 들고 있으니 언제든 다시 받으면 된다.
+.tools/
+
 # Rojo 빌드 산출물 (소스에서 언제든 다시 만들 수 있다)
 build.rbxlx
 *.rbxl

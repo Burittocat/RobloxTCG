@@ -23,12 +23,19 @@ if (-not $sh) {
         "${env:ProgramFiles(x86)}\Git\bin\sh.exe",
         "$env:LOCALAPPDATA\Programs\Git\bin\sh.exe"
     )
+    # PortableGit 처럼 설치 관리자를 안 쓴 Git 은 위 경로에 없다.
+    # git.exe 가 PATH 에 있으면 그 옆의 bin\sh.exe 를 본다 (...\cmd\git.exe -> ...\bin\sh.exe)
+    $gitExe = (Get-Command git -ErrorAction SilentlyContinue).Source
+    if ($gitExe) {
+        $candidates += (Join-Path (Split-Path -Parent (Split-Path -Parent $gitExe)) 'bin\sh.exe')
+    }
+
     foreach ($c in $candidates) {
         if (Test-Path $c) { $sh = $c; break }
     }
 }
 if (-not $sh) {
-    Write-Host "sh.exe 를 찾지 못했습니다. Git for Windows 가 설치돼 있어야 합니다." -ForegroundColor Red
+    Write-Host "sh.exe 를 찾지 못했습니다. Git for Windows(또는 PortableGit) 가 있어야 합니다." -ForegroundColor Red
     exit 1
 }
 

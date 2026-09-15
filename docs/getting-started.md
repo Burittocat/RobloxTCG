@@ -9,6 +9,12 @@ Studio 에서 게임을 켜는 법, 터미널에서 한 판 돌리는 법, VS Co
 
 **관리자 권한은 필요 없다.** 아래 전부 내 계정 폴더 안에서 끝난다.
 
+손으로 깔아야 하는 것은 **Git · VS Code · (화면을 볼 거면) Roblox Studio** 셋뿐이다.
+rojo·lune 은 `scripts/bootstrap.cmd` 가 받아온다.
+
+**Git 은 빼놓을 수 없다.** VS Code 는 git 을 들고 오지 않고, "Download ZIP" 으로 받으면
+커밋도 푸시도 훅도 안 된다 — 작업을 이어서 하려면 결국 푸시를 해야 한다.
+
 ### 1. Git 과 VS Code
 
 | | 받는 것 | 어디로 들어가나 |
@@ -53,9 +59,20 @@ scripts\bootstrap.cmd -Force     # 이미 받은 것도 다시 받는다
 Studio 는 `%LOCALAPPDATA%\Roblox` 로 들어가므로 보통 관리자 권한이 필요 없다.
 다만 **학교 네트워크가 Roblox 를 막아둔 경우** 설치도 로그인도 안 된다.
 
-Rojo 의 Studio 플러그인은 마켓플레이스를 거치지 않고도 넣을 수 있다 —
-[Rojo 릴리스](https://github.com/rojo-rbx/rojo/releases)의 `Rojo.rbxm` 을 받아
-`%LOCALAPPDATA%\Roblox\Plugins\` 에 복사하면 끝이다.
+Rojo 의 **Studio 플러그인은 따로 넣지 않아도 된다.** VS Code 확장
+`evaera.vscode-rojo` 가 `%LOCALAPPDATA%\Roblox\Plugins\RojoManagedPlugin.rbxm` 으로
+알아서 넣고 버전도 맞춰준다 (아래 4번의 권장 확장에 들어 있다).
+
+확장을 안 쓴다면 [Rojo 릴리스](https://github.com/rojo-rbx/rojo/releases)의 `Rojo.rbxm` 을
+받아 같은 폴더에 복사하면 된다. 어느 쪽이든 마켓플레이스를 거치지 않는다.
+
+### 4. VS Code 확장
+
+폴더를 열면 `.vscode/extensions.json` 이 셋을 권한다 — `luau-lsp` · `vscode-rojo` · `stylua`.
+같은 파일이 **끄라고 표시해둔 둘**도 있다: `undermywheel.roblox-lua` 와 `sumneko.lua` 는
+`.luau` 를 두고 luau-lsp 와 다툰다. 깔려 있으면 확장 탭 → 톱니 → "사용 안 함(작업 영역)".
+
+`bootstrap.cmd -Persist` 로 PATH 를 얹었다면 **VS Code 를 껐다 켜야** 새 PATH 를 본다.
 
 ### Studio 없이 할 수 있는 것
 

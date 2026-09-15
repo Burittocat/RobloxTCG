@@ -145,12 +145,24 @@ if ($Persist) {
 # ── 나머지 한 번짜리 설정 ───────────────────────────────────────────────────
 Write-Host ""
 Write-Step "커밋 훅"
-$hooksPath = (& git config core.hooksPath) 2>$null
-if ($hooksPath -eq '.githooks') {
+
+# 여기서 말한 것과 실제가 다르면 안 된다. git 이 없거나 이 폴더가 저장소가 아니면
+# `git config` 는 조용히 실패하는데, 성공했다고 말해버리면 훅이 안 도는 줄도 모른다.
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Warn2 "git 이 없어 건너뜁니다. 깔고 나서: git config core.hooksPath .githooks"
+} elseif (-not (Test-Path (Join-Path $repo '.git'))) {
+    Write-Warn2 "이 폴더는 git 저장소가 아닙니다 — ZIP 으로 받으셨나요?"
+    Write-Warn2 "클론해야 커밋도 훅도 됩니다: git clone https://github.com/Burittocat/RobloxTCG.git"
+} elseif ((& git config core.hooksPath) -eq '.githooks') {
     Write-Ok "이미 켜져 있습니다."
 } else {
-    & git config core.hooksPath .githooks
-    Write-Ok "켰습니다 — 커밋할 때마다 로컬 CI 와 문서 동기화 검사가 돕니다."
+    & git config core.hooksPath .githooks 2>&1 | Out-Null
+    # 켰다고 말하기 전에 다시 읽어 확인한다.
+    if ((& git config core.hooksPath) -eq '.githooks') {
+        Write-Ok "켰습니다 — 커밋할 때마다 로컬 CI 와 문서 동기화 검사가 돕니다."
+    } else {
+        Write-Warn2 "켜지 못했습니다. 직접: git config core.hooksPath .githooks"
+    }
 }
 
 Write-Step "Lune 타입 정의 (에디터가 @lune/* 를 알아보게 한다)"

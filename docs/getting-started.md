@@ -33,6 +33,9 @@ scripts\bootstrap.cmd
 - 커밋 훅을 켠다 (`git config core.hooksPath .githooks`)
 - `lune setup` 으로 에디터용 타입 정의를 만든다
 
+**GitHub 의 "Download ZIP" 으로 받지 않는다.** `.git` 이 없으면 커밋도 훅도 안 되고,
+bootstrap 이 그 사실을 알려주고 훅 설정을 건너뛴다. 반드시 클론한다.
+
 ```powershell
 scripts\bootstrap.cmd -Persist   # 새 창에서도 쓰도록 사용자 PATH 에 얹는다 (HKCU, 관리자 불필요)
 scripts\bootstrap.cmd -Force     # 이미 받은 것도 다시 받는다

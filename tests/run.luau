@@ -20,6 +20,7 @@ local Client = loader.mount("src/client", "Client")
 local Rules = loader.require(Shared.Rules)
 local Cards = loader.require(Shared.Cards)
 local Decks = loader.require(Shared.Decks)
+local Campaign = loader.require(Shared.Campaign)
 local AI = loader.require(Shared.AI)
 local Net = loader.require(Shared.Net)
 local Matchmaking = loader.require(Shared.Matchmaking)
@@ -62,6 +63,7 @@ local SPECS = {
 	{ name = "setup", run = require("./specs/setup") },
 	{ name = "mulligan", run = require("./specs/mulligan") },
 	{ name = "deck", run = require("./specs/deck") },
+	{ name = "campaign", run = require("./specs/campaign") },
 	{ name = "cost", run = require("./specs/cost") },
 	{ name = "phases", run = require("./specs/phases") },
 	{ name = "keywords", run = require("./specs/keywords") },
@@ -79,6 +81,7 @@ local ctx = {
 	Rules = Rules,
 	Cards = Cards,
 	Decks = Decks,
+	Campaign = Campaign,
 	AI = AI,
 	Net = Net,
 	Matchmaking = Matchmaking,

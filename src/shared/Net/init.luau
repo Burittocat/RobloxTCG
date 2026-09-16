@@ -52,6 +52,8 @@ end
 	  { kind = "cancel" }    큐 취소
 	  { kind = "practice" }  AI 연습 한 판 (큐를 타지 않고 이 서버에서 바로)
 	  { kind = "home" }      시작 화면으로 (hello 는 '지금 화면을 다시' 라서 이것과 다르다)
+	  { kind = "campaign" }  캠페인 스테이지 목록을 연다
+	  { kind = "campaignStart", index = <스테이지 번호> }  그 스테이지를 시작한다
 	  { kind = "deck" }      덱 편집 화면을 연다 (서버가 저장된 덱을 내려준다)
 	  { kind = "deckSave", entries = { { id, count }, ... } }  덱 저장
 	  { kind = "deckReset" } 스타터 덱으로 되돌린다
@@ -68,6 +70,10 @@ end
 	  { screen = "waiting", text = "상대를 기다리는 중" }  예약 서버에 먼저 도착
 	  { screen = "deck",    entries = { { id, count }, ... }, text = ?, saved = ? }
 	                          덱 편집 화면. entries 는 지금 저장된 덱
+	  { screen = "campaign", stages = { { index, name, note, difficulty, life, gold,
+	                                     unlocked, cleared }, ... }, gold = <가진 골드>, text = ? }
+	                          캠페인 목록. stages 는 Campaign.list 가 만든 그대로다 —
+	                          **상대 덱은 들어 있지 않다** (플레이어가 알면 안 되는 정보)
 	  { screen = "battle" }                            전투 화면으로
 	  { screen = "error",   text = "..." }             큐 실패 등
 
@@ -81,6 +87,7 @@ Net.LobbyScreen = table.freeze({
 	Waiting = "waiting",
 	Battle = "battle",
 	Deck = "deck",
+	Campaign = "campaign",
 	Error = "error",
 })
 

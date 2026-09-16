@@ -60,7 +60,8 @@ function Controller.new(battle, remotes)
 	self.view = nil
 	self.mode = { name = "idle" }
 	self.me, self.foe = DEFAULT_ME, DEFAULT_FOE
-	self.matchMode = "practice" -- App 이 매치 종류에 따라 바꾼다 ("practice" | "pvp" | "tutorial")
+	-- App 이 매치 종류에 따라 바꾼다 ("practice" | "pvp" | "tutorial" | "campaign")
+	self.matchMode = "practice"
 	self.tutorial = Tutorial.new()
 
 	battle.callbacks.handCard = function(id)
@@ -155,6 +156,7 @@ end
 	매치 종류. 끝난 뒤 보여줄 버튼이 달라진다.
 	  practice  다시 하기 / 로비로
 	  pvp       다시 매칭 / 나가기
+	  campaign  목록으로
 ]]
 function Controller:setMatchMode(mode)
 	self.matchMode = mode
@@ -233,6 +235,17 @@ function Controller:endActions()
 			{ key = "leave", text = "나가기" },
 		}
 	end
+
+	--[[
+		캠페인에는 "다시 하기" 가 없다. 서버가 재시작을 받지 않기 때문인데
+		(Lobby:startCampaignStage 주석 — 보상이 걸린 판을 무한 재시도할 수 있게 된다),
+		그래도 버튼을 띄우면 눌러도 아무 일이 일어나지 않는 자리가 생긴다.
+		다시 하려면 목록으로 나갔다 들어온다.
+	]]
+	if self.matchMode == "campaign" then
+		return { { key = "leave", text = "목록으로" } }
+	end
+
 	return {
 		{ key = "restart", text = "다시 하기" },
 		{ key = "leave", text = "로비로" },

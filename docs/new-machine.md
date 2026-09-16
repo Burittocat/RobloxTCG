@@ -90,7 +90,7 @@ VS Code 로 이 폴더를 열면 `.vscode/extensions.json` 이 셋을 권한다.
 ## 5. 다 됐는지 확인
 
 ```powershell
-scripts\ci.cmd          # 문법 · 룰 152개 · 스모크 · 문서 · 빌드
+scripts\ci.cmd          # 문법 · 룰 196개 · 스모크 68개 · 문서 · 빌드
 lune run play           # 터미널에서 AI 와 한 판
 scripts\studio.cmd      # 검사 후 Studio 로 열기
 ```
@@ -102,7 +102,7 @@ scripts\studio.cmd      # 검사 후 Studio 로 열기
 
 | | 필요한 것 |
 |---|---|
-| 테스트 152개 (`scripts\ci.cmd`) | **lune 만** |
+| 테스트 264개 (`scripts\ci.cmd`) | **lune 만** |
 | 터미널에서 한 판 (`lune run play`) | **lune 만** |
 | AI 자기대국 · 카드 표 확인 | **lune 만** |
 | 플레이스 빌드 · 에디터 자동완성 | + rojo |

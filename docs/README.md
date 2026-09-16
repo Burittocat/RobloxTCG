@@ -10,6 +10,7 @@
 | [코드 구조](architecture.md) | 폴더가 무엇을 맡나 · 서버/클라 분담 · 화면이 보고 그리는 것 |
 | [빠른 대전 매칭](matchmaking.md) | 크로스서버 큐 · 예약 서버 · 좌석 · 취소와 만료 |
 | [덱 편집과 저장](decks.md) | 덱 빌더 · DataStore · 대전 서버가 덱을 읽는 경로 |
+| [PvE 캠페인](campaign.md) | 스테이지 표 · 해금과 골드 · 진행도 저장 |
 | [튜토리얼](tutorial.md) | 코치가 붙는 한 판 · 왜 대본이 아니라 조건인가 |
 | [테스트와 CI](testing.md) | 로컬 CI · GitHub Actions · 가짜 Roblox 스모크 테스트 |
 | [★ 확정이 필요한 항목](open-questions.md) | 기획서에 없어서 임의로 정한 것들 |
@@ -31,6 +32,7 @@
 | `src/shared/Matchmaking/**` · `src/server/Matchmaker/**` · `src/server/Arena.luau` · `src/server/Lobby.luau` | [matchmaking.md](matchmaking.md) |
 | `src/client/UI/**` · `src/client/Controller.luau` · `src/client/App.luau` | [architecture.md](architecture.md) |
 | `src/client/Tutorial.luau` | [tutorial.md](tutorial.md) |
+| `src/shared/Campaign/**` · `src/server/CampaignStore.luau` · `src/client/UI/Campaign.luau` | [campaign.md](campaign.md) |
 | `src/server/DeckStore.luau` · `src/client/UI/DeckEditor.luau` | [decks.md](decks.md) |
 | `src/shared/Net/**` | [architecture.md](architecture.md) |
 | `tests/**` · `.github/workflows/**` | [testing.md](testing.md) |

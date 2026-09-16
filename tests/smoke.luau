@@ -215,30 +215,49 @@ end
 ]]
 local function answerTargetPrompt(world, player)
 	local gui = guiOf(player)
-	if not promptText(player):find("대상을 고르세요") then
-		return
-	end
 
-	for _, field in { "MyField", "FoeField" } do
-		local node = litCards(Screen.find(gui, field))[1]
-		if node then
-			Screen.click(node)
-			world:advance(0.4)
+	--[[
+		**창이 닫힐 때까지** 고른다. 한 번만 고르고 나오면 안 된다 — 효과가 둘인 마법은
+		대상도 둘을 묻기 때문이다(돌격 나팔 = +2/+0 과 신속 부여, "(2/2)" 로 표시된다).
+		열린 채로 두면 그 다음 클릭이 전부 대상 고르기로 먹혀서, 자동 조작은 같은 카드를
+		무한히 다시 내고 판은 영영 안 끝난다 — 캠페인 재도전 테스트가 3000번을 눌러도
+		끝나지 않던 것이 이것이었다. 사람이라면 당연히 두 번째도 골랐을 자리다.
+	]]
+	for _ = 1, 6 do
+		if not promptText(player):find("대상을 고르세요") then
 			return
 		end
-	end
 
-	local foePanel = Screen.find(gui, "FoePanel")
-	if isPanelLit(foePanel) then
-		Screen.click(foePanel:FindFirstChild("Hit"))
-		world:advance(0.4)
-		return
-	end
+		local picked = false
 
-	local cancel = activeButton(player, "선택 취소")
-	if cancel then
-		Screen.click(cancel)
-		world:advance(0.2)
+		for _, field in { "MyField", "FoeField" } do
+			local node = litCards(Screen.find(gui, field))[1]
+			if node then
+				Screen.click(node)
+				world:advance(0.4)
+				picked = true
+				break
+			end
+		end
+
+		if not picked then
+			local foePanel = Screen.find(gui, "FoePanel")
+			if isPanelLit(foePanel) then
+				Screen.click(foePanel:FindFirstChild("Hit"))
+				world:advance(0.4)
+				picked = true
+			end
+		end
+
+		-- 고를 것이 없다. 되돌리지 않으면 여기서 굳는다.
+		if not picked then
+			local cancel = activeButton(player, "선택 취소")
+			if cancel then
+				Screen.click(cancel)
+				world:advance(0.2)
+			end
+			return
+		end
 	end
 end
 
@@ -1762,6 +1781,224 @@ t:describe("덱 편집", function()
 		t:truthy(Screen.hasText(guiOf(kim), "60 / 60 장"))
 		t:truthy(Screen.hasText(guiOf(kim), "되돌"), "결과를 알려줘야 합니다")
 	end)
+end)
+
+--==========================================================================
+-- PvE 캠페인
+--==========================================================================
+
+--[[
+	해금과 보상 계산 자체는 tests/specs/campaign.luau 가 본다. 여기서 보는 것은 **배선**이다 —
+	목록이 실제로 뜨는가, 고른 번호로 판이 열리는가, 그리고 판 결과가 DataStore 까지
+	가는가. 셋 다 Studio 를 켜야만 드러나는 종류라 여기서 잡아야 한다.
+]]
+t:describe("캠페인", function()
+	local STORE = "CampaignProgress_v1"
+
+	local function openCampaign()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "캠페인"))
+		world:advance(1)
+		assertNoErrors(world, "캠페인 열기")
+
+		return world, lobby, kim
+	end
+
+	local function progressOf(world, player)
+		local store = world.dataStores[STORE]
+		if not store then
+			return nil
+		end
+		return store[("user_%d"):format(player.UserId)]
+	end
+
+	t:it("목록이 뜨고 첫 칸만 도전할 수 있다", function()
+		local _, _, kim = openCampaign()
+		local gui = guiOf(kim)
+
+		t:truthy(Screen.hasText(gui, "훈련병"), "1번 스테이지가 보여야 합니다")
+
+		local first = Screen.findButton(Screen.find(gui, "Stage1"), "도전")
+		local second = Screen.findButton(Screen.find(gui, "Stage2"), "도전")
+
+		t:truthy(first and first.Active, "1번은 처음부터 열려 있어야 합니다")
+		t:truthy(second, "잠긴 칸도 보이긴 해야 합니다")
+		t:falsy(second.Active, "2번은 아직 잠겨 있어야 합니다")
+	end)
+
+	--[[
+		잠긴 칸의 이름과 설명은 가린다. 난이도와 상대 라이프는 가리지 않는다 —
+		"뒤로 갈수록 세진다" 가 안 보이면 목록이 진도로 안 읽힌다 (UI/Campaign 주석).
+	]]
+	t:it("잠긴 칸은 이름과 공략을 가린다", function()
+		local _, _, kim = openCampaign()
+		local locked = Screen.find(guiOf(kim), "Stage5")
+
+		t:falsy(Screen.hasText(locked, "주문 파쇄자"), "잠긴 칸의 이름이 보이면 안 됩니다")
+		t:truthy(Screen.hasText(locked, "???"), "가려져 있다는 것은 보여야 합니다")
+	end)
+
+	t:it("첫 칸을 누르면 그 상대와 판이 열린다", function()
+		local world, _, kim = openCampaign()
+
+		Screen.click(Screen.findButton(Screen.find(guiOf(kim), "Stage1"), "도전"))
+		world:advance(3)
+		assertNoErrors(world, "캠페인 1번 시작")
+
+		t:truthy(passMulligan(world, kim), "멀리건 관문을 통과하지 못했습니다")
+		t:truthy(waitForButton(world, kim, "페이즈 종료"), "판이 시작돼야 합니다")
+		t:truthy(Screen.hasText(guiOf(kim), "훈련병"), "상대 이름이 스테이지 이름이어야 합니다")
+	end)
+
+	--[[
+		목록에서 잠긴 칸을 못 누르게 해둔 것은 **화면의 편의**일 뿐이다. 리모트는 손으로도
+		부를 수 있으므로 서버가 다시 봐야 한다 (Lobby:startCampaignStage 주석).
+	]]
+	t:it("잠긴 번호는 리모트로 직접 보내도 거부한다", function()
+		local world, lobby, kim = openCampaign()
+
+		lobby.remotes.Lobby._serverSignal:Fire(kim, { kind = "campaignStart", index = 4 })
+		world:advance(3)
+		assertNoErrors(world, "잠긴 스테이지 요청")
+
+		local gui = guiOf(kim)
+		t:falsy(Screen.findButton(gui, "페이즈 종료"), "전투 화면이 열리면 안 됩니다")
+		t:truthy(Screen.hasText(gui, "앞 스테이지를 먼저"), "왜 안 되는지 말해줘야 합니다")
+	end)
+
+	t:it("없는 번호를 보내도 죽지 않는다", function()
+		local world, lobby, kim = openCampaign()
+
+		for _, index in { 0, 99, -1, 1.5, "1", nil } do
+			lobby.remotes.Lobby._serverSignal:Fire(kim, { kind = "campaignStart", index = index })
+			world:advance(0.5)
+		end
+
+		assertNoErrors(world, "이상한 스테이지 번호")
+		t:falsy(Screen.findButton(guiOf(kim), "페이즈 종료"), "전투 화면이 열리면 안 됩니다")
+	end)
+
+	t:it("지면 진행도가 저장되지 않는다", function()
+		local world, _, kim = openCampaign()
+
+		Screen.click(Screen.findButton(Screen.find(guiOf(kim), "Stage1"), "도전"))
+		world:advance(3)
+		passMulligan(world, kim)
+		waitForButton(world, kim, "페이즈 종료")
+
+		Screen.click(Screen.findButton(guiOf(kim), "항복"))
+		world:advance(2)
+		assertNoErrors(world, "캠페인 항복")
+
+		t:eq(outcome(kim), "패배", "항복하면 지는 것입니다")
+		t:eq(progressOf(world, kim), nil, "진 판으로 진행도가 저장되면 안 됩니다")
+	end)
+
+	t:it("끝난 판에는 '다시 하기' 가 없다", function()
+		local world, _, kim = openCampaign()
+
+		Screen.click(Screen.findButton(Screen.find(guiOf(kim), "Stage1"), "도전"))
+		world:advance(3)
+		passMulligan(world, kim)
+		waitForButton(world, kim, "페이즈 종료")
+		Screen.click(Screen.findButton(guiOf(kim), "항복"))
+		world:advance(2)
+
+		--[[
+			서버가 재시작을 안 받으므로(보상이 걸린 판이다) 버튼도 없어야 한다.
+			띄워두면 눌러도 아무 일이 안 일어나는 자리가 된다.
+		]]
+		t:falsy(Screen.findButton(guiOf(kim), "다시 하기"), "캠페인에는 다시 하기가 없어야 합니다")
+		t:truthy(Screen.findButton(guiOf(kim), "목록으로"), "목록으로 돌아갈 길은 있어야 합니다")
+	end)
+
+	t:it("판에서 나오면 시작 화면이 아니라 목록으로 돌아온다", function()
+		local world, _, kim = openCampaign()
+
+		Screen.click(Screen.findButton(Screen.find(guiOf(kim), "Stage1"), "도전"))
+		world:advance(3)
+		passMulligan(world, kim)
+		waitForButton(world, kim, "페이즈 종료")
+		Screen.click(Screen.findButton(guiOf(kim), "항복"))
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "목록으로"))
+		world:advance(2)
+		assertNoErrors(world, "캠페인 목록으로")
+
+		local gui = guiOf(kim)
+		t:truthy(Screen.hasText(gui, "훈련병"), "목록이 다시 떠야 합니다")
+		t:falsy(Screen.findButton(gui, "빠른 대전"), "시작 화면으로 가면 안 됩니다")
+	end)
+
+	--[[
+		한 판을 끝까지 둬서 **클리어가 저장소까지 가는지** 본다.
+
+		여기서 쓰는 자동 조작(pressSomething)은 켜져 있는 것을 아무거나 누르는 수준이다.
+		그걸로 이겨야 한다는 것이 1번 스테이지의 설계다 — 처음 오는 사람이 막히면
+		캠페인이 시작되지도 않는다. 그래서 "이긴다" 를 단언한다. 이게 깨지면 테스트가
+		서툰 게 아니라 **1번이 너무 세진 것**이다 (Campaign.stages 의 1번 주석 참조).
+
+		시드를 안 잡으므로 판마다 셔플이 다르다. 이 단언을 넣기 전에 13판을 돌려
+		13판 다 이기는 것을 보고 걸었다.
+	]]
+	t:it("이기면 진행도와 골드가 저장된다", function()
+		local world, _, kim = openCampaign()
+		local stageGold = 50 -- Campaign.stages[1].gold
+
+		Screen.click(Screen.findButton(Screen.find(guiOf(kim), "Stage1"), "도전"))
+		world:advance(3)
+
+		for _ = 1, 400 do
+			if outcome(kim) then
+				break
+			end
+			pressSomething(world, kim)
+		end
+
+		assertNoErrors(world, "캠페인 한 판")
+		t:eq(outcome(kim), "승리", "1번은 아무 버튼이나 눌러도 이길 수 있어야 합니다")
+
+		--[[
+			화면 문구만 보면 "받았다고 말하는 것" 까지밖에 확인이 안 된다.
+			덱 저장과 같은 이유로 저장된 값을 직접 본다.
+		]]
+		local stored = progressOf(world, kim)
+		t:truthy(stored, "이겼으면 진행도가 저장돼야 합니다")
+		t:eq(stored.cleared, 1)
+		t:eq(stored.gold, stageGold)
+		t:truthy(Screen.hasText(guiOf(kim), "골드"), "얼마를 받았는지 알려줘야 합니다")
+
+		--------------------------------------------------------------
+		-- 깬 결과가 목록까지 돌아오는가
+		--------------------------------------------------------------
+		Screen.click(Screen.findButton(guiOf(kim), "목록으로"))
+		world:advance(2)
+		assertNoErrors(world, "클리어 뒤 목록")
+
+		local gui = guiOf(kim)
+		local first, second = Screen.find(gui, "Stage1"), Screen.find(gui, "Stage2")
+
+		t:truthy(Screen.hasText(first, "클리어"), "깬 칸에 표시가 붙어야 합니다")
+		t:truthy(Screen.findButton(first, "다시"), "깬 칸의 버튼은 '다시' 가 돼야 합니다")
+		t:truthy(Screen.hasText(second, "매사냥꾼"), "다음 칸이 이름을 드러내야 합니다")
+
+		local nextStage = Screen.findButton(second, "도전")
+		t:truthy(nextStage and nextStage.Active, "다음 스테이지가 열려야 합니다")
+	end)
+
+	--[[
+		재도전으로 골드가 또 들어오지 않는 것은 tests/specs/campaign.luau 가 본다.
+
+		여기서 한 판을 더 두지 않는 이유는 그 규칙이 못 미더워서가 아니라, **판마다
+		셔플이 달라 두 판을 연달아 이기는 것을 보장할 수 없기** 때문이다 — 실제로 재도전
+		판을 지면서 테스트가 흔들렸다. 서버가 부르는 계산은 Campaign.applyClear 하나이고,
+		그 결과가 저장소까지 가는 배선은 위 테스트가 이미 지나간다.
+	]]
 end)
 
 --==========================================================================

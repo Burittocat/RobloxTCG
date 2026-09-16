@@ -4,7 +4,7 @@
 	여기서는 카드를 한 장도 내지 않는다. 하는 일은 셋이다.
 	  1. 시작 화면 상태를 클라이언트에 알려준다        (Lobby 리모트)
 	  2. 빠른 대전 큐 등록/취소                        (Matchmaker)
-	  3. AI 연습은 큐를 타지 않고 이 자리에서 한 판 띄운다
+	  3. AI 연습·튜토리얼·캠페인은 큐를 타지 않고 이 자리에서 한 판 띄운다
 
 	PvP 매치는 여기서 굴리지 않는다. 짝이 지어지면 두 사람은 예약 서버로 텔레포트되고
 	거기서 Arena 가 판을 연다. 로비 서버가 대전까지 맡으면 인원이 많은 서버일수록
@@ -21,8 +21,10 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local AI = require(Shared.AI)
 local Net = require(Shared.Net)
 
+local Campaign = require(Shared.Campaign)
 local Decks = require(Shared.Decks)
 
+local CampaignStore = require(script.Parent.CampaignStore)
 local DeckStore = require(script.Parent.DeckStore)
 local MatchRunner = require(script.Parent.MatchRunner)
 local Matchmaker = require(script.Parent.Matchmaker)
@@ -39,6 +41,10 @@ function Lobby.new(remotes, host)
 	self.host = host
 	self.screens = {} :: { [Player]: any }
 	self.deckStore = DeckStore.new()
+	self.campaignStore = CampaignStore.new()
+
+	-- 캠페인 판을 두는 중인 사람 -> 스테이지 번호. 판이 끝나고 어디로 돌려보낼지의 근거다.
+	self.campaignStage = {} :: { [Player]: number }
 
 	self.matchmaker = Matchmaker.new({
 		onMatchFound = function(player, opponentName)
@@ -72,7 +78,9 @@ function Lobby.new(remotes, host)
 	Players.PlayerRemoving:Connect(function(player)
 		self.matchmaker:cancel(player)
 		self.screens[player] = nil
+		self.campaignStage[player] = nil
 		self.deckStore:forget(player)
+		self.campaignStore:forget(player)
 	end)
 
 	for _, player in Players:GetPlayers() do
@@ -175,6 +183,10 @@ function Lobby:onMessage(player, payload)
 		]]
 		self.matchmaker:cancel(player)
 		self:home(player)
+	elseif payload.kind == "campaign" then
+		self:openCampaign(player)
+	elseif payload.kind == "campaignStart" then
+		self:startCampaignStage(player, payload.index)
 	elseif payload.kind == "deck" then
 		self:openDeck(player)
 	elseif payload.kind == "deckSave" then
@@ -308,6 +320,117 @@ function Lobby:startTutorial(player)
 end
 
 --==========================================================================
+-- PvE 캠페인
+--==========================================================================
+
+--[[
+	스테이지 목록을 연다.
+
+	덱 편집과 같은 이유로 대전 중에는 열지 않는다 — 판이 열릴 때 덱과 상대가 정해지므로,
+	두는 중에 목록을 띄우면 "다른 스테이지를 골랐는데 화면은 그대로" 가 된다.
+]]
+function Lobby:openCampaign(player, text)
+	if self.host:runnerFor(player) then
+		return
+	end
+	self.matchmaker:cancel(player)
+
+	local progress = self.campaignStore:get(player)
+
+	self:setScreen(player, {
+		screen = Screen.Campaign,
+		stages = Campaign.list(progress),
+		gold = progress.gold,
+		text = text,
+	})
+end
+
+--[[
+	스테이지 한 판.
+
+	**해금 판정은 서버가 한다.** 클라이언트가 보낸 번호를 그대로 믿으면 목록에서 잠긴
+	칸을 못 누르게 해둔 것이 아무 의미가 없다 — 리모트는 손으로도 부를 수 있다.
+
+	플레이어는 자기가 저장한 덱으로 둔다. 튜토리얼과 다른 점이다(튜토리얼은 가르칠 것을
+	손에 쥐여줘야 해서 덱이 고정이다). 캠페인은 **덱을 고쳐 가며 뚫는 것**이 내용이라
+	덱을 뺏으면 남는 게 없다.
+
+	재시작(R)은 막았다. 스테이지에는 보상이 걸려 있어서, 판이 불리할 때 R 로 다시
+	돌릴 수 있으면 사실상 무한 재시도가 된다. 다시 하려면 목록으로 나갔다 들어온다.
+]]
+function Lobby:startCampaignStage(player, index)
+	if self.host:runnerFor(player) then
+		return
+	end
+
+	local stage = Campaign.get(index)
+	if not stage then
+		self:openCampaign(player, "없는 스테이지입니다")
+		return
+	end
+
+	local progress = self.campaignStore:get(player)
+	if not Campaign.isUnlocked(progress, index) then
+		self:openCampaign(player, "앞 스테이지를 먼저 깨야 합니다")
+		return
+	end
+
+	self.matchmaker:cancel(player)
+	self.campaignStage[player] = index
+
+	local runner = MatchRunner.new(self.remotes, {
+		seats = {
+			[1] = { player = player, deck = self:deckFor(player) },
+			[2] = {
+				ai = stage.difficulty,
+				name = stage.name,
+				deck = Campaign.deckFor(index),
+				life = stage.life,
+			},
+		},
+		-- 도전하는 쪽이 선공. 후공으로 시작해 손도 못 써보고 지면 스테이지 탓을 못 한다.
+		startingPlayerId = 1,
+		onFinish = function(finished)
+			self:onCampaignFinish(player, index, finished)
+		end,
+	})
+
+	self.host:attach(runner)
+	self:setScreen(player, { screen = Screen.Battle, mode = "campaign" })
+end
+
+--[[
+	판이 끝났다. 이겼으면 진행도를 올리고 골드를 준다.
+
+	화면은 전투 그대로 둔다 — 결과를 읽기도 전에 목록으로 튕기면 무슨 일이 있었는지
+	모른 채 끝난다. 목록으로는 사람이 [나가기] 를 눌러 돌아가고, 그때 갱신된 진행도를
+	받는다(leaveMatch 참조).
+
+	저장에 실패하면 **그 사실을 그 자리에서 말한다.** 조용히 넘어가면 다음 접속에
+	깬 스테이지가 사라져 있고, 그때는 원인을 짚을 단서가 없다.
+]]
+function Lobby:onCampaignFinish(player, index, runner)
+	if runner.state.winnerId ~= 1 then
+		return
+	end
+
+	local progress = self.campaignStore:get(player)
+	local updated, gained = Campaign.applyClear(progress, index)
+
+	if gained <= 0 then
+		runner:noticeSeat(1, "이미 깬 스테이지입니다 — 골드는 처음 깼을 때만 받습니다", "info")
+		return
+	end
+
+	local ok, reason = self.campaignStore:save(player, updated)
+	if ok then
+		runner:noticeSeat(1, ("스테이지 클리어 — 골드 %d 획득"):format(gained), "info")
+	else
+		runner:noticeSeat(1, ("클리어했지만 저장하지 못했습니다: %s"):format(tostring(reason)), "error")
+	end
+end
+
+--==========================================================================
 -- AI 연습
 --==========================================================================
 
@@ -359,6 +482,18 @@ end
 function Lobby:leaveMatch(player)
 	-- 진행 중인 판을 두고 나가면 항복과 같다. 끝난 판이면 아무 일도 일어나지 않는다.
 	self.host:release(player)
+
+	--[[
+		캠페인에서 나온 사람은 시작 화면이 아니라 **목록으로** 돌려보낸다. 방금 깬 칸에
+		체크가 붙고 골드가 늘어난 것이 보여야 한 판이 끝난 것으로 읽힌다. 시작 화면으로
+		보내면 다음 스테이지를 고르기까지 두 번을 더 눌러야 한다.
+	]]
+	if self.campaignStage[player] then
+		self.campaignStage[player] = nil
+		self:openCampaign(player)
+		return
+	end
+
 	self:home(player)
 end
 

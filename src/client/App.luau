@@ -10,6 +10,8 @@
 
 	    home / error   시작 화면
 	    queued / found / waiting   시작 화면 위의 대기 표시
+	    campaign       캠페인 스테이지 목록
+	    deck           덱 편집
 	    battle         전투 화면 — 여기서 Controller:start() 가 한 판을 연다
 ]]
 
@@ -17,6 +19,7 @@ local Net = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").
 
 local Battle = require(script.Parent.UI.Battle)
 local Home = require(script.Parent.UI.Home)
+local CampaignScreen = require(script.Parent.UI.Campaign)
 local DeckEditor = require(script.Parent.UI.DeckEditor)
 local Controller = require(script.Parent.Controller)
 
@@ -35,6 +38,18 @@ function App.new(playerGui, remotes)
 	self.home = Home.new(playerGui)
 	self.battle = Battle.new(playerGui)
 	self.deck = DeckEditor.new(playerGui)
+	self.campaign = CampaignScreen.new(playerGui)
+
+	--[[
+		목록에서 고른 번호를 그대로 서버에 보낸다. 여기서 "열려 있나" 를 다시 보지 않는 이유는
+		서버가 어차피 본다는 것이고(Lobby:startCampaignStage), 두 곳에서 보면 어긋난다.
+	]]
+	self.campaign.callbacks.start = function(index)
+		self:send({ kind = "campaignStart", index = index })
+	end
+	self.campaign.callbacks.back = function()
+		self:send({ kind = "home" })
+	end
 
 	--[[
 		덱 편집의 세 버튼. 저장·되돌리기는 서버가 판단하고 화면을 다시 내려주므로
@@ -60,6 +75,9 @@ function App.new(playerGui, remotes)
 	end
 	self.home.callbacks.tutorial = function()
 		self:send({ kind = "tutorial" })
+	end
+	self.home.callbacks.campaign = function()
+		self:send({ kind = "campaign" })
 	end
 	self.home.callbacks.practice = function()
 		self:send({ kind = "practice" })
@@ -95,12 +113,23 @@ function App:show(payload)
 	if screen == Screen.Deck then
 		self.home:setVisible(false)
 		self.battle:setVisible(false)
+		self.campaign:setVisible(false)
 		self.deck:setVisible(true)
 		self.deck:load(payload)
 		return
 	end
 
 	self.deck:setVisible(false)
+
+	if screen == Screen.Campaign then
+		self.home:setVisible(false)
+		self.battle:setVisible(false)
+		self.campaign:setVisible(true)
+		self.campaign:render(payload)
+		return
+	end
+
+	self.campaign:setVisible(false)
 
 	if screen == Screen.Battle then
 		self.home:setVisible(false)

@@ -165,6 +165,27 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     }
 }
 
+Write-Step "커밋할 사람"
+
+# 이름과 메일이 없으면 git 은 커밋을 **거부한다**. 그런데 그 사실은 한참 작업한 뒤
+# 처음 커밋할 때에야 드러난다 — 새 컴퓨터에서 가장 자주 걸리는 곳이라 여기서 미리 본다.
+# 여기서도 "됐다" 고 말하지 않는다. 읽어보고 있으면 있다고, 없으면 없다고만 한다.
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Warn2 "git 이 없어 건너뜁니다."
+} else {
+    $who = & git config user.name
+    $mail = & git config user.email
+
+    if ($who -and $mail) {
+        Write-Ok "$who <$mail>"
+    } else {
+        Write-Warn2 "정해져 있지 않습니다. 이대로는 첫 커밋이 거부됩니다:"
+        Write-Warn2 '    git config --global user.name  "내이름"'
+        Write-Warn2 '    git config --global user.email "내메일@example.com"'
+        Write-Warn2 "GitHub 계정에 등록된 메일을 쓰면 올린 커밋이 내 것으로 잡힙니다."
+    }
+}
+
 Write-Step "Lune 타입 정의 (에디터가 @lune/* 를 알아보게 한다)"
 & (Join-Path $toolsDir 'lune.exe') setup | Out-Null
 Write-Ok ".lune/ 생성"

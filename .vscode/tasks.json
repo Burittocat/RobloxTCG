@@ -1,11 +1,20 @@
 {
   "version": "2.0.0",
+
+  // bootstrap 은 rojo·lune 을 저장소 안 .tools\\ 에 받는다. -Persist 를 안 붙였으면
+  // PATH 에는 없으므로, 여기서 앞에 얹어 준다 — 그래야 VS Code 를 새로 열어도
+  // 작업이 "rojo 를 찾을 수 없습니다" 로 죽지 않는다. aftman 으로 깐 사람은
+  // 그쪽이 뒤에 그대로 남아 있어 영향이 없다.
+  "options": {
+    "env": { "PATH": "${workspaceFolder}\\.tools;${env:PATH}" }
+  },
+
   "tasks": [
     {
       // 커밋 훅이 돌리는 것과 **같은 스크립트**. 검사 내용이 갈라지지 않는다.
       "label": "로컬 CI (문법 · 테스트 · 빌드)",
       "type": "shell",
-      "command": "scripts\ci.cmd",
+      "command": "scripts\\ci.cmd",
       "problemMatcher": [],
       "group": { "kind": "build", "isDefault": true }
     },
@@ -36,7 +45,7 @@
       // 검사를 전부 돌린 뒤 플레이스를 만들어 Studio 로 연다.
       "label": "Studio 에서 열기 (검사 후)",
       "type": "shell",
-      "command": "scripts\studio.cmd",
+      "command": "scripts\\studio.cmd",
       "problemMatcher": []
     },
     {

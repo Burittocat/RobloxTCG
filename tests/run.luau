@@ -58,6 +58,13 @@ loader.globals.game = {
 
 local Controller = loader.require(Client.Controller)
 
+--[[
+	때리는 장면의 시간표. 화면 모듈 중 **유일하게** 여기서 로드할 수 있다 —
+	순수 계산이라 Color3 도 Instance 도 건드리지 않기 때문이다. 나머지 UI 는
+	tests/smoke.luau 가 진짜 트리 위에서 본다.
+]]
+local CombatTiming = loader.require(Client.UI.CombatTiming)
+
 
 local SPECS = {
 	{ name = "setup", run = require("./specs/setup") },
@@ -74,6 +81,7 @@ local SPECS = {
 	{ name = "net", run = require("./specs/net") },
 	{ name = "matchmaking", run = require("./specs/matchmaking") },
 	{ name = "controller", run = require("./specs/controller") },
+	{ name = "strike", run = require("./specs/strike") },
 }
 
 local t = Test.new()
@@ -86,6 +94,7 @@ local ctx = {
 	Net = Net,
 	Matchmaking = Matchmaking,
 	Controller = Controller,
+	CombatTiming = CombatTiming,
 	Fixture = Fixture,
 }
 

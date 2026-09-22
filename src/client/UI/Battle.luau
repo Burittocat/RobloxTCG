@@ -22,6 +22,7 @@ local Widgets = require(script.Parent.Widgets)
 local CardView = require(script.Parent.CardView)
 local Reconcile = require(script.Parent.Reconcile)
 local Motion = require(script.Parent.Motion)
+local CombatTiming = require(script.Parent.CombatTiming)
 
 local new = Widgets.new
 local Enums = Rules.Enums
@@ -104,10 +105,21 @@ function Battle.new(parent)
 	self.busyCards = setmetatable({}, { __mode = "k" })
 	self.dyingNodes = {}
 
+	--[[
+		지금 바빠서 아직 못 한 돌진.
+
+		카드 하나가 동시에 두 곳에 달려갈 수는 없으므로 **줄을 세워 차례로** 내보낸다.
+		예전에는 바쁘면 그냥 버렸다 — 그래서 겹쳐 막기에서 한 공격자가 둘을 때릴 때
+		두 번째 돌진이 통째로 사라졌고, 두 번째 방어자는 맞지도 않았는데 수치만
+		나중에 조용히 깎였다.
+	]]
+	self.strikeQueue = setmetatable({}, { __mode = "k" })
+
 	-- 이미 재생한 전투. 같은 것을 두 번 재생하지 않는다.
 	self.lastCombatSeq = nil
 	self.combatSeeded = false
 	self.pendingStrike = 0
+	self.combatSchedule = nil
 
 	--[[
 		생물 수치(공격력 / 남은 체력)를 **화면이 지금 무엇을 보여주고 있는가** 로
@@ -120,13 +132,18 @@ function Battle.new(parent)
 		  shownDamage  그 카드가 지금 몇 의 피해를 입은 것으로 그려져 있는가
 		  statHold     이번 스냅샷에서 **맞는 순간까지 예전 수치를 들고 있을** 카드
 		  statReveal   그때 다시 칠하는 데 쓸 카드 데이터
+		  statPending  이번 전투에서 그 카드가 **앞으로 몇 대 더 맞는가**
 
 		겹쳐 막기처럼 한 카드가 여러 번 맞으면 피해를 **한 번에 하나씩 더한다.**
 		최종값으로 바로 뛰면 첫 타격에 두 대 분이 깎여서 수가 안 맞는다.
+		그래서 남은 횟수를 세어 **마지막 한 대**에서만 홀드를 놓는다 — 첫 대에 놓으면
+		다음 렌더가 스냅샷의 최종 수치로 칠해버려서, 남은 타격이 닿기도 전에
+		수가 맞아 있다.
 	]]
 	self.shownDamage = {}
 	self.statHold = {}
 	self.statReveal = {}
+	self.statPending = {}
 	self.statToken = 0
 	self.me, self.foe = DEFAULT_ME, DEFAULT_FOE
 
@@ -1458,6 +1475,19 @@ function Battle:refreshRow(row)
 end
 
 --[[
+	그 카드가 **마지막으로 맞는** 시각. 이번 스냅샷에 전투가 없으면 0 이다.
+
+	쓰러지는 연출을 여기까지 미룬다. 겹쳐 막기에서 두 번째로 맞고 죽는 카드가
+	첫 타격 시각에 맞춰 쓰러지면, 아직 달려오고 있는 공격자가 허공을 친다.
+
+	표에 없는 카드(전투가 아닌 이유로 죽은 것)는 예전처럼 첫 타격 시각을 쓴다.
+]]
+function Battle:impactTime(instanceId)
+	local schedule = self.combatSchedule
+	return (schedule and schedule.impact[instanceId]) or self.pendingStrike
+end
+
+--[[
 	전투에 등장하는 카드 노드를 찾는다.
 
 	죽은 것까지 찾아야 한다. 서버는 전투를 통째로 해결하고 결과만 보내므로,
@@ -1527,6 +1557,7 @@ function Battle:settleStats()
 
 	self.statHold = {}
 	self.statReveal = {}
+	self.statPending = {}
 end
 
 --[[
@@ -1553,12 +1584,46 @@ function Battle:revealStat(instanceId, amount)
 	local shown = (self.shownDamage[instanceId] or 0) + amount
 	self.shownDamage[instanceId] = shown
 
-	-- 이 카드는 제 몫을 다 보여줬다. 다음 렌더부터는 평소대로 그린다.
-	self.statHold[instanceId] = nil
-	self.statReveal[instanceId] = nil
+	--[[
+		겹쳐 막기에서는 한 카드가 여러 번 맞는다 — 방어자는 한 대씩이지만
+		공격자는 **방어자 수만큼** 맞는다. 남은 횟수를 세어 마지막 한 대에서만
+		홀드를 놓는다. 첫 대에 놓으면 다음 렌더가 스냅샷의 최종 수치로 칠해서,
+		남은 타격이 닿기도 전에 수가 맞아 있다.
+	]]
+	local left = (self.statPending[instanceId] or 1) - 1
+	if left > 0 then
+		self.statPending[instanceId] = left
+	else
+		-- 이 카드는 제 몫을 다 보여줬다. 다음 렌더부터는 평소대로 그린다.
+		self.statPending[instanceId] = nil
+		self.statHold[instanceId] = nil
+		self.statReveal[instanceId] = nil
+	end
 
 	local pop = Theme.motion.statHit
 	Motion.popText(CardView.paintStat(card, instance, shown), pop.grow, pop.settle)
+end
+
+--[[
+	연출이 끝나 카드가 자리를 놓는다.
+
+	기다리던 돌진이 있으면 **여기서 이어 붙인다.** 줄이 다 빌 때까지는 줄 배치도
+	이 카드를 도로 가져가지 않는다 — 돌진 사이에 한 번 제자리로 돌아갔다가
+	다시 달려가면 그 왕복이 타격 하나로 잘못 읽힌다.
+]]
+function Battle:releaseCard(node)
+	self.busyCards[node] = nil
+
+	local queue = self.strikeQueue[node]
+	local waiting = queue and table.remove(queue, 1)
+
+	if waiting then
+		waiting()
+		return
+	end
+
+	self.strikeQueue[node] = nil
+	self:refreshRow(node.Parent)
 end
 
 --[[
@@ -1576,8 +1641,7 @@ function Battle:shakeCard(node)
 	self.busyCards[node] = true
 
 	Motion.shake(node, shake.distance, shake.times, shake.each, function()
-		self.busyCards[node] = nil
-		self:refreshRow(node.Parent)
+		self:releaseCard(node)
 	end)
 end
 
@@ -1590,6 +1654,24 @@ end
 ]]
 function Battle:strikeAt(attacker, target, damageToTarget, damageToAttacker, ids)
 	if self.busyCards[attacker] then
+		--[[
+			이 카드는 지금 다른 연출에 잡혀 있다. **버리지 않고 줄을 세운다.**
+
+			겹쳐 막기에서 한 공격자가 둘을 때릴 때 두 번째 돌진이 여기서 사라지고
+			있었다. 카드 하나가 동시에 두 곳에 달려갈 수는 없으니 차례로 간다 —
+			한 번에 크게 때리는 쪽은 안 된다. 서버는 방어자마다 따로 피해를
+			나눠주므로(Combat.splitAmongBlockers) 한 대로 합치면 어느 방어자가
+			몇 을 맞았는지가 화면에서 사라진다.
+		]]
+		local queue = self.strikeQueue[attacker]
+		if not queue then
+			queue = {}
+			self.strikeQueue[attacker] = queue
+		end
+
+		table.insert(queue, function()
+			self:strikeAt(attacker, target, damageToTarget, damageToAttacker, ids)
+		end)
 		return
 	end
 
@@ -1624,8 +1706,7 @@ function Battle:strikeAt(attacker, target, damageToTarget, damageToAttacker, ids
 
 		self:shakeCard(target)
 	end, function()
-		self.busyCards[attacker] = nil
-		self:refreshRow(attacker.Parent)
+		self:releaseCard(attacker)
 	end)
 end
 
@@ -1668,6 +1749,14 @@ function Battle:playDeath(card, key, delay)
 end
 
 --[[
+	이번 전투의 시간표를 짠다. 계산은 CombatTiming 이 하고, 여기서는 Theme 의
+	숫자를 건네주기만 한다 — 그래야 그 계산을 화면 없이 테스트할 수 있다.
+]]
+function Battle:scheduleCombat(events)
+	return CombatTiming.schedule(events, Theme.motion.strike, Theme.motion.shake)
+end
+
+--[[
 	전투 결과를 한 번 재생한다.
 
 	서버가 보내는 events 는 Combat.resolve 가 만든 것이다 — 누가 누구를 몇 대
@@ -1679,13 +1768,13 @@ end
 	  AttackFizzled / Destroyed  움직일 것이 없다
 
 	여럿이 동시에 공격하면 **시차를 준다**(strike.stagger). 전부 한꺼번에 움직이면
-	무슨 일이 일어났는지 눈이 못 따라간다.
+	무슨 일이 일어났는지 눈이 못 따라간다. 한 공격자가 여럿을 때리는 경우(겹쳐 막기)는
+	시차가 아니라 **차례**다 — 앞 돌진이 끝나야 다음이 간다. 시각은 scheduleCombat 가 짠다.
 ]]
 function Battle:playCombat(events)
-	local strike = Theme.motion.strike
-	local order = 0
+	local schedule = self.combatSchedule or self:scheduleCombat(events)
 
-	for _, event in events do
+	for index, event in events do
 		local attacker = self:combatNode(event.attackerId)
 		local target, toTarget, toAttacker
 
@@ -1704,11 +1793,9 @@ function Battle:playCombat(events)
 			target = (event.playerId == self.me) and self.myPanel.frame or self.foePanel.frame
 		end
 
-		if attacker and target then
-			order += 1
-
-			local delay = (order - 1) * strike.stagger
-			task.delay(delay, function()
+		local start = schedule.starts[index]
+		if attacker and target and start then
+			task.delay(start, function()
 				self:strikeAt(attacker, target, toTarget, toAttacker, ids)
 			end)
 		end
@@ -1721,13 +1808,8 @@ function Battle:playCombat(events)
 		안 된다. 스포트라이트가 쓰는 방식과 같다.
 	]]
 	local token = self.statToken
-	local total = math.max(0, order - 1) * strike.stagger
-		+ strike.windup
-		+ strike.dash
-		+ strike.hold
-		+ strike.recover
 
-	task.delay(total, function()
+	task.delay(schedule.total, function()
 		if self.statToken == token then
 			self:settleStats()
 		end
@@ -1757,8 +1839,11 @@ function Battle:renderPlayerPanel(panel, state, playerId, opts)
 			연결되지 않는다. 전투가 아닌 피해(주문 등)는 pendingStrike 가 0 이라
 			예전처럼 즉시 뜬다.
 		]]
-		if self.pendingStrike > 0 then
-			task.delay(self.pendingStrike, function()
+		local schedule = self.combatSchedule
+		local at = (schedule and schedule.player[playerId]) or self.pendingStrike
+
+		if at > 0 then
+			task.delay(at, function()
 				self:flashDamage(panel, amount)
 			end)
 		else
@@ -1885,7 +1970,7 @@ function Battle:renderField(row, state, playerId, opts)
 	]]
 	local drawn = Reconcile.children(row, items, {
 		exit = function(card, key)
-			return self:playDeath(card, key, self.pendingStrike)
+			return self:playDeath(card, key, self:impactTime(key))
 		end,
 	})
 	for index, card in drawn do
@@ -2238,6 +2323,7 @@ function Battle:render(state, opts)
 
 	local strike = Theme.motion.strike
 	self.pendingStrike = combatEvents and (strike.windup + strike.dash) or 0
+	self.combatSchedule = combatEvents and self:scheduleCombat(combatEvents) or nil
 
 	--[[
 		이번 전투로 피해를 입을 생물을 미리 골라둔다. renderField 가 이 표를 보고
@@ -2274,6 +2360,9 @@ function Battle:render(state, opts)
 
 			self.statHold[instanceId] = true
 			self.statReveal[instanceId] = card
+
+			-- 몇 대 맞는가. 마지막 한 대에서만 홀드를 놓는다(revealStat).
+			self.statPending[instanceId] = (self.statPending[instanceId] or 0) + 1
 		end
 
 		for _, event in combatEvents do

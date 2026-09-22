@@ -50,6 +50,9 @@ src/client/
   UI/Theme.luau          색 · 치수 · 폰트 한 곳
   UI/Widgets.luau        Instance 생성 헬퍼
   UI/CardView.luau       카드 한 장 그리기
+  UI/Motion.luau         트윈 한 곳 (날아오기 · 돌진 · 흔들림 · 떠오르는 숫자)
+  UI/CombatTiming.luau   때리는 장면의 시간표. 화면을 모르는 순수 계산이라 테스트가 있다
+  UI/Reconcile.luau      카드를 키로 들고 고쳐 그린다 (없으면 카드 연출이 원리적으로 불가능)
   UI/Home.luau           시작 화면 (빠른 대전 / 튜토리얼 / 캠페인 / AI 연습 / 덱 편집)
   UI/Campaign.luau       캠페인 스테이지 목록 (판정은 한 줄도 없다 — 서버가 계산해 내려준다)
   UI/Battle.luau         전투 화면 전체 (룰 판정은 한 줄도 없다)

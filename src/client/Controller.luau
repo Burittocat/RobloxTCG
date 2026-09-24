@@ -59,6 +59,7 @@ function Controller.new(battle, remotes)
 	self.remotes = remotes
 	self.view = nil
 	self.mode = { name = "idle" }
+	self.confirmPass = false -- 스택 칩을 눌러 "대응 없이 넘길까요?" 를 띄운 상태
 	self.me, self.foe = DEFAULT_ME, DEFAULT_FOE
 	-- App 이 매치 종류에 따라 바꾼다 ("practice" | "pvp" | "tutorial" | "campaign")
 	self.matchMode = "practice"
@@ -116,6 +117,7 @@ function Controller:start()
 	-- 지난 판의 뷰가 남아 있으면 새 판의 첫 스냅샷이 오기 전에 옛 판이 그려진다.
 	self.view = nil
 	self.mode = { name = "idle" }
+	self.confirmPass = false
 	self.tutorial:reset()
 
 	self.session = (self.session or 0) + 1
@@ -147,8 +149,10 @@ function Controller:onSync(payload)
 	self.me = self.view.viewerId or DEFAULT_ME
 	self.foe = GameState.opponentOf(self.me)
 
-	-- 서버 상태가 바뀌면 진행 중이던 선택은 의미를 잃는다.
+	-- 서버 상태가 바뀌면 진행 중이던 선택은 의미를 잃는다. 묻던 것도 같이 거둔다 —
+	-- 스택에 한 장 더 쌓인 뒤에도 확인이 남아 있으면, 방금 읽은 것과 다른 것을 넘기게 된다.
 	self.mode = { name = "idle" }
+	self.confirmPass = false
 	self:refresh()
 end
 
@@ -507,6 +511,12 @@ function Controller:refresh()
 
 	local allow = self:coachAllow()
 
+	--[[
+		묻는 중이라도 그 사이에 패스가 불가능해졌으면(스택이 비었거나 내 차례가 아니게
+		됐다) 확인 버튼을 띄우지 않는다. 눌러봐야 거부당할 버튼은 없는 것만 못하다.
+	]]
+	local buttons = self:buttonStates()
+
 	self.battle:render(self.view, {
 		highlights = self:highlights(),
 		selectedId = self.mode.cardId or self.mode.attackerId or self.mode.blockerId,
@@ -516,7 +526,8 @@ function Controller:refresh()
 		endNote = self:endNote(),
 		lockedHand = self:lockedHand(allow),
 		busy = (not self.view.finished) and whoActs(self.view) ~= self.me,
-		buttons = self:buttonStates(),
+		buttons = buttons,
+		confirmPass = self.confirmPass and buttons.pass or false,
 		endActions = self:endActions(),
 	})
 end
@@ -736,10 +747,30 @@ function Controller:onPlayer(playerId)
 	end
 end
 
+--[[
+	스택 칩을 누르는 일.
+
+	대상 고르는 중이면 그 칩이 대상이다(즉시시전으로 스택을 되받아치는 경우).
+	그게 아니면 **대응 패스를 묻는다** — 대응 창은 보드 한가운데서 열리는데
+	[대응 패스] 는 오른쪽 끝에 있어서, 매번 눈과 손이 화면을 가로질러야 했다.
+
+	곧장 넘기지 않고 한 번 묻는 이유는 `Battle:renderCenter` 의 확인 버튼 주석에 있다.
+	패스가 지금 가능한지는 `buttonStates` 에 묻는다 — 튜토리얼 잠금까지 거기 들어 있어서,
+	코치가 아직 안 켠 패스를 이 지름길로 앞질러 갈 수 없다.
+]]
 function Controller:onStackItem(stackItemId)
 	if self.mode.name == "target" then
 		self:takeTarget({ kind = "StackItem", id = stackItemId })
+		return
 	end
+
+	if not self:buttonStates().pass then
+		return
+	end
+
+	-- 같은 칩을 다시 누르면 묻기를 거둔다. 물어놓고 빠져나갈 길이 없으면 안 된다.
+	self.confirmPass = not self.confirmPass
+	self:refresh()
 end
 
 --==========================================================================
@@ -776,6 +807,7 @@ function Controller:onAction(key)
 	end
 	if key == "cancel" then
 		self.mode = { name = "idle" }
+		self.confirmPass = false
 		self:refresh()
 		return
 	end
@@ -806,6 +838,7 @@ function Controller:onAction(key)
 		self:send({ kind = "endPhase" })
 	elseif key == "pass" then
 		self.mode = { name = "idle" }
+		self.confirmPass = false
 		self:send({ kind = "pass" })
 	elseif key == "concede" then
 		self:send({ kind = "concede" })

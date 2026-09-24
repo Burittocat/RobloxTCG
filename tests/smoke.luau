@@ -568,6 +568,77 @@ t:describe("AI 연습", function()
 		t:falsy(activeButton(kim, "대응 패스"), "누르면 대응 창이 닫혀야 합니다")
 	end)
 
+	--[[
+		대응 창은 보드 한가운데서 열리는데 [대응 패스] 는 행동 바(오른쪽 끝)에 있다.
+		매번 눈과 손이 화면을 가로지르는 것이라, **스택 칩 자체를 눌러도** 넘어갈 수 있다.
+
+		다만 곧장 넘기지는 않는다. 그 칩은 상대가 무엇을 냈는지 읽는 유일한 자리라,
+		읽으려고 누른 사람이 대응 기회를 잃으면 자동 패스를 끈 이유가 사라진다.
+	]]
+	local function openResponse(world, kim)
+		for _ = 1, 40 do
+			if activeButton(kim, "대응 패스") then
+				return true
+			end
+			local endPhase = activeButton(kim, "페이즈 종료")
+			if endPhase then
+				Screen.click(endPhase)
+			end
+			world:advance(1)
+		end
+		return false
+	end
+
+	t:it("스택 칩을 눌러도 대응을 넘길 수 있다 — 확인을 한 번 거친다", function()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "AI 연습"))
+		world:advance(3)
+		t:truthy(passMulligan(world, kim), "멀리건 관문을 통과하지 못했습니다")
+		t:truthy(openResponse(world, kim), "상대가 카드를 내면 대응 창이 열려야 합니다")
+
+		local chip = Screen.findNamed(guiOf(kim), "Stack_")
+		t:truthy(chip, "스택에 올라간 카드가 칩으로 그려져야 합니다")
+
+		Screen.click(chip)
+		world:advance(1)
+		assertNoErrors(world, "스택 칩 누르기")
+
+		t:truthy(activeButton(kim, "대응 없이 넘길까요?"), "칩을 누르면 확인이 떠야 합니다")
+		t:truthy(activeButton(kim, "대응 패스"), "확인하기 전에 넘어가면 안 됩니다")
+
+		Screen.click(activeButton(kim, "대응 없이 넘길까요?"))
+		world:advance(2)
+		assertNoErrors(world, "확인 누르기")
+		t:falsy(activeButton(kim, "대응 패스"), "확인을 누르면 대응 창이 닫혀야 합니다")
+	end)
+
+	-- 물어놓고 빠져나갈 길이 없으면 안 된다. 같은 칩을 다시 누르면 묻기를 거둔다.
+	t:it("스택 칩을 다시 누르면 확인이 사라진다", function()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "AI 연습"))
+		world:advance(3)
+		t:truthy(passMulligan(world, kim), "멀리건 관문을 통과하지 못했습니다")
+		t:truthy(openResponse(world, kim), "상대가 카드를 내면 대응 창이 열려야 합니다")
+
+		Screen.click(Screen.findNamed(guiOf(kim), "Stack_"))
+		world:advance(1)
+		t:truthy(activeButton(kim, "대응 없이 넘길까요?"), "확인이 떠야 합니다")
+
+		Screen.click(Screen.findNamed(guiOf(kim), "Stack_"))
+		world:advance(1)
+		assertNoErrors(world, "칩 다시 누르기")
+		t:falsy(activeButton(kim, "대응 없이 넘길까요?"), "다시 누르면 확인이 사라져야 합니다")
+		t:truthy(activeButton(kim, "대응 패스"), "대응 창은 그대로 열려 있어야 합니다")
+	end)
+
 	t:it("항복하면 결과 화면이 뜬다", function()
 		local world = Roblox.newWorld()
 		local lobby = world:newServer():boot()

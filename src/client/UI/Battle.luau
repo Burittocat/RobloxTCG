@@ -2055,6 +2055,7 @@ function Battle:renderCenter(state, opts)
 			local targeted = opts.highlights.stack[item.id]
 
 			local chip = Widgets.button(("%s  (%s)"):format(def.name, mine and "내 것" or "상대"), {
+				Name = ("Stack_%s"):format(tostring(item.id)),
 				Size = UDim2.fromOffset(220, 34),
 				BackgroundColor3 = Theme.color.stack,
 				BackgroundTransparency = 0.1,
@@ -2082,6 +2083,24 @@ function Battle:renderCenter(state, opts)
 			TextXAlignment = Enum.TextXAlignment.Center,
 		}))
 		add(strip)
+
+		--[[
+			스택 칩을 누르면 여기로 확인이 뜨고, 이것을 눌러야 실제로 넘어간다.
+			행동 바까지 가지 않아도 되게 한 것인데, **칩이 곧장 패스하지는 않는다** —
+			그 칩은 상대가 무엇을 냈는지 읽는 유일한 자리라, 읽으려고 누른 사람이
+			대응 기회를 잃으면 자동 패스를 끈 이유가 사라진다.
+		]]
+		if opts.confirmPass then
+			add(Widgets.button("대응 없이 넘길까요?", {
+				Name = "ConfirmPass",
+				Size = UDim2.fromOffset(220, 32),
+				BackgroundColor3 = Theme.color.stack,
+				TextColor3 = Theme.color.bgDeep,
+				TextSize = Theme.text.body,
+			}, function()
+				self.callbacks.action("pass")
+			end))
+		end
 	end
 
 	-- 전투 선언 현황
@@ -2214,6 +2233,7 @@ end
 		lockedHand = { [id]: true }?,  -- 튜토리얼이 잠근 손패 카드
 		busy       = boolean,   -- 상대가 두는 중
 		buttons    = { [key] = boolean },  -- 켜둘 버튼
+		confirmPass = boolean?, -- 스택 칩을 눌러 대응 패스를 묻는 중
 	}
 ]]
 function Battle:render(state, opts)

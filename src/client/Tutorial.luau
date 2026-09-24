@@ -207,9 +207,9 @@ end
 local STEPS = {
 	{
 		key = "mulligan",
-		text = "손패 7장으로 시작해요.\n"
-			.. "마음에 안 들면 딱 한 번, 벌칙 없이 통째로 바꿀 수 있어요.\n"
-			.. "[이대로 시작] 을 눌러 볼까요.",
+		text = "게임을 시작하면 손패 7장을 기본으로 뽑습니다.\n"
+			.. "손패가 마음에 안 들면 딱 한 번, 통째로 바꿀 수 있습니다.\n"
+			.. "[이대로 시작] 버튼을 눌러보세요.",
 		done = function(view)
 			return view.phase ~= Phase.Mulligan
 		end,
@@ -221,9 +221,9 @@ local STEPS = {
 
 	{
 		key = "cost",
-		text = "카드를 내려면 <b>코스트</b> 가 필요해요.\n"
-			.. "손패에서 [에너지 코어] 를 눌러 전장에 내세요.\n"
-			.. "코스트 카드는 한 턴에 한 장만 낼 수 있어요.",
+		text = "카드를 내려면 <b>코스트</b> 가 필요합니다.\n"
+			.. "손패에서 [에너지 코어] 를 눌러 전장에 내볼까요.\n"
+			.. "코스트 카드인 <b>에너지코어</b> 는 특수한 경우가 아니라면 한 턴에 딱 한 장씩만 낼 수 있어요.",
 		done = function(view, me)
 			return #GameState.costCardsOnField(view, me) > 0
 		end,
@@ -238,8 +238,8 @@ local STEPS = {
 			1코 생물이 손에 없을 수 있다. 그때는 이 단계를 건너뛴다 —
 			낼 수 없는 카드를 가리키며 "소환하세요" 라고 하면 거기서 막힌다.
 		]]
-		text = "전장의 코스트 카드를 <b>탭</b> 하면 코스트 1 이 나와요.\n"
-			.. "이제 생물을 소환해 보세요. 지금 낼 수 있는 카드가 밝게 켜져 있어요.",
+		text = "이제 생물을 소환해 보세요. 지금 낼 수 있는 카드가 밝게 켜져 있어요.\n"
+			.. "아까 낸 '에너지코어'카드가 코스트 개념으로 적용됩니다.",
 		skip = function(view, me)
 			return #playableIds(view, me, CardType.Creature) == 0
 		end,
@@ -260,8 +260,8 @@ local STEPS = {
 			endMain 이 같은 일(페이즈 종료)을 맡는다.
 		]]
 		key = "tap",
-		text = "코스트 카드가 <b>탭</b> 됐어요 — 옆으로 누운 카드예요.\n"
-			.. "이번 턴엔 다시 못 쓰고, 내 턴이 시작할 때 <b>언탭</b> 돼요.\n"
+		text = "코스트 카드의 노란색 점이 꺼졌습니다, 노란색 점이 꺼진 코스트카드는 이미 사용했다는 뜻이에요\n"
+			.. "이번 턴엔 다시 못 쓰고, 내 턴이 시작할 때 다시 사용할 수 있습니다.\n"
 			.. "[페이즈 종료] 로 공격준비로 넘어가세요.",
 		skip = function(view, me)
 			return not myTurn(view, me) or not hasTappedCard(view, me)
@@ -293,8 +293,7 @@ local STEPS = {
 			신속 생물을 냈다면 이 설명은 거짓말이 된다(그 생물은 지금 공격할 수 있다).
 			그때는 건너뛰고 공격 단계에서 만난다.
 		]]
-		text = "방금 소환한 생물은 이번 턴에 공격할 수 없어요 — <b>소환 멀미</b> 예요.\n"
-			.. "(신속 태그가 있으면 예외예요)\n"
+		text = "방금 소환한 생물은 이번 턴에 공격할 수 없어요 보통 <b>소환 멀미</b> 라고 부릅니다.\n"
 			.. "[페이즈 종료] 로 턴을 넘기세요.",
 		skip = function(view, me)
 			return not myTurn(view, me) or #attackerIds(view, me) > 0

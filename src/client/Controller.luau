@@ -24,6 +24,7 @@ local Rules = require(Shared.Rules)
 local Net = require(Shared.Net)
 
 local Tutorial = require(script.Parent.Tutorial)
+local Sfx = require(script.Parent.UI.Sfx)
 
 local Enums = Rules.Enums
 local GameState = Rules.GameState
@@ -797,6 +798,14 @@ function Controller:onAction(key)
 	if key ~= "concede" then
 		self.confirmConcede = false
 	end
+
+	--[[
+		눌린 소리. 여기 두는 이유는 **버튼과 단축키가 같은 문으로 들어오기** 때문이다.
+		위젯 쪽에 달면 키보드로 넘긴 페이즈는 소리가 안 난다.
+
+		거부당한 경우(코치가 안 켠 버튼 등)는 아래에서 coachToast 가 deny 를 울린다.
+	]]
+	Sfx.play("click")
 
 	if key == "log" then
 		self.battle:toggleLog()

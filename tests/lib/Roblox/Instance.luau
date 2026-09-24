@@ -41,6 +41,8 @@ local PARENT_CLASS = {
 	TextLabel = "GuiObject",
 	ImageLabel = "GuiObject",
 
+	Sound = "Instance",
+
 	UIComponent = "Instance",
 	UICorner = "UIComponent",
 	UIStroke = "UIComponent",
@@ -114,6 +116,19 @@ end
 local PROPERTIES = {
 	Folder = merge(COMMON),
 	RemoteEvent = merge(COMMON),
+
+	--[[
+		소리. 진짜 Sound 의 속성을 다 옮기지는 않았다 — 이 게임이 쓰는 것만 둔다.
+		모르는 속성에 대입하면 하네스가 에러를 내므로, 늘어나면 여기에 같이 적는다.
+	]]
+	Sound = merge(COMMON, {
+		"SoundId",
+		"Volume",
+		"PlaybackSpeed",
+		"Looped",
+		"TimePosition",
+		"Playing",
+	}),
 	Camera = merge(COMMON, { "CameraType", "CFrame", "FieldOfView", "CameraSubject", "ViewportSize" }),
 
 	TeleportOptions = merge(COMMON, {
@@ -185,6 +200,9 @@ local DEFAULTS = {
 	AbsolutePosition = Datatypes.Vector2.new(0, 0),
 	AbsoluteContentSize = Datatypes.Vector2.new(0, 0),
 	Text = "",
+	SoundId = "",
+	Volume = 0.5,
+	Playing = false,
 	Transparency = 0,
 	BackgroundTransparency = 0,
 	TextTransparency = 0,
@@ -453,6 +471,19 @@ local function attachRemote(node)
 	end)
 end
 
+--[[
+	이 프로세스에서 난 소리 전부. 월드가 아니라 모듈에 두는 이유는 Sound 가
+	월드를 모르기 때문이다(다른 인스턴스도 마찬가지다). 테스트는 판을 시작하기 전에
+	takeSounds 로 비우고, 끝나고 다시 꺼내 "그 사이에 무엇이 울렸나" 를 본다.
+]]
+RobloxInstance.soundLog = {}
+
+function RobloxInstance.takeSounds()
+	local out = RobloxInstance.soundLog
+	RobloxInstance.soundLog = {}
+	return out
+end
+
 function RobloxInstance.new(className, parent)
 	if not PROPERTIES[className] then
 		error(("Instance.new: '%s' 는 이 하네스가 모르는 클래스입니다"):format(tostring(className)), 2)
@@ -472,6 +503,31 @@ function RobloxInstance.new(className, parent)
 
 	if className == "RemoteEvent" then
 		attachRemote(node)
+	end
+
+	--[[
+		**소리가 났는지를 테스트가 볼 수 있게 한다.**
+
+		연출은 판정에 안 걸려서 테스트가 못 보지만, 소리는 "언제 났는가" 가 곧 전부라
+		기록만 남기면 귀 없이도 확인할 수 있다. 빈 SoundId 로 Play 하면 진짜
+		로블록스는 아무 소리도 안 내므로, 여기서도 기록하지 않는다 — 그래야
+		"에셋을 안 올렸는데 소리가 난 것으로 세는" 거짓 초록불이 안 생긴다.
+	]]
+	if className == "Sound" then
+		rawset(node, "Play", function(self)
+			local id = self.SoundId
+			if id == nil or id == "" then
+				return
+			end
+			self.Playing = true
+			table.insert(RobloxInstance.soundLog, { name = self.Name, id = id, volume = self.Volume })
+		end)
+		rawset(node, "Stop", function(self)
+			self.Playing = false
+		end)
+		rawset(node, "Pause", function(self)
+			self.Playing = false
+		end)
 	end
 
 	if className == "TeleportOptions" then

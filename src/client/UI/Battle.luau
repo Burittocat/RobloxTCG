@@ -19,6 +19,7 @@ local Rules = require(Shared.Rules)
 
 local Theme = require(script.Parent.Theme)
 local Widgets = require(script.Parent.Widgets)
+local Sfx = require(script.Parent.Sfx)
 local CardView = require(script.Parent.CardView)
 local Reconcile = require(script.Parent.Reconcile)
 local Motion = require(script.Parent.Motion)
@@ -185,6 +186,9 @@ function Battle:build(parent)
 		Parent = parent,
 	})
 	self.gui = gui
+
+	-- 부모 없는 Sound 는 울리지 않는다. 화면과 같이 살고 같이 사라지게 둔다.
+	Sfx.attach(gui)
 
 	local root = new("Frame", {
 		Name = "Root",
@@ -1193,6 +1197,11 @@ function Battle:showToast(text, kind)
 	self.toastToken += 1
 	local token = self.toastToken
 
+	-- 거부는 글자보다 소리가 먼저 닿는다. 눈은 카드를 보고 있기 때문이다.
+	if kind == "error" then
+		Sfx.play("deny")
+	end
+
 	local color = Theme.color.text
 	if kind == "error" then
 		color = Theme.color.warn
@@ -1737,6 +1746,9 @@ function Battle:strikeAt(attacker, target, damageToTarget, damageToAttacker, ids
 			부딪힌 순간. 숫자와 흔들림이 **여기** 있어야 한다 — 먼저 뜨면
 			맞기도 전에 아파하고, 늦게 뜨면 무엇에 맞았는지 모른다.
 		]]
+		-- 소리도 여기다. 숫자·흔들림과 같은 순간에 나야 한 대로 들린다.
+		Sfx.play("strike")
+
 		if damageToTarget and damageToTarget > 0 then
 			self:flashCardDamage(target, damageToTarget)
 			self:revealStat(ids and ids.target, damageToTarget)
@@ -1773,6 +1785,8 @@ function Battle:playDeath(card, key, delay)
 		end
 
 		local home = card.Position
+
+		Sfx.play("death")
 
 		-- 다른 카드 뒤로 내린다. 쓰러지는 것이 산 것을 가리면 안 된다.
 		card.ZIndex = 1
@@ -2327,6 +2341,12 @@ end
 	}
 ]]
 function Battle:render(state, opts)
+	--[[
+		**소리는 "바뀐 순간" 에만 난다.** 화면은 갱신마다 통째로 다시 그리므로,
+		"지금 내 차례다" 같은 상태를 그릴 때마다 울리면 같은 소리가 연달아 난다.
+		그래서 직전 스냅샷과 비교해 **넘어온 순간**에만 울린다.
+	]]
+	local previous = self.state
 	self.state = state
 
 	-- 어느 좌석이 "나" 인지는 서버가 스냅샷에 실어 보낸다. 화면 전체가 이 둘만 본다.
@@ -2338,6 +2358,31 @@ function Battle:render(state, opts)
 	--------------------------------------------------------------------
 	local myTurn = (state.activePlayerId == self.me)
 	local myMove = not opts.busy
+
+	--[[
+		"직전에 내가 둘 차례였나" 는 스냅샷이 아니라 화면이 아는 것이다(busy 는 opts 로
+		온다). 그래서 스냅샷에 적지 않고 화면이 들고 있는다 — 뷰에 필드를 더하면
+		Net 왕복이나 Reconcile 을 읽는 사람이 헷갈린다.
+
+		무엇이 울릴지는 Sfx.transitionCues 가 정한다. 여기서 조건문을 늘리지 않는 이유는
+		그 판정을 화면 없이 테스트하기 위해서다.
+	]]
+	if previous then
+		for _, cue in Sfx.transitionCues({
+			myMove = self.lastMyMove or false,
+			stackOpen = #previous.stack > 0,
+			finished = previous.finished or false,
+		}, {
+			myMove = myMove,
+			stackOpen = #state.stack > 0,
+			finished = state.finished or false,
+			won = (state.winnerId == self.me),
+		}) do
+			Sfx.play(cue)
+		end
+	end
+
+	self.lastMyMove = myMove
 
 	self.turnLabel.Text = ("턴 %d   ·   %s"):format(state.turn, myTurn and "내 턴" or "상대 턴")
 	self.turnLabel.TextColor3 = myTurn and Theme.color.me or Theme.color.foe

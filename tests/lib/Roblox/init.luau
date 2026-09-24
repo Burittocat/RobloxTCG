@@ -962,6 +962,12 @@ Roblox.Screen = Screen
 -- 테스트가 Vector2 같은 값을 만들 수 있게 열어둔다 (창 크기 지정 등).
 Roblox.Datatypes = Datatypes
 
+--[[
+	이 프로세스에서 난 소리를 꺼내고 비운다. 빈 SoundId 로 Play 한 것은 안 센다 —
+	에셋을 아직 안 올린 상태에서 소리가 난 것으로 세면 그게 제일 나쁜 초록불이다.
+]]
+Roblox.takeSounds = RobloxInstance.takeSounds
+
 local function walk(node, visit)
 	visit(node)
 	for _, child in node:GetChildren() do

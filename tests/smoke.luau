@@ -750,6 +750,35 @@ t:describe("AI 연습", function()
 		t:falsy(Screen.findButton(guiOf(kim), "대응 패스"), "대응 패스 버튼은 스택 상자로 옮겼습니다")
 	end)
 
+	--[[
+		효과음은 업로드된 rbxassetid 가 있어야 난다. **비어 있는 것이 지금의 정상값**
+		이므로, 소리가 없다고 판이 멈추거나 에러가 나면 안 된다.
+		(무엇이 언제 울리는지는 tests/specs/sfx.luau 가 본다)
+	]]
+	t:it("소리를 안 올려도 판은 그대로 돈다", function()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		world:advance(2)
+
+		Roblox.takeSounds()
+
+		Screen.click(Screen.findButton(guiOf(kim), "AI 연습"))
+		world:advance(3)
+		t:truthy(passMulligan(world, kim), "멀리건 관문을 통과하지 못했습니다")
+
+		for _ = 1, 8 do
+			pressSomething(world, kim)
+			world:advance(1)
+		end
+
+		assertNoErrors(world, "무음 판")
+		t:truthy(Screen.find(guiOf(kim), "Sfx"), "소리가 붙어 살 자리가 있어야 합니다")
+
+		local rang = Roblox.takeSounds()
+		t:eq(#rang, 0, ("에셋이 비어 있는데 소리가 났습니다 — %d건"):format(#rang))
+	end)
+
 	t:it("로비로 돌아가면 시작 화면이 다시 뜬다", function()
 		local world = Roblox.newWorld()
 		local lobby = world:newServer():boot()

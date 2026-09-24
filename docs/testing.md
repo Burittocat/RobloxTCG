@@ -77,6 +77,11 @@ AI 둘이 스타터 덱으로 여러 판 두게 하고 판 길이 · 덱 사용�
 | 클릭 → 판정 (`Controller`) | `tests/specs/controller.luau` | `RobloxEnv.newLoader()` 가 `src/shared` 와 `src/client` 를 **한 캐시로** 마운트하고, `game:GetService("ReplicatedStorage"):WaitForChild("Shared")` 만 흉내낸다. 서버가 보낼 스냅샷(`viewFor` → `packView`)을 그대로 태워 하이라이트를 확인한다 |
 | 화면 (`Battle`·`Home`·`Campaign`) | `tests/smoke.luau` | 진짜 인스턴스 트리 위에서 버튼을 눌러보고 텍스트를 읽는다 |
 | 때리는 장면의 **시간표** (`CombatTiming`) | `tests/specs/strike.luau` | 화면도 로블록스도 모르는 순수 계산이라 룰 엔진 러너에서 그냥 돈다. Theme 를 require 하지 않는 것이 그래서다 — 하면 `Color3` 가 딸려 와 로더가 못 읽는다 |
+| 효과음 (`Sfx`) | `tests/specs/sfx.luau` | 로더에 하네스의 가짜 `Instance` 를 전역으로 넣어 그대로 부른다. **소리가 났는지는 그 가짜가 기록한다** — 빈 `SoundId` 로 Play 한 것은 세지 않으므로, 에셋을 안 올린 상태가 소리 난 것으로 둔갑하지 않는다 |
+
+**소리는 연출과 달리 테스트가 볼 수 있다.** "언제 울리는가" 가 곧 전부라, 판정을 순수
+함수로 떼어내면(`Sfx.transitionCues`) 귀 없이 셀 수 있다 — 같은 상태를 다시 그렸을 때
+또 울지 않는지, 판이 끝나는 순간에 턴 소리가 승패를 덮지 않는지 같은 것들이다.
 
 **연출 중에서 테스트로 못 박을 수 있는 것은 시간표뿐이다.** 실제로 카드가 어떻게
 보이는지는 Studio 에서 봐야 안다. 그래도 시간표는 진짜 버그를 잡았다 — 겹쳐 막기에서

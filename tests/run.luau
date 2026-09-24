@@ -11,6 +11,7 @@ local process = require("@lune/process")
 
 local RobloxEnv = require("./lib/RobloxEnv")
 local Test = require("./lib/Test")
+local RobloxInstance = require("./lib/Roblox/Instance")
 local Fixture = require("./lib/Fixture")
 
 local loader = RobloxEnv.newLoader()
@@ -65,6 +66,14 @@ local Controller = loader.require(Client.Controller)
 ]]
 local CombatTiming = loader.require(Client.UI.CombatTiming)
 
+--[[
+	효과음. 화면 위젯을 만들지 않고 Sound 노드만 다루므로 여기서 볼 수 있다 —
+	**하네스의 가짜 Instance** 를 전역으로 넣어준다. 소리가 났는지는 그 가짜가
+	기록하므로(RobloxInstance.takeSounds), 귀 없이 "언제 울렸나" 를 셀 수 있다.
+]]
+loader.globals.Instance = RobloxInstance
+local Sfx = loader.require(Client.UI.Sfx)
+
 
 local SPECS = {
 	{ name = "setup", run = require("./specs/setup") },
@@ -82,6 +91,7 @@ local SPECS = {
 	{ name = "matchmaking", run = require("./specs/matchmaking") },
 	{ name = "controller", run = require("./specs/controller") },
 	{ name = "strike", run = require("./specs/strike") },
+	{ name = "sfx", run = require("./specs/sfx") },
 }
 
 local t = Test.new()
@@ -95,6 +105,9 @@ local ctx = {
 	Matchmaking = Matchmaking,
 	Controller = Controller,
 	CombatTiming = CombatTiming,
+	Sfx = Sfx,
+	Instance = RobloxInstance,
+	takeSounds = RobloxInstance.takeSounds,
 	Fixture = Fixture,
 }
 

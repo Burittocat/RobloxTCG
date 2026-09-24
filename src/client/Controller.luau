@@ -59,7 +59,8 @@ function Controller.new(battle, remotes)
 	self.remotes = remotes
 	self.view = nil
 	self.mode = { name = "idle" }
-	self.confirmPass = false -- 스택 칩을 눌러 "대응 없이 넘길까요?" 를 띄운 상태
+	self.confirmPass = false -- 스택 상자를 눌러 되묻는 중
+	self.confirmConcede = false -- 항복을 한 번 눌러 "정말 항복?" 으로 바뀐 상태
 	self.me, self.foe = DEFAULT_ME, DEFAULT_FOE
 	-- App 이 매치 종류에 따라 바꾼다 ("practice" | "pvp" | "tutorial" | "campaign")
 	self.matchMode = "practice"
@@ -118,6 +119,7 @@ function Controller:start()
 	self.view = nil
 	self.mode = { name = "idle" }
 	self.confirmPass = false
+	self.confirmConcede = false
 	self.tutorial:reset()
 
 	self.session = (self.session or 0) + 1
@@ -153,6 +155,7 @@ function Controller:onSync(payload)
 	-- 스택에 한 장 더 쌓인 뒤에도 확인이 남아 있으면, 방금 읽은 것과 다른 것을 넘기게 된다.
 	self.mode = { name = "idle" }
 	self.confirmPass = false
+	self.confirmConcede = false
 	self:refresh()
 end
 
@@ -442,7 +445,7 @@ function Controller:hintText()
 				return "상대의 시전에 대응할 수 있습니다.\n'즉시시전' 마법만 가능."
 			end
 		end
-		return "대응할 카드가 없습니다.\n[대응 패스] 로 넘기세요."
+		return "대응할 카드가 없습니다.\n가운데 상자를 눌러 넘기세요."
 	end
 	if view.phase == Phase.Main then
 		return "코스트 카드를 내고, 생물을 소환하고, 마법을 씁니다."
@@ -528,6 +531,7 @@ function Controller:refresh()
 		busy = (not self.view.finished) and whoActs(self.view) ~= self.me,
 		buttons = buttons,
 		confirmPass = self.confirmPass and buttons.pass or false,
+		concedeArmed = self.confirmConcede or false,
 		endActions = self:endActions(),
 	})
 end
@@ -789,6 +793,11 @@ local COACHED_KEYS = {
 function Controller:onAction(key)
 	local view = self.view
 
+	-- 항복 되묻기는 그 자리에서만 산다. 다른 것을 누른 순간 없던 일이 된다.
+	if key ~= "concede" then
+		self.confirmConcede = false
+	end
+
 	if key == "log" then
 		self.battle:toggleLog()
 		return
@@ -841,6 +850,21 @@ function Controller:onAction(key)
 		self.confirmPass = false
 		self:send({ kind = "pass" })
 	elseif key == "concede" then
+		--[[
+			**한 번 더 묻는다.** 판을 통째로 끝내는 유일한 버튼인데 지금까지 한 번에
+			나갔다. 창을 따로 띄우지 않고 버튼 글자를 "정말 항복?" 으로 바꾸는 것은
+			스택 상자와 **같은 약속**으로 만들기 위해서다 — 이 화면에서 되돌릴 수 없는
+			일은 두 번 누른다.
+
+			물어둔 것은 다른 버튼을 누르거나 서버 상태가 바뀌면 거둔다(onAction 머리와
+			onSync). 눌러놓고 잊은 항복이 남아 있다가 나중에 나가면 안 된다.
+		]]
+		if not self.confirmConcede then
+			self.confirmConcede = true
+			self:refresh()
+			return
+		end
+		self.confirmConcede = false
 		self:send({ kind = "concede" })
 	elseif key == "clear" then
 		if view.phase == Phase.DefensePrep then

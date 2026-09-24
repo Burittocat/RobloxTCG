@@ -494,7 +494,7 @@ function Tutorial.situationText(view, me)
 	if #view.stack > 0 then
 		return "상대가 카드를 내는 중이에요.\n"
 			.. "지금 대응할 수 있는 건 <b>즉시시전</b> 마법뿐이에요.\n"
-			.. "낼 게 없으면 [대응 패스] 로 넘기세요."
+			.. "낼 게 없으면 가운데 보라색 상자를 누르세요."
 	end
 
 	if view.phase == Phase.DefensePrep then

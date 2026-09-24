@@ -585,7 +585,7 @@ function Battle:makeActionBar(parent)
 		Font = Theme.font.bold,
 		TextSize = Theme.text.banner,
 		TextXAlignment = Enum.TextXAlignment.Center,
-		LayoutOrder = 1,
+		LayoutOrder = 10,
 	})
 
 	self.hintLabel = Widgets.label("", {
@@ -597,15 +597,15 @@ function Battle:makeActionBar(parent)
 		TextWrapped = true,
 		TextYAlignment = Enum.TextYAlignment.Top,
 		TextXAlignment = Enum.TextXAlignment.Center,
-		LayoutOrder = 2,
+		LayoutOrder = 12,
 	})
 
 	self.buttons = {}
 
-	local function addButton(key, text, order, color)
+	local function addButton(key, text, order, color, height)
 		local button = Widgets.button(text, {
 			Parent = bar,
-			Size = UDim2.new(1, 0, 0, 36),
+			Size = UDim2.new(1, 0, 0, height or 36),
 			LayoutOrder = order,
 			BackgroundColor3 = color or Theme.color.panelSoft,
 		}, function()
@@ -616,15 +616,57 @@ function Battle:makeActionBar(parent)
 	end
 
 	-- 멀리건 관문 전용. 관문 밖에서는 buttonStates 가 꺼둔다.
-	addButton("mulligan", "손패 물리기", 1, Theme.color.stack)
-	addButton("keep", "이대로 시작", 2, Theme.color.creature)
+	addButton("mulligan", "손패 물리기", 20, Theme.color.stack)
+	addButton("keep", "이대로 시작", 21, Theme.color.creature)
 
-	addButton("endPhase", "페이즈 종료", 3, Theme.color.creature)
-	addButton("pass", "대응 패스", 4, Theme.color.stack)
-	addButton("cancel", "선택 취소", 5)
-	addButton("clear", "선언 취소", 6)
-	addButton("log", "로그", 8)
-	addButton("concede", "항복", 9, Theme.color.foe)
+	--[[
+		[페이즈 종료] 만 크다. 이 열에서 **살아 있는 버튼은 보통 하나뿐인데**
+		전부 같은 크기라, 지금 눌러야 할 것이 "덜 흐리다" 로만 구분됐다.
+		크기는 꺼진 뒤에도 그대로라 자리가 흔들리지 않는다.
+
+		[대응 패스] 는 여기 없다 — 스택 상자(보드 가운데)가 같은 일을 한다.
+		단축키 P 는 버튼과 무관하게 살아 있다.
+	]]
+	addButton("endPhase", "페이즈 종료", 22, Theme.color.creature, 52)
+	addButton("cancel", "선택 취소", 23)
+	addButton("clear", "선언 취소", 24)
+	addButton("log", "로그", 25)
+
+	self:makeMiniLog(bar)
+
+	--[[
+		항복은 떼어 놓는다. 한 번 누르면 판이 끝나는 유일한 버튼인데 지금까지
+		다른 버튼과 같은 크기로 같은 열에 붙어 있었다. (한 번 더 묻는 것은
+		Controller:onAction 이 한다 — 글자가 "정말 항복?" 으로 바뀐다)
+	]]
+	addButton("concede", "항복", 40, Theme.color.foe)
+end
+
+--[[
+	최근 기록 두 줄.
+
+	전체 로그는 [로그] 를 눌러야 열리는 덮개다. 그런데 튜토리얼 코치는 "오른쪽
+	로그에 무슨 일이 있었는지 남아요" 라고 말한다 — 열지 않으면 아무것도 안 보이니
+	그 말이 거짓이 된다. 마지막 두 줄을 여기 흘려두고, 누르면 전체를 연다.
+]]
+function Battle:makeMiniLog(bar)
+	self.miniLog = Widgets.button("", {
+		Name = "MiniLog",
+		Parent = bar,
+		Size = UDim2.new(1, 0, 0, 40),
+		LayoutOrder = 30,
+		BackgroundColor3 = Theme.color.bgDeep,
+		BackgroundTransparency = 0.25,
+		Font = Theme.font.regular,
+		TextSize = Theme.text.tiny,
+		TextColor3 = Theme.color.textDim,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		AutoButtonColor = false,
+	}, function()
+		self.callbacks.action("log")
+	end)
 end
 
 function Battle:makeToast(parent)
@@ -2061,9 +2103,22 @@ function Battle:renderCenter(state, opts)
 			읽는 유일한 자리라, 확인을 띄우면서 이름을 지우면 읽으려던 사람이
 			무엇을 넘기는지 모르는 채 누르게 된다. 뒤쪽 말만 바뀐다.
 		]]
-		local tail = opts.confirmPass and "다시 누르면 넘어갑니다" or "누르면 대응을 넘깁니다"
+		--[[
+			내 대응 차례가 아닐 때도 스택은 보여야 한다(상대가 무엇을 냈는지는 그때도
+			읽을 거리다). 다만 **누를 수는 없다** — 누르라고 적어놓고 아무 일도 안 하면
+			그게 제일 나쁘다. 그래서 그때는 끄고, 적는 말도 바꾼다.
+		]]
+		local canPass = (opts.buttons or {}).pass == true
+		local tail
+		if not canPass then
+			tail = "상대가 두는 중"
+		elseif opts.confirmPass then
+			tail = "다시 누르면 넘어갑니다"
+		else
+			tail = "누르면 대응을 넘깁니다"
+		end
 
-		add(Widgets.button(("%s (%s)%s — %s"):format(def.name, who, extra, tail), {
+		local box = Widgets.button(("%s (%s)%s — %s"):format(def.name, who, extra, tail), {
 			Name = "StackBox",
 			Size = UDim2.fromOffset(340, 34),
 			BackgroundColor3 = Theme.color.stack,
@@ -2076,7 +2131,11 @@ function Battle:renderCenter(state, opts)
 			else
 				self.callbacks.stackItem(top.id)
 			end
-		end))
+		end)
+
+		Widgets.setEnabled(box, canPass)
+		box.TextColor3 = canPass and Theme.color.bgDeep or Theme.color.textDim
+		add(box)
 	elseif #state.stack > 0 then
 		local strip = new("Frame", {
 			BackgroundTransparency = 1,
@@ -2239,6 +2298,17 @@ function Battle:renderLog(state)
 	end
 
 	self.logList.CanvasPosition = Vector2.new(0, 1e6)
+
+	--[[
+		행동 바의 두 줄. 덮개를 열지 않아도 **방금 무슨 일이 있었는지** 보이게 한다.
+		오래된 것이 위, 새것이 아래 — 덮개와 같은 순서다. 다르게 두면 같은 기록을
+		두 곳에서 반대로 읽게 된다.
+	]]
+	local tail = {}
+	for index = math.max(1, #state.log - 1), #state.log do
+		table.insert(tail, "· " .. state.log[index].text)
+	end
+	self.miniLog.Text = (#tail > 0) and table.concat(tail, "\n") or "· 기록이 아직 없어요"
 end
 
 --[[
@@ -2252,7 +2322,8 @@ end
 		lockedHand = { [id]: true }?,  -- 튜토리얼이 잠근 손패 카드
 		busy       = boolean,   -- 상대가 두는 중
 		buttons    = { [key] = boolean },  -- 켜둘 버튼
-		confirmPass = boolean?, -- 스택 칩을 눌러 대응 패스를 묻는 중
+		confirmPass = boolean?, -- 스택 상자를 눌러 대응 패스를 묻는 중
+		concedeArmed = boolean?, -- 항복을 한 번 눌러 되묻는 중
 	}
 ]]
 function Battle:render(state, opts)
@@ -2442,6 +2513,14 @@ function Battle:render(state, opts)
 	end
 
 	self.buttons.clear.Text = (state.phase == Phase.DefensePrep) and "방어 취소" or "공격 취소"
+
+	--[[
+		항복은 **한 번 더 묻는다.** 판을 통째로 끝내는 유일한 버튼인데 지금까지
+		한 번에 나갔다. 스택 상자와 같은 방식이다 — 글자가 바뀌고, 그 상태에서
+		다시 눌러야 실제로 항복한다.
+	]]
+	self.buttons.concede.Text = opts.concedeArmed and "정말 항복?" or "항복"
+	self.buttons.concede.BackgroundTransparency = opts.concedeArmed and 0 or 0.35
 
 	--------------------------------------------------------------------
 	-- 결과

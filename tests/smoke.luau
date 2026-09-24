@@ -262,14 +262,64 @@ local function answerTargetPrompt(world, player)
 end
 
 
-local function passIfResponding(world, player)
-	local pass = activeButton(player, "대응 패스")
-	if pass then
-		Screen.click(pass)
-		world:advance(0.3)
-		return true
+--[[
+	항복은 **두 번** 눌러야 나간다. 판을 통째로 끝내는 유일한 버튼이라 글자가
+	"정말 항복?" 으로 바뀌고, 그 상태에서 다시 눌러야 실제로 나간다.
+]]
+local function concede(world, player)
+	local first = Screen.findButton(guiOf(player), "항복")
+	t:truthy(first, "[항복] 버튼이 있어야 합니다")
+	Screen.click(first)
+	world:advance(0.2)
+
+	local again = Screen.findButton(guiOf(player), "정말 항복?")
+	t:truthy(again, "항복을 한 번 누르면 되물어야 합니다")
+	Screen.click(again)
+end
+
+--[[
+	대응 패스 버튼은 없앴다. 대응 창은 보드 가운데 스택 상자에서 넘긴다 —
+	한 번 눌러 확인을 띄우고, 다시 눌러야 넘어간다.
+]]
+-- 지금 대응을 넘길 수 있는 상자. 못 넘기는 동안에는 상자가 꺼져 있다.
+local function respondBox(player)
+	local box = Screen.findNamed(guiOf(player), "StackBox")
+	if box and box.Active ~= false then
+		return box
+	end
+	return nil
+end
+
+-- 상대가 무언가 낼 때까지 턴을 굴린다.
+local function openResponse(world, player)
+	for _ = 1, 40 do
+		if respondBox(player) then
+			return true
+		end
+		local endPhase = activeButton(player, "페이즈 종료")
+		if endPhase then
+			Screen.click(endPhase)
+		end
+		world:advance(1)
 	end
 	return false
+end
+
+local function passIfResponding(world, player)
+	local box = Screen.findNamed(guiOf(player), "StackBox")
+	if not box or box.Active == false then
+		return false
+	end
+
+	Screen.click(box)
+	world:advance(0.3)
+
+	local asking = Screen.findNamed(guiOf(player), "StackBox")
+	if asking and asking.Active ~= false then
+		Screen.click(asking)
+		world:advance(0.3)
+	end
+	return true
 end
 
 local function waitForButton(world, player, text, budget)
@@ -525,12 +575,12 @@ t:describe("AI 연습", function()
 
 	--[[
 		상대가 카드를 내면 스택에 올라가고 나에게 대응 창이 열린다.
-		**대응할 카드가 하나도 없어도 사람이 [대응 패스] 를 눌러야 넘어간다.**
+		**대응할 카드가 하나도 없어도 사람이 직접 넘겨야 넘어간다.**
 
 		예전에는 서버가 대신 눌러줬다. 버튼만 누르게 하지 말자는 뜻이었는데, 실제로는
 		상대가 무엇을 시전했는지 읽기도 전에 화면이 지나갔다.
 	]]
-	t:it("대응 패스를 누르기 전에는 넘어가지 않는다", function()
+	t:it("넘기기 전에는 대응 창이 저 혼자 닫히지 않는다", function()
 		local world = Roblox.newWorld()
 		local lobby = world:newServer():boot()
 		local kim = lobby:addPlayer("Kim")
@@ -539,33 +589,18 @@ t:describe("AI 연습", function()
 		Screen.click(Screen.findButton(guiOf(kim), "AI 연습"))
 		world:advance(3)
 		t:truthy(passMulligan(world, kim), "멀리건 관문을 통과하지 못했습니다")
-
-		-- 상대가 무언가 낼 때까지 턴을 굴린다.
-		local opened = false
-		for _ = 1, 40 do
-			if activeButton(kim, "대응 패스") then
-				opened = true
-				break
-			end
-			local endPhase = activeButton(kim, "페이즈 종료")
-			if endPhase then
-				Screen.click(endPhase)
-			end
-			world:advance(1)
-		end
-
-		t:truthy(opened, "상대가 카드를 내면 대응 창이 열려야 합니다")
+		t:truthy(openResponse(world, kim), "상대가 카드를 내면 대응 창이 열려야 합니다")
 		assertNoErrors(world, "대응 창")
 
 		-- 가만히 둬도 저 혼자 넘어가면 안 된다.
 		world:advance(10)
-		t:truthy(activeButton(kim, "대응 패스"), "누르기 전에 넘어갔습니다")
+		t:truthy(respondBox(kim), "누르기 전에 넘어갔습니다")
 		t:falsy(activeButton(kim, "페이즈 종료"), "대응 창이 열린 동안에는 페이즈를 넘길 수 없어야 합니다")
 
-		Screen.click(activeButton(kim, "대응 패스"))
+		t:truthy(passIfResponding(world, kim), "상자를 눌러 넘길 수 있어야 합니다")
 		world:advance(2)
-		assertNoErrors(world, "대응 패스")
-		t:falsy(activeButton(kim, "대응 패스"), "누르면 대응 창이 닫혀야 합니다")
+		assertNoErrors(world, "대응 넘기기")
+		t:falsy(respondBox(kim), "넘기면 대응 창이 닫혀야 합니다")
 	end)
 
 	--[[
@@ -575,20 +610,6 @@ t:describe("AI 연습", function()
 		다만 곧장 넘기지는 않는다. 그 칩은 상대가 무엇을 냈는지 읽는 유일한 자리라,
 		읽으려고 누른 사람이 대응 기회를 잃으면 자동 패스를 끈 이유가 사라진다.
 	]]
-	local function openResponse(world, kim)
-		for _ = 1, 40 do
-			if activeButton(kim, "대응 패스") then
-				return true
-			end
-			local endPhase = activeButton(kim, "페이즈 종료")
-			if endPhase then
-				Screen.click(endPhase)
-			end
-			world:advance(1)
-		end
-		return false
-	end
-
 	t:it("스택 상자를 눌러도 대응을 넘길 수 있다 — 확인을 한 번 거친다", function()
 		local world = Roblox.newWorld()
 		local lobby = world:newServer():boot()
@@ -610,12 +631,12 @@ t:describe("AI 연습", function()
 
 		local asking = Screen.findNamed(guiOf(kim), "StackBox")
 		t:truthy(asking and asking.Text:find("다시 누르면"), "한 번 누르면 확인을 물어야 합니다")
-		t:truthy(activeButton(kim, "대응 패스"), "확인하기 전에 넘어가면 안 됩니다")
+		t:truthy(respondBox(kim), "확인하기 전에 넘어가면 안 됩니다")
 
 		Screen.click(Screen.findNamed(guiOf(kim), "StackBox"))
 		world:advance(2)
 		assertNoErrors(world, "확인 누르기")
-		t:falsy(activeButton(kim, "대응 패스"), "확인을 누르면 대응 창이 닫혀야 합니다")
+		t:falsy(respondBox(kim), "확인을 누르면 대응 창이 닫혀야 합니다")
 	end)
 
 	--[[
@@ -654,7 +675,7 @@ t:describe("AI 연습", function()
 		Screen.click(Screen.findButton(guiOf(kim), "AI 연습"))
 		world:advance(3)
 
-		Screen.click(Screen.findButton(guiOf(kim), "항복"))
+		concede(world, kim)
 		world:advance(2)
 		assertNoErrors(world, "항복")
 
@@ -662,6 +683,71 @@ t:describe("AI 연습", function()
 		t:truthy(Screen.hasText(gui, "패배"), "결과 화면이 떠야 합니다")
 		t:truthy(Screen.findButton(gui, "다시 하기"), "연습이므로 '다시 하기' 가 있어야 합니다")
 		t:truthy(Screen.findButton(gui, "로비로"), "연습이므로 '로비로' 가 있어야 합니다")
+	end)
+
+	--[[
+		항복은 되돌릴 수 없는 유일한 버튼이다. 한 번 누르는 것으로 판이 끝나면
+		손이 미끄러진 한 번과 정말 그만두려는 한 번을 화면이 구별하지 못한다.
+	]]
+	t:it("항복은 한 번 눌러서는 나가지 않는다", function()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "AI 연습"))
+		world:advance(3)
+
+		Screen.click(Screen.findButton(guiOf(kim), "항복"))
+		world:advance(2)
+		assertNoErrors(world, "항복 한 번")
+
+		t:falsy(outcome(kim), "한 번 눌렀다고 판이 끝나면 안 됩니다")
+		t:truthy(Screen.findButton(guiOf(kim), "정말 항복?"), "되묻는 글자로 바뀌어야 합니다")
+
+		-- 다른 것을 누르면 물어둔 것은 없던 일이 된다.
+		local endPhase = activeButton(kim, "페이즈 종료")
+		if endPhase then
+			Screen.click(endPhase)
+			world:advance(1)
+			t:truthy(Screen.findButton(guiOf(kim), "항복"), "다른 것을 누르면 되묻기가 풀려야 합니다")
+			t:falsy(outcome(kim), "페이즈를 넘겼는데 판이 끝났습니다")
+		end
+	end)
+
+	--[[
+		전체 기록은 [로그] 를 눌러야 열리는 덮개다. 그런데 코치는 "오른쪽 로그에
+		무슨 일이 있었는지 남아요" 라고 말한다 — 열지 않아도 최근 두 줄은 보여야
+		그 말이 참이 된다.
+	]]
+	t:it("행동 바에 최근 기록이 흐른다", function()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "AI 연습"))
+		world:advance(3)
+		t:truthy(passMulligan(world, kim), "멀리건 관문을 통과하지 못했습니다")
+
+		-- 몇 턴 굴려서 기록이 쌓이게 한다.
+		for _ = 1, 6 do
+			pressSomething(world, kim)
+			local endPhase = activeButton(kim, "페이즈 종료")
+			if endPhase then
+				Screen.click(endPhase)
+			end
+			passIfResponding(world, kim)
+			world:advance(1)
+		end
+
+		local mini = Screen.findNamed(guiOf(kim), "MiniLog")
+		t:truthy(mini, "행동 바에 최근 기록 자리가 있어야 합니다")
+		t:falsy(mini.Text:find("기록이 아직 없어요"), ("기록이 흘러야 합니다 — %s"):format(mini.Text))
+		t:truthy(mini.Text:find("·", 1, true), "기록 줄이 적혀 있어야 합니다")
+
+		-- 없앤 버튼이 되살아나지 않게 못 박는다.
+		t:falsy(Screen.findButton(guiOf(kim), "대응 패스"), "대응 패스 버튼은 스택 상자로 옮겼습니다")
 	end)
 
 	t:it("로비로 돌아가면 시작 화면이 다시 뜬다", function()
@@ -672,7 +758,7 @@ t:describe("AI 연습", function()
 
 		Screen.click(Screen.findButton(guiOf(kim), "AI 연습"))
 		world:advance(3)
-		Screen.click(Screen.findButton(guiOf(kim), "항복"))
+		concede(world, kim)
 		world:advance(2)
 		Screen.click(Screen.findButton(guiOf(kim), "로비로"))
 		world:advance(2)
@@ -737,7 +823,7 @@ t:describe("같은 서버 매칭", function()
 	t:it("PvP 결과 화면에는 '다시 매칭' 이 뜬다", function()
 		local world, _, kim, lee = matchTwo()
 
-		Screen.click(Screen.findButton(guiOf(kim), "항복"))
+		concede(world, kim)
 		world:advance(2)
 		assertNoErrors(world, "PvP 항복")
 
@@ -1100,7 +1186,7 @@ t:describe("튜토리얼", function()
 		world:advance(1)
 		t:truthy(line():find("코스트"), "코스트 단계로 넘어가야 합니다")
 
-		Screen.click(Screen.findButton(gui, "항복"))
+		concede(world, kim)
 		world:advance(2)
 		t:truthy(outcome(kim), "항복하면 판이 끝나야 합니다")
 
@@ -1214,7 +1300,7 @@ t:describe("튜토리얼", function()
 			상대의 첫 공격은 그 뒤에 온다. 그래서 상황 안내로 옮겼고, 여기서 그걸 지킨다.
 		]]
 		t:truthy(saidAny("상대가 공격했어요"), "막을 차례가 오면 알려줘야 합니다")
-		t:truthy(saidAny("대응 패스"), "대응 창이 열리면 무엇을 눌러야 하는지 알려줘야 합니다")
+		t:truthy(saidAny("보라색 상자"), "대응 창이 열리면 무엇을 눌러야 하는지 알려줘야 합니다")
 		t:truthy(inspected, "말만 하고 실제로 눌러볼 카드가 없었습니다")
 		t:truthy(saidAny("기본은 다 배웠어요"), "손짓을 배운 뒤에는 잔소리를 멈춰야 합니다")
 	end)
@@ -1967,7 +2053,7 @@ t:describe("캠페인", function()
 		passMulligan(world, kim)
 		waitForButton(world, kim, "페이즈 종료")
 
-		Screen.click(Screen.findButton(guiOf(kim), "항복"))
+		concede(world, kim)
 		world:advance(2)
 		assertNoErrors(world, "캠페인 항복")
 
@@ -1982,7 +2068,7 @@ t:describe("캠페인", function()
 		world:advance(3)
 		passMulligan(world, kim)
 		waitForButton(world, kim, "페이즈 종료")
-		Screen.click(Screen.findButton(guiOf(kim), "항복"))
+		concede(world, kim)
 		world:advance(2)
 
 		--[[
@@ -2000,7 +2086,7 @@ t:describe("캠페인", function()
 		world:advance(3)
 		passMulligan(world, kim)
 		waitForButton(world, kim, "페이즈 종료")
-		Screen.click(Screen.findButton(guiOf(kim), "항복"))
+		concede(world, kim)
 		world:advance(2)
 
 		Screen.click(Screen.findButton(guiOf(kim), "목록으로"))

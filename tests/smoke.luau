@@ -589,7 +589,7 @@ t:describe("AI 연습", function()
 		return false
 	end
 
-	t:it("스택 칩을 눌러도 대응을 넘길 수 있다 — 확인을 한 번 거친다", function()
+	t:it("스택 상자를 눌러도 대응을 넘길 수 있다 — 확인을 한 번 거친다", function()
 		local world = Roblox.newWorld()
 		local lobby = world:newServer():boot()
 		local kim = lobby:addPlayer("Kim")
@@ -600,24 +600,29 @@ t:describe("AI 연습", function()
 		t:truthy(passMulligan(world, kim), "멀리건 관문을 통과하지 못했습니다")
 		t:truthy(openResponse(world, kim), "상대가 카드를 내면 대응 창이 열려야 합니다")
 
-		local chip = Screen.findNamed(guiOf(kim), "Stack_")
-		t:truthy(chip, "스택에 올라간 카드가 칩으로 그려져야 합니다")
+		local box = Screen.findNamed(guiOf(kim), "StackBox")
+		t:truthy(box, "스택에 올라간 카드가 상자로 그려져야 합니다")
+		t:truthy(box.Text:find("누르면 대응을 넘깁니다"), "무엇을 하는 상자인지 적혀 있어야 합니다")
 
-		Screen.click(chip)
+		Screen.click(box)
 		world:advance(1)
-		assertNoErrors(world, "스택 칩 누르기")
+		assertNoErrors(world, "스택 상자 누르기")
 
-		t:truthy(activeButton(kim, "대응 없이 넘길까요?"), "칩을 누르면 확인이 떠야 합니다")
+		local asking = Screen.findNamed(guiOf(kim), "StackBox")
+		t:truthy(asking and asking.Text:find("다시 누르면"), "한 번 누르면 확인을 물어야 합니다")
 		t:truthy(activeButton(kim, "대응 패스"), "확인하기 전에 넘어가면 안 됩니다")
 
-		Screen.click(activeButton(kim, "대응 없이 넘길까요?"))
+		Screen.click(Screen.findNamed(guiOf(kim), "StackBox"))
 		world:advance(2)
 		assertNoErrors(world, "확인 누르기")
 		t:falsy(activeButton(kim, "대응 패스"), "확인을 누르면 대응 창이 닫혀야 합니다")
 	end)
 
-	-- 물어놓고 빠져나갈 길이 없으면 안 된다. 같은 칩을 다시 누르면 묻기를 거둔다.
-	t:it("스택 칩을 다시 누르면 확인이 사라진다", function()
+	--[[
+		상자가 상대가 무엇을 냈는지 읽는 유일한 자리다. 확인을 물으면서 이름을
+		지우면, 읽으려던 사람이 무엇을 넘기는지 모르는 채 누르게 된다.
+	]]
+	t:it("확인을 묻는 중에도 무엇이 올라와 있는지 보인다", function()
 		local world = Roblox.newWorld()
 		local lobby = world:newServer():boot()
 		local kim = lobby:addPlayer("Kim")
@@ -628,15 +633,16 @@ t:describe("AI 연습", function()
 		t:truthy(passMulligan(world, kim), "멀리건 관문을 통과하지 못했습니다")
 		t:truthy(openResponse(world, kim), "상대가 카드를 내면 대응 창이 열려야 합니다")
 
-		Screen.click(Screen.findNamed(guiOf(kim), "Stack_"))
-		world:advance(1)
-		t:truthy(activeButton(kim, "대응 없이 넘길까요?"), "확인이 떠야 합니다")
+		local before = Screen.findNamed(guiOf(kim), "StackBox").Text
+		local name = before:match("^(.-) %(")
+		t:truthy(name and #name > 0, ("상자에 카드 이름이 있어야 합니다 — %s"):format(before))
 
-		Screen.click(Screen.findNamed(guiOf(kim), "Stack_"))
+		Screen.click(Screen.findNamed(guiOf(kim), "StackBox"))
 		world:advance(1)
-		assertNoErrors(world, "칩 다시 누르기")
-		t:falsy(activeButton(kim, "대응 없이 넘길까요?"), "다시 누르면 확인이 사라져야 합니다")
-		t:truthy(activeButton(kim, "대응 패스"), "대응 창은 그대로 열려 있어야 합니다")
+
+		local after = Screen.findNamed(guiOf(kim), "StackBox").Text
+		t:truthy(after:find(name, 1, true), ("확인 중에도 이름이 남아야 합니다 — %s"):format(after))
+		t:truthy(after:find("(상대)", 1, true), "누가 낸 것인지도 남아야 합니다")
 	end)
 
 	t:it("항복하면 결과 화면이 뜬다", function()

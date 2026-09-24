@@ -2039,8 +2039,45 @@ function Battle:renderCenter(state, opts)
 		}))
 	end
 
-	-- 스택
-	if #state.stack > 0 then
+	--[[
+		스택.
+
+		가운데 칸은 위아래 필드 줄 사이 **182px 뿐이다**(설계 해상도 900 기준:
+		보드 662 - (패널 92 + 필드 132 + 8) * 2 - 16). 여기에 라벨 20 · 칩 36 ·
+		확인 32 를 간격까지 끼워 층층이 쌓으면 예산을 넘겨 **내 전장 줄 위로 흘러
+		카드를 가린다.** 그래서 평소에는 읽을 것과 누를 것을 **상자 하나**에 합친다.
+
+		대상을 고르는 중일 때만 칩을 낱개로 편다 — 스택이 여럿이면 그중 어느 것을
+		되받아칠지 골라야 하기 때문이다. 그때는 잠깐이라 한 줄 더 써도 된다.
+	]]
+	if #state.stack > 0 and next(opts.highlights.stack) == nil then
+		local top = state.stack[#state.stack]
+		local def = Registry.mustGet(state.cards[top.instanceId].defId)
+		local who = (top.controllerId == self.me) and "내 것" or "상대"
+		local extra = (#state.stack > 1) and (" 외 %d장"):format(#state.stack - 1) or ""
+
+		--[[
+			이름을 확인 문구로 **갈아치우지 않는다.** 그 상자가 상대가 무엇을 냈는지
+			읽는 유일한 자리라, 확인을 띄우면서 이름을 지우면 읽으려던 사람이
+			무엇을 넘기는지 모르는 채 누르게 된다. 뒤쪽 말만 바뀐다.
+		]]
+		local tail = opts.confirmPass and "다시 누르면 넘어갑니다" or "누르면 대응을 넘깁니다"
+
+		add(Widgets.button(("%s (%s)%s — %s"):format(def.name, who, extra, tail), {
+			Name = "StackBox",
+			Size = UDim2.fromOffset(340, 34),
+			BackgroundColor3 = Theme.color.stack,
+			BackgroundTransparency = opts.confirmPass and 0 or 0.1,
+			TextColor3 = Theme.color.bgDeep,
+			TextSize = Theme.text.body,
+		}, function()
+			if opts.confirmPass then
+				self.callbacks.action("pass")
+			else
+				self.callbacks.stackItem(top.id)
+			end
+		end))
+	elseif #state.stack > 0 then
 		local strip = new("Frame", {
 			BackgroundTransparency = 1,
 			Size = UDim2.new(1, 0, 0, 36),
@@ -2083,24 +2120,6 @@ function Battle:renderCenter(state, opts)
 			TextXAlignment = Enum.TextXAlignment.Center,
 		}))
 		add(strip)
-
-		--[[
-			스택 칩을 누르면 여기로 확인이 뜨고, 이것을 눌러야 실제로 넘어간다.
-			행동 바까지 가지 않아도 되게 한 것인데, **칩이 곧장 패스하지는 않는다** —
-			그 칩은 상대가 무엇을 냈는지 읽는 유일한 자리라, 읽으려고 누른 사람이
-			대응 기회를 잃으면 자동 패스를 끈 이유가 사라진다.
-		]]
-		if opts.confirmPass then
-			add(Widgets.button("대응 없이 넘길까요?", {
-				Name = "ConfirmPass",
-				Size = UDim2.fromOffset(220, 32),
-				BackgroundColor3 = Theme.color.stack,
-				TextColor3 = Theme.color.bgDeep,
-				TextSize = Theme.text.body,
-			}, function()
-				self.callbacks.action("pass")
-			end))
-		end
 	end
 
 	-- 전투 선언 현황

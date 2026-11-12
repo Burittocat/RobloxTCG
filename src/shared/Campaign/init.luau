@@ -15,6 +15,7 @@
 	    { cleared = 3, gold = 250, pvpDay = 20404, pvpWins = 2 }
 
 	pvpDay · pvpWins 는 PvP 승리 보상의 하루 상한을 세는 칸이다(아래 PvpReward).
+	rankPoints · mmr · rankedWins · rankedLosses 는 PvP 랭크다(src/shared/Rank).
 	없어도 된다 — 그 전부터 있던 저장값과 같은 모양이라 저장소 이름을 바꾸지 않았다.
 
 	cleared 는 **깬 스테이지 중 가장 큰 번호**다. 목록이 아닌 이유: 스테이지는 순서대로만
@@ -216,8 +217,11 @@ function Campaign.validateProgress(value)
 		return false, ("깬 스테이지가 %d 인데 표에는 %d 개뿐입니다"):format(value.cleared, Campaign.count())
 	end
 
-	-- PvP 보상 기록은 없어도 된다(그 전부터 있던 저장값). 있으면 모양은 맞아야 한다.
-	for _, field in { "pvpDay", "pvpWins" } do
+	--[[
+		PvP 보상 기록과 랭크(Rank 모듈)는 없어도 된다(그 전부터 있던 저장값). 있으면 모양은
+		맞아야 한다. 랭크 칸 검사를 Rank 에 두지 않은 것은 Rank 가 이 모듈을 require 해서다.
+	]]
+	for _, field in { "pvpDay", "pvpWins", "rankPoints", "mmr", "rankedWins", "rankedLosses" } do
 		local number = value[field]
 		if number ~= nil and (type(number) ~= "number" or number % 1 ~= 0 or number < 0) then
 			return false, ("'%s' 가 0 이상의 정수가 아닙니다"):format(field)

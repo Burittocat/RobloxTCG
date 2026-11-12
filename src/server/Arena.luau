@@ -43,6 +43,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Cosmetics = require(Shared.Cosmetics)
 local Decks = require(Shared.Decks)
+local Rank = require(Shared.Rank)
 local Net = require(Shared.Net)
 
 local CampaignStore = require(script.Parent.CampaignStore)
@@ -200,6 +201,8 @@ function Arena:loadDeck(player)
 		local looks = {
 			frame = Cosmetics.equippedFrame(collection),
 			back = Cosmetics.equippedBack(collection),
+			-- 판이 시작될 때의 MMR. 판이 끝나면 PvpReward 가 이걸로 랭크를 계산한다
+			mmr = Rank.mmrOf(self.campaignStore:get(player)),
 		}
 
 		-- 읽는 사이에 나갔으면 남길 것이 없다.
@@ -261,6 +264,7 @@ function Arena:tryStart()
 			deck = entry.deck,
 			frame = looks.frame,
 			back = looks.back,
+			mmr = looks.mmr,
 		}
 	end
 

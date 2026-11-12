@@ -90,7 +90,7 @@ function CrossServer:isQueued(player)
 	return self.queued[player] ~= nil
 end
 
-function CrossServer:enqueue(player)
+function CrossServer:enqueue(player, mmr)
 	if self.queued[player] then
 		return true
 	end
@@ -100,7 +100,7 @@ function CrossServer:enqueue(player)
 	local token = ("%s-%d"):format(game.JobId, self.tokenCount)
 
 	local entry =
-		Matchmaking.newEntry(player.UserId, player.DisplayName, game.JobId, os.time(), token)
+		Matchmaking.newEntry(player.UserId, player.DisplayName, game.JobId, os.time(), token, mmr)
 
 	local ok, err = pcall(function()
 		self.queue:AddAsync(entry, Settings.entryTtl)
@@ -278,6 +278,7 @@ function CrossServer:poll()
 		seed = self.seedRng:nextInteger(1, 2147483646),
 		blockedTokens = self:blockList(),
 		startingPlayerFor = Rules.startingPlayerFor,
+		mmrWindow = Matchmaking.MmrWindow,
 	})
 
 	--------------------------------------------------------------------

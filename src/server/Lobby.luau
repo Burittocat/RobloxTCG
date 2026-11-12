@@ -1,12 +1,13 @@
 --[[
 	공개 서버(= 로비)에서 도는 것.
 
-	여기서는 카드를 한 장도 내지 않는다. 하는 일은 다섯이다.
+	여기서는 카드를 한 장도 내지 않는다. 하는 일은 여섯이다.
 	  1. 시작 화면 상태를 클라이언트에 알려준다        (Lobby 리모트)
 	  2. 빠른 대전 큐 등록/취소                        (Matchmaker)
 	  3. AI 연습·튜토리얼·캠페인은 큐를 타지 않고 이 자리에서 한 판 띄운다
 	  4. 덱 저장과 카드팩 — 가진 카드(CollectionStore)와 골드를 다룬다
 	  5. 꾸미기 — 카드 테두리 · 뒷면을 사고 낀다 (Cosmetics. 저장은 컬렉션과 같은 값)
+	  6. 프로필 — 랭크 · 전적 · 덱 · 꾸밈을 보여준다 (보기만 한다)
 
 	PvP 매치는 여기서 굴리지 않는다. 짝이 지어지면 두 사람은 예약 서버로 텔레포트되고
 	거기서 Arena 가 판을 연다. 로비 서버가 대전까지 맡으면 인원이 많은 서버일수록
@@ -29,6 +30,7 @@ local Collection = require(Shared.Collection)
 local Cosmetics = require(Shared.Cosmetics)
 local Decks = require(Shared.Decks)
 local Products = require(Shared.Products)
+local Rank = require(Shared.Rank)
 local Rules = require(Shared.Rules)
 
 local CampaignStore = require(script.Parent.CampaignStore)
@@ -199,8 +201,21 @@ function Lobby:setScreen(player, payload)
 	self.remotes.Lobby:FireClient(player, self:outgoing(payload))
 end
 
+--[[
+	시작 화면. 랭크 점수를 같이 싣는다 — 빠른 대전 버튼 위에 "실버 245점" 이 떠야 한 판이
+	무엇을 걸고 하는 것인지 보인다. MMR 은 싣지 않는다(숨은 점수다).
+
+	**진행도를 여기서 읽지 않는다**(peek). 접속한 그 순간에 저장소를 읽으면 시작 화면이
+	저장소 응답만큼 늦게 뜬다. 아직 안 읽었으면 점수 없이 먼저 띄우고, 접속 처리가
+	읽은 뒤에 다시 띄운다(onPlayerAdded).
+]]
 function Lobby:home(player, text)
-	self:setScreen(player, { screen = Screen.Home, text = text })
+	local progress = self.campaignStore:peek(player)
+	self:setScreen(player, {
+		screen = Screen.Home,
+		text = text,
+		rankPoints = progress and Rank.pointsOf(progress) or nil,
+	})
 end
 
 --==========================================================================
@@ -219,7 +234,24 @@ function Lobby:onPlayerAdded(player)
 
 	if type(teleportData) == "table" and teleportData.autoQueue then
 		self:enqueue(player)
+		return
 	end
+
+	--[[
+		랭크 점수를 읽어 시작 화면을 다시 띄운다. 한 박자 뒤에 한다 — 시작 화면은 저장소를
+		기다리지 않고 먼저 떠 있어야 한다. 그 사이에 다른 화면으로 갔으면 건드리지 않는다.
+	]]
+	task.spawn(function()
+		task.wait()
+		if player.Parent ~= Players then
+			return
+		end
+		self.campaignStore:get(player)
+		local current = self.screens[player]
+		if current and current.screen == Screen.Home and current.rankPoints == nil then
+			self:home(player, current.text)
+		end
+	end)
 end
 
 --==========================================================================
@@ -260,6 +292,8 @@ function Lobby:onMessage(player, payload)
 		self:openShop(player)
 	elseif payload.kind == "buyPack" then
 		self:buyPack(player)
+	elseif payload.kind == "profile" then
+		self:openProfile(player)
 	elseif payload.kind == "wardrobe" then
 		self:openWardrobe(player)
 	elseif payload.kind == "buyCosmetic" then
@@ -284,7 +318,8 @@ function Lobby:enqueue(player)
 		return
 	end
 
-	local ok, reason = self.matchmaker:enqueue(player)
+	-- 숨은 실력 점수로 짝을 고른다 (Matchmaking.MmrWindow)
+	local ok, reason = self.matchmaker:enqueue(player, Rank.mmrOf(self.campaignStore:get(player)))
 	if not ok then
 		self:setScreen(player, { screen = Screen.Error, text = reason or "큐에 등록하지 못했습니다" })
 		return
@@ -659,6 +694,49 @@ function Lobby:buyPack(player)
 end
 
 --==========================================================================
+-- 프로필
+--==========================================================================
+
+--[[
+	내 프로필 — 랭크 · 전적 · 지금 덱 · 낀 꾸밈 · 모은 정도를 한 화면에.
+
+	보기만 하는 화면이다. 고치는 곳은 각자 따로 있다(덱 편집 · 꾸미기). 여기서 고칠 수
+	있게 하면 같은 판정이 두 곳에 생긴다.
+
+	**MMR 은 싣지 않는다.** 숨은 점수라서다(Rank 머리말) — 화면 코드에 안 오면 실수로라도
+	안 뜬다. 덱은 판이 열릴 때 실제로 쓰일 덱(deckFor)이 아니라 저장해 둔 덱이다 — 프로필은
+	"내가 짜 둔 것" 을 보는 곳이다. 둘이 다르면(컬렉션을 못 읽음) 그 사실을 같이 싣는다.
+]]
+function Lobby:openProfile(player)
+	if self.host:runnerFor(player) then
+		return
+	end
+	self.matchmaker:cancel(player)
+
+	local progress = self.campaignStore:get(player)
+	local collection = self:collectionFor(player)
+	local entries = self.deckStore:get(player)
+	local have, total = Collection.progress(collection)
+
+	self:setScreen(player, {
+		screen = Screen.Profile,
+		name = player.DisplayName,
+		rankPoints = Rank.pointsOf(progress),
+		wins = progress.rankedWins or 0,
+		losses = progress.rankedLosses or 0,
+		deck = entries,
+		deckPlayable = Collection.covers(collection, entries) == true,
+		frame = Cosmetics.equippedFrame(collection),
+		back = Cosmetics.equippedBack(collection),
+		collected = have,
+		total = total,
+		cleared = progress.cleared or 0,
+		stages = Campaign.count(),
+		gold = self:goldFor(player),
+	})
+end
+
+--==========================================================================
 -- 꾸미기 (카드 테두리)
 --==========================================================================
 
@@ -762,7 +840,12 @@ end
 function Lobby:startLocalMatch(match, players)
 	local seats = {}
 	for seat = 1, 2 do
-		seats[seat] = self:dress({ player = players[seat], deck = self:deckFor(players[seat]) })
+		seats[seat] = self:dress({
+			player = players[seat],
+			deck = self:deckFor(players[seat]),
+			-- 판이 시작될 때의 MMR. 끝나면 PvpReward 가 이걸로 변화량을 계산한다
+			mmr = Rank.mmrOf(self.campaignStore:get(players[seat])),
+		})
 	end
 
 	local runner = MatchRunner.new(self.remotes, {

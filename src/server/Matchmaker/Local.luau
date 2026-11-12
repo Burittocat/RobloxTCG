@@ -41,7 +41,7 @@ function Local:isQueued(player)
 	return self.entries[player] ~= nil
 end
 
-function Local:enqueue(player)
+function Local:enqueue(player, mmr)
 	if self.entries[player] then
 		return true
 	end
@@ -51,7 +51,8 @@ function Local:enqueue(player)
 		player.DisplayName,
 		game.JobId,
 		os.time(),
-		("local-%d"):format(self.tokenCount)
+		("local-%d"):format(self.tokenCount),
+		mmr
 	)
 	return true
 end
@@ -97,6 +98,7 @@ function Local:poll()
 		ttl = Settings.entryTtl,
 		seed = self.seedRng:nextInteger(1, 2147483646),
 		startingPlayerFor = Rules.startingPlayerFor,
+		mmrWindow = Matchmaking.MmrWindow, -- 실제 게임과 같은 규칙으로 붙인다
 	})
 
 	for _, entry in plan.expired do

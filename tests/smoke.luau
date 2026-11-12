@@ -924,7 +924,132 @@ t:describe("같은 서버 매칭", function()
 		t:eq(stored.gold, 25, "Campaign.PvpReward.gold")
 		t:eq(stored.pvpWins, 1)
 		t:eq(stored.cleared, 0, "캠페인 진도는 건드리지 않습니다")
-		t:eq(progressOf(world, kim), nil, "진 사람에게는 아무것도 적지 않습니다")
+
+		-- 랭크 (규칙은 tests/specs/rank.luau). 진 사람에게는 골드는 없고 랭크는 적힌다.
+		t:eq(stored.rankPoints, 20, "이긴 사람의 랭크 점수가 올라야 합니다 (Rank.Points.win)")
+		t:eq(stored.mmr, 1016, "같은 MMR 끼리면 k/2 = 16 이 오릅니다")
+		t:eq(stored.rankedWins, 1)
+
+		local lost = progressOf(world, kim)
+		t:truthy(lost, "진 사람에게도 랭크는 적혀야 합니다")
+		t:eq(lost.gold, 0, "진 사람에게 골드는 없습니다")
+		t:eq(lost.rankPoints, 0, "0점 아래로는 안 내려갑니다")
+		t:eq(lost.mmr, 984)
+		t:eq(lost.rankedLosses, 1)
+	end)
+
+	t:it("들어오자마자 항복해도 진 쪽 MMR 은 내려간다", function()
+		local world, _, kim, lee = matchTwo()
+
+		concede(world, kim)
+		world:advance(2)
+		assertNoErrors(world, "바로 항복 — 랭크")
+
+		local lost = progressOf(world, kim)
+		t:truthy(lost, "나가서 손해를 피하면 안 됩니다")
+		t:eq(lost.mmr, 984)
+		t:eq(lost.rankedLosses, 1)
+		t:eq(progressOf(world, lee), nil, "이긴 쪽은 아무것도 적지 않습니다 (부계정 농사)")
+		t:truthy(Screen.hasText(guiOf(lee), "랭크 점수가 오르지 않습니다"), "왜 안 올랐는지 알려줘야 합니다")
+	end)
+
+	t:it("판을 떠난 사람에게도 패배가 적힌다", function()
+		local world, lobby, kim, lee = matchTwo()
+
+		lobby:removePlayer(lee)
+		world:advance(2)
+		assertNoErrors(world, "이탈 — 랭크")
+
+		local lost = progressOf(world, lee)
+		t:truthy(lost, "나간 사람의 진행도에도 패배가 적혀야 합니다")
+		t:eq(lost.rankedLosses, 1)
+	end)
+end)
+
+--==========================================================================
+-- 랭크 · 프로필
+--==========================================================================
+
+t:describe("랭크 · 프로필", function()
+	local PROGRESS = "CampaignProgress_v1"
+
+	local function storeProgress(world, player, progress)
+		world.dataStores[PROGRESS] = world.dataStores[PROGRESS] or {}
+		world.dataStores[PROGRESS][("user_%d"):format(player.UserId)] = progress
+	end
+
+	t:it("시작 화면에 티어와 랭크 점수가 뜬다", function()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		storeProgress(world, kim, { cleared = 0, gold = 0, rankPoints = 245, mmr = 1100 })
+		world:advance(2)
+		assertNoErrors(world, "랭크 시작 화면")
+
+		t:truthy(Screen.hasText(guiOf(kim), "실버 245점"), "시작 화면에 랭크가 떠야 합니다")
+		t:falsy(Screen.hasText(guiOf(kim), "1100"), "MMR 은 숨은 점수입니다")
+	end)
+
+	t:it("프로필에 랭크 · 전적 · 덱 · 꾸밈이 보인다", function()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		storeProgress(world, kim, {
+			cleared = 2,
+			gold = 300,
+			rankPoints = 510,
+			mmr = 1234,
+			rankedWins = 3,
+			rankedLosses = 1,
+		})
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "프로필"))
+		world:advance(1)
+		assertNoErrors(world, "프로필 열기")
+
+		local profile = Screen.find(guiOf(kim), "TCGProfile")
+		t:truthy(profile and profile.Enabled, "프로필 화면이 떠야 합니다")
+		t:truthy(Screen.hasText(profile, "Kim"), "이름")
+		t:truthy(Screen.hasText(profile, "골드"), "티어 (510점 = 골드)")
+		t:truthy(Screen.hasText(profile, "플래티넘까지 390점"), "다음 티어까지 남은 점수")
+		t:truthy(Screen.hasText(profile, "3승 1패 · 승률 75%"), "전적")
+		t:truthy(Screen.hasText(profile, "60장"), "덱 장수")
+		t:truthy(Screen.countNamed(profile, "DeckCard_") > 0, "덱 카드가 칩으로 보여야 합니다")
+		t:truthy(Screen.find(profile, "FramePreview"), "테두리 미리보기")
+		t:truthy(Screen.find(profile, "CardBack"), "뒷면 미리보기")
+		t:truthy(Screen.hasText(profile, "캠페인 2 / 5"), "캠페인 진도")
+		t:falsy(Screen.hasText(profile, "1234"), "MMR 은 숨은 점수입니다")
+
+		Screen.click(Screen.findButton(guiOf(kim), "뒤로"))
+		world:advance(1)
+		t:truthy(Screen.findButton(guiOf(kim), "빠른 대전"), "뒤로 가면 시작 화면이어야 합니다")
+	end)
+
+	t:it("기록이 없으면 없다고 말한다", function()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "프로필"))
+		world:advance(1)
+		assertNoErrors(world, "빈 프로필")
+
+		local profile = Screen.find(guiOf(kim), "TCGProfile")
+		t:truthy(Screen.hasText(profile, "아직 랭크전 기록이 없습니다"))
+		t:truthy(Screen.hasText(profile, "브론즈"))
+	end)
+
+	t:it("큐에 서 있는 동안은 프로필 버튼이 숨는다", function()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		world:advance(2)
+
+		clickQueue(kim)
+		world:advance(1)
+		t:falsy(Screen.findButton(guiOf(kim), "프로필"), "큐에 선 채로 다른 화면에 가면 안 됩니다")
 	end)
 end)
 

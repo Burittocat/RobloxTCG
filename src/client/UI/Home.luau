@@ -17,6 +17,9 @@
 	화면 상태는 서버가 정한다(Net.LobbyScreen). 여기서는 받은 걸 그리기만 한다.
 ]]
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Rank = require(ReplicatedStorage:WaitForChild("Shared").Rank)
+
 local Theme = require(script.Parent.Theme)
 local Widgets = require(script.Parent.Widgets)
 
@@ -38,6 +41,7 @@ function Home.new(parent)
 		deck = noop,
 		shop = noop,
 		wardrobe = noop,
+		profile = noop,
 	}
 
 	self.screen = "home"
@@ -77,6 +81,22 @@ function Home:build(parent)
 	})
 
 	Widgets.autoScale(root)
+
+	--[[
+		프로필은 오른쪽 위 모서리에 둔다. 가운데 메뉴는 세로 예산이 꽉 찼고(줄을 하나 더
+		쌓으면 대기 상자가 밀린다), 프로필은 "판을 시작하는 버튼" 이 아니라 들여다보는
+		곳이라 메뉴 줄에 섞이지 않는 편이 맞다.
+	]]
+	self.profileButton = Widgets.button("프로필", {
+		Name = "ProfileButton",
+		Parent = root,
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -20, 0, 20),
+		Size = UDim2.fromOffset(120, 40),
+		TextSize = Theme.text.label,
+	}, function()
+		self.callbacks.profile()
+	end)
 
 	local column = new("Frame", {
 		Name = "Column",
@@ -312,11 +332,25 @@ function Home:render(payload)
 
 	self.menu.Visible = isHome
 	self.waitBox.Visible = not isHome
+	self.profileButton.Visible = isHome -- 큐에 서 있는 동안은 다른 화면으로 못 간다(메뉴와 같은 이유)
 	self.message.Text = ""
 	self.message.TextColor3 = Theme.color.textDim
+	self.subtitle.TextColor3 = Theme.color.textDim -- 시작 화면만 티어 색으로 다시 칠한다
 
 	if screen == "home" then
-		self.subtitle.Text = "빠른 대전"
+		--[[
+			랭크는 빠른 대전 버튼 바로 위에 뜬다 — 한 판이 무엇을 걸고 하는 것인지 보이게.
+			티어 색으로 칠한다. 서버가 점수를 안 실었으면(옛 서버) 예전처럼 "빠른 대전" 만.
+		]]
+		local points = tonumber(payload.rankPoints)
+		if points then
+			local tier = Rank.tierOf(points)
+			self.subtitle.Text = ("빠른 대전 · %s"):format(Rank.label(points))
+			self.subtitle.TextColor3 = Color3.fromRGB(tier.color[1], tier.color[2], tier.color[3])
+		else
+			self.subtitle.Text = "빠른 대전"
+			self.subtitle.TextColor3 = Theme.color.textDim
+		end
 		self.message.Text = payload.text or "처음이라면 튜토리얼부터. 상대를 찾아 바로 한 판도 됩니다."
 	elseif screen == "error" then
 		self.subtitle.Text = "빠른 대전"

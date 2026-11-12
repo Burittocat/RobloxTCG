@@ -24,6 +24,7 @@ local Decks = loader.require(Shared.Decks)
 local Campaign = loader.require(Shared.Campaign)
 local Collection = loader.require(Shared.Collection)
 local Cosmetics = loader.require(Shared.Cosmetics)
+local Rank = loader.require(Shared.Rank)
 local AI = loader.require(Shared.AI)
 local Net = loader.require(Shared.Net)
 local Matchmaking = loader.require(Shared.Matchmaking)
@@ -84,6 +85,7 @@ local SPECS = {
 	{ name = "campaign", run = require("./specs/campaign") },
 	{ name = "collection", run = require("./specs/collection") },
 	{ name = "cosmetics", run = require("./specs/cosmetics") },
+	{ name = "rank", run = require("./specs/rank") },
 	{ name = "cost", run = require("./specs/cost") },
 	{ name = "phases", run = require("./specs/phases") },
 	{ name = "keywords", run = require("./specs/keywords") },
@@ -106,6 +108,7 @@ local ctx = {
 	Campaign = Campaign,
 	Collection = Collection,
 	Cosmetics = Cosmetics,
+	Rank = Rank,
 	AI = AI,
 	Net = Net,
 	Matchmaking = Matchmaking,

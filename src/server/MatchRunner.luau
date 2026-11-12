@@ -11,6 +11,7 @@
 	    })
 
 	좌석의 deck / life 는 안 주면 스타터 덱과 Config.startingLife 다.
+	좌석의 mmr 은 판이 시작될 때의 숨은 실력 점수다(Rank). PvP 가 끝나면 PvpReward 가 쓴다.
 	좌석의 frame · back 은 그 사람이 낀 테두리 · 뒷면 id 다(Cosmetics). 룰 엔진에는 넘기지 않고
 	스냅샷에만 싣는다 — 겉모습이 판정에 닿는 길을 만들지 않으려는 것이다.
 
@@ -74,6 +75,13 @@ function MatchRunner.new(remotes, opts)
 	for seatId, seat in self.seats do
 		if seat.player then
 			self.seatOf[seat.player] = seatId
+			--[[
+				누가 앉았었는지는 **나가도 남긴다.** playerLeft 가 seat.player 를 비우는데,
+				랭크는 떠난 사람에게도 적어야 한다(Rank 머리말 "짧은 판" — 나가서 손해를
+				피하는 길을 막는다). 그때 쓸 열쇠가 UserId 다.
+			]]
+			seat.userId = seat.player.UserId
+			seat.userName = seat.player.Name
 		end
 	end
 

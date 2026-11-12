@@ -53,8 +53,9 @@ end
 -- 큐
 --==========================================================================
 
-function Matchmaker:enqueue(player)
-	return self.backend:enqueue(player)
+-- mmr 은 숨은 실력 점수(Rank). 짝을 고를 때 쓴다 — 없으면 처음 MMR 로 본다.
+function Matchmaker:enqueue(player, mmr)
+	return self.backend:enqueue(player, mmr)
 end
 
 function Matchmaker:cancel(player)

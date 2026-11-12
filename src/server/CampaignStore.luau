@@ -89,6 +89,11 @@ function CampaignStore:get(player)
 	return progress
 end
 
+-- 이미 읽어 둔 진행도. 아직 안 읽었으면 nil — **저장소를 읽지 않는다**(yield 하지 않는다).
+function CampaignStore:peek(player)
+	return self.cache[player.UserId]
+end
+
 --[[
 	진행도를 저장한다. -> ok, reason
 
@@ -176,6 +181,60 @@ function CampaignStore:update(player, transform)
 		self.cache[player.UserId] = result
 	end
 	return true, gained, reason
+end
+
+--[[
+	저장된 값 위에서 바꾼다 — 골드가 아닌 것. -> ok, extra | false, reason
+
+	transform(progress) -> 새 진행도, extra   (새 진행도가 nil 이면 쓰지 않는다)
+
+	update 와 같은 이유로 UpdateAsync 안에서 **지금 저장된 값**을 받아 계산한다(랭크 점수는
+	대전 서버가 쓴다). update 는 "골드를 받았을 때만 쓴다" 는 규칙이 박혀 있어서 따로 뒀다.
+
+	who 는 Player 이거나 `{ UserId, Name }` 이다. 랭크는 **판을 떠난 사람**에게도 적어야 해서
+	(나가서 손해를 피하는 길을 막는다 — Rank 머리말) Player 가 없을 수 있다.
+	저장된 값이 모양이 틀렸으면 손대지 않는다.
+]]
+function CampaignStore:change(who, transform)
+	local extra = nil
+	local result = nil
+
+	if not self.store then
+		result, extra = transform(self.cache[who.UserId] or Campaign.newProgress())
+		if result ~= nil then
+			self.cache[who.UserId] = result
+		end
+		return true, extra
+	end
+
+	local invalid = false
+	local ok, err = pcall(function()
+		self.store:UpdateAsync(keyFor(who), function(current)
+			local base = current
+			if base == nil then
+				base = Campaign.newProgress()
+			elseif not Campaign.validateProgress(base) then
+				invalid = true
+				return nil
+			end
+			result, extra = transform(base)
+			return result
+		end)
+	end)
+
+	if not ok then
+		warn(("[TCG] 진행도를 고치지 못했습니다 (%s): %s"):format(tostring(who.Name), tostring(err)))
+		return false, "저장하지 못했습니다"
+	end
+	if invalid then
+		return false, "저장된 진행도가 맞지 않아 적지 못했습니다"
+	end
+
+	-- 이 서버에 캐시가 있으면 따라간다. 없으면(떠난 사람) 만들지 않는다 — 다음에 읽을 때 저장소에서 온다.
+	if result ~= nil and self.cache[who.UserId] then
+		self.cache[who.UserId] = result
+	end
+	return true, extra
 end
 
 -- 접속을 끊은 사람의 캐시는 들고 있을 이유가 없다.

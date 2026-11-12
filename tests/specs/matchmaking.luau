@@ -101,6 +101,85 @@ return function(t, ctx)
 	end)
 
 	--==================================================================
+	-- MMR 창 (Matchmaking.MmrWindow, 숨은 실력 점수는 src/shared/Rank)
+	--==================================================================
+	t:describe("MMR 로 짝짓기", function()
+		local WINDOW = Matchmaking.MmrWindow
+
+		local function rated(userId, secondsAgo, mmr)
+			local e = entry(userId, secondsAgo)
+			e.mmr = mmr
+			return e
+		end
+
+		local function ranked(entries)
+			return plan(entries, { mmrWindow = WINDOW })
+		end
+
+		local function pairOf(match)
+			local ids = userIdsOf(match)
+			table.sort(ids)
+			return table.concat(ids, "-")
+		end
+
+		t:it("방금 온 두 사람도 MMR 이 가까우면 바로 붙는다", function()
+			local result = ranked({ rated(1, 0, 1000), rated(2, 0, 1000 + WINDOW.base) })
+			t:eq(#result.matches, 1)
+		end)
+
+		t:it("방금 온 두 사람은 MMR 차가 크면 기다린다", function()
+			local result = ranked({ rated(1, 0, 1000), rated(2, 0, 1600) })
+			t:eq(#result.matches, 0)
+			t:eq(#result.waiting, 2, "둘 다 큐에 되돌아가야 합니다")
+		end)
+
+		--[[
+			상한이 없다 — 사람이 적은 시간에 고수 혼자 영원히 못 붙는 것보다 늦게라도 붙는 쪽이 낫다.
+		]]
+		t:it("오래 기다리면 창이 넓어져 결국 붙는다", function()
+			local gap = 600
+			local needed = math.ceil((gap - WINDOW.base) / WINDOW.perSecond)
+			t:eq(#ranked({ rated(1, needed - 1, 1000), rated(2, 0, 1000 + gap) }).matches, 0, "아직 이르다")
+			t:eq(#ranked({ rated(1, needed, 1000), rated(2, 0, 1000 + gap) }).matches, 1, "이제 붙어야 한다")
+		end)
+
+		t:it("더 오래 기다린 사람의 창을 쓴다", function()
+			-- 방금 온 쪽의 좁은 창을 쓰면, 오래 기다려 넓혀 둔 것이 소용없어진다
+			local result = ranked({ rated(1, 0, 1000), rated(2, 60, 1500) })
+			t:eq(#result.matches, 1)
+		end)
+
+		t:it("창 안에서 MMR 이 가장 가까운 사람과 붙는다", function()
+			-- 1번(가장 오래 기다림, 1000)은 2번(1090)이 아니라 3번(1010)과 붙어야 한다
+			local result = ranked({ rated(1, 30, 1000), rated(2, 20, 1090), rated(3, 10, 1010), rated(4, 5, 1100) })
+			t:eq(#result.matches, 2)
+			local found = {}
+			for _, match in result.matches do
+				found[pairOf(match)] = true
+			end
+			t:truthy(found["1-3"], "1000 은 1010 과 붙어야 합니다")
+			t:truthy(found["2-4"], "남은 1090 · 1100 이 붙어야 합니다")
+		end)
+
+		t:it("MMR 이 없는 엔트리는 처음 MMR 로 본다", function()
+			local result = ranked({ entry(1, 0), rated(2, 0, WINDOW.initial + 50) })
+			t:eq(#result.matches, 1, "옛 서버가 넣은 엔트리도 붙어야 합니다")
+		end)
+
+		t:it("창을 안 주면 MMR 을 안 보고 예전처럼 붙인다", function()
+			local result = plan({ rated(1, 0, 100), rated(2, 0, 3000) })
+			t:eq(#result.matches, 1)
+		end)
+
+		t:it("MMR 이 멀리 떨어진 둘 사이에 낀 사람은 가까운 쪽과 붙는다", function()
+			local result = ranked({ rated(1, 5, 1000), rated(2, 5, 1800), rated(3, 0, 1790) })
+			t:eq(#result.matches, 1)
+			t:eq(pairOf(result.matches[1]), "2-3")
+			t:eq(result.waiting[1].userId, 1)
+		end)
+	end)
+
+	--==================================================================
 	t:describe("만료", function()
 		t:it("TTL 을 넘긴 엔트리는 버려진다", function()
 			local result = plan({ entry(1, TTL + 1), entry(2, 10) })

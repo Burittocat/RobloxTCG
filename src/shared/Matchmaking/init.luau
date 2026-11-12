@@ -41,11 +41,14 @@ local MAX_SEED = 2147483646
 	취소를 사람 단위로 기억하면 "취소 → 다시 큐" 가 막힌다. 같은 사람의 새 등록까지
 	같이 걸러지기 때문이다. 취소된 등록만 정확히 지목하려면 등록마다 이름표가 필요하다.
 ]]
-function Matchmaking.newEntry(userId, name, serverId, now, token)
+function Matchmaking.newEntry(userId, name, serverId, now, token, mmr)
 	return {
 		userId = userId,
 		name = name,
 		serverId = serverId,
+
+		-- 숨은 실력 점수(Rank). 짝을 고를 때만 쓴다. 없으면 처음 MMR 로 본다.
+		mmr = mmr,
 
 		-- 줄 선 시각. 순서를 정할 때만 쓴다. 갱신해도 뒤로 밀리지 않도록 그대로 둔다.
 		joinedAt = now,
@@ -72,6 +75,42 @@ end
 -- 짝짓기
 --==========================================================================
 
+--[[
+	MMR 창 (★ docs/open-questions.md). 둘의 MMR 차가 창 안이어야 붙는다.
+
+	    창 = base + perSecond × 기다린 초
+
+	오래 기다릴수록 넓어진다. **상한이 없다** — 사람이 적은 시간에 고수 혼자 큐에 서서
+	영원히 못 붙는 것보다, 늦게라도 차이 나는 상대와 붙는 쪽이 낫다. 10초에 +100 이라
+	1분이면 ±700, 거의 누구와도 붙는다.
+
+	둘 중 **더 오래 기다린 사람의 창**을 쓴다. 방금 온 사람의 좁은 창을 쓰면 오래 기다린
+	사람이 넓혀 둔 것이 쓸모없어진다.
+]]
+Matchmaking.MmrWindow = table.freeze({
+	base = 100,
+	perSecond = 10,
+	initial = 1000, -- MMR 이 없는 엔트리(옛 서버가 넣은 것)를 이 값으로 본다. Rank.Mmr.initial 과 같다
+})
+
+function Matchmaking.windowFor(entry, now, window)
+	local waited = math.max(0, now - (entry.joinedAt or now))
+	return window.base + window.perSecond * waited
+end
+
+local function mmrOf(entry, window)
+	return tonumber(entry.mmr) or window.initial
+end
+
+-- 두 엔트리가 붙어도 되는가. window 가 없으면 MMR 을 안 본다(예전 동작).
+function Matchmaking.canPair(a, b, now, window)
+	if not window then
+		return true
+	end
+	local reach = math.max(Matchmaking.windowFor(a, now, window), Matchmaking.windowFor(b, now, window))
+	return math.abs(mmrOf(a, window) - mmrOf(b, window)) <= reach
+end
+
 local function byWaitTime(a, b)
 	if a.joinedAt ~= b.joinedAt then
 		return a.joinedAt < b.joinedAt -- 오래 기다린 사람 먼저
@@ -82,7 +121,7 @@ end
 --[[
 	큐에서 꺼내온 엔트리 묶음을 어떻게 처리할지 계획한다.
 
-	    plan(entries, { now = , ttl = , seed = , blockedTokens = , maxMatches = })
+	    plan(entries, { now = , ttl = , seed = , blockedTokens = , maxMatches = , mmrWindow = })
 	      -> {
 	           matches   = { { id, seed, startingPlayerId, seats = { entry, entry } }, ... }
 	           expired   = { entry, ... }   버린다 (큐에서 제거)
@@ -150,10 +189,41 @@ function Matchmaking.plan(entries, opts)
 
 	--------------------------------------------------------------------
 	-- 2. 둘씩 묶기
+	--
+	-- 오래 기다린 사람부터, **창 안에서 MMR 이 가장 가까운** 사람과 붙인다. 가장 가까운
+	-- 사람이 아니라 다음 사람과 붙이면, 창이 넓어진 뒤에는 MMR 을 안 보는 것과 같아진다.
+	-- 차가 같으면 더 오래 기다린 쪽(목록 앞쪽)이다 — 결정론적이다.
+	--
+	-- opts.mmrWindow 가 없으면 MMR 을 안 보고 기다린 순서대로 둘씩 묶는다(예전 동작).
 	--------------------------------------------------------------------
-	local index = 1
-	while index + 1 <= #live and #result.matches < maxMatches do
-		local a, b = live[index], live[index + 1]
+	local window = opts.mmrWindow
+	local paired = {}
+	local pairs_ = {}
+
+	for i, a in live do
+		if not paired[i] and #pairs_ < maxMatches then
+			local best, bestGap = nil, math.huge
+			for j = i + 1, #live do
+				local b = live[j]
+				if not paired[j] and Matchmaking.canPair(a, b, now, window) then
+					local gap = window and math.abs(mmrOf(a, window) - mmrOf(b, window)) or 0
+					if gap < bestGap then
+						best, bestGap = j, gap
+					end
+					if not window then
+						break -- MMR 을 안 보면 바로 다음 사람이다
+					end
+				end
+			end
+			if best then
+				paired[i], paired[best] = true, true
+				table.insert(pairs_, { live[i], live[best] })
+			end
+		end
+	end
+
+	for _, pair in pairs_ do
+		local a, b = pair[1], pair[2]
 		local seed = rng:nextInteger(1, MAX_SEED)
 
 		-- 좌석도 동전을 던진다. 큐에 먼저 들어온 사람이 항상 1번이면
@@ -166,12 +236,12 @@ function Matchmaking.plan(entries, opts)
 			seats = seats,
 			startingPlayerId = opts.startingPlayerFor and opts.startingPlayerFor(seed) or 1,
 		})
-
-		index += 2
 	end
 
-	for rest = index, #live do
-		table.insert(result.waiting, live[rest])
+	for i, entry in live do
+		if not paired[i] then
+			table.insert(result.waiting, entry)
+		end
 	end
 
 	return result

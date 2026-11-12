@@ -284,15 +284,49 @@ end
 -- 상대 손패 (뒷면)
 --==========================================================================
 
-function CardView.cardBack(layoutOrder)
+--[[
+	카드 뒷면(코스메틱) 한 벌. -> { base: Color3, accent: Color3, mark: string, fade: number }
+
+	없는 id · nil · 빈 문자열은 기본 뒷면이다(Cosmetics.backOrDefault) — 예전 뒷면과 같은 값이다.
+]]
+function CardView.backStyle(backId)
+	local back = Cosmetics.backOrDefault(backId)
+	return {
+		base = Color3.fromRGB(back.base[1], back.base[2], back.base[3]),
+		accent = Color3.fromRGB(back.accent[1], back.accent[2], back.accent[3]),
+		mark = back.mark,
+		fade = back.fade,
+	}
+end
+
+--[[
+	뒷면 한 장. size 를 안 주면 상대 패널의 작은 칸(26x38)이다.
+	꾸미기 화면의 미리보기도 이걸 크게 불러 쓴다 — 미리보기와 판의 뒷면이 어긋나지 않게.
+
+	무늬 글자 크기는 카드 폭에 맞춘다. 작은 칸에서 크게 쓰면 테두리를 뚫고 나간다.
+]]
+function CardView.cardBack(layoutOrder, backId, size)
+	local style = CardView.backStyle(backId)
+	local width = size and size.X or 26
+	local height = size and size.Y or 38
+
 	return new("Frame", {
-		Size = UDim2.fromOffset(26, 38),
-		BackgroundColor3 = Theme.color.panelSoft,
+		Name = "CardBack",
+		Size = UDim2.fromOffset(width, height),
+		BackgroundColor3 = style.base,
 		BorderSizePixel = 0,
 		LayoutOrder = layoutOrder or 0,
 	}, {
-		Widgets.corner(4),
-		Widgets.stroke(Theme.color.stroke, 1, 0.3),
+		Widgets.corner(math.max(4, math.floor(width / 7))),
+		Widgets.stroke(style.accent, width >= 60 and 2 or 1, style.fade),
+		style.mark ~= "" and Widgets.label(style.mark, {
+			Name = "BackMark",
+			Size = UDim2.fromScale(1, 1),
+			Font = Theme.font.bold,
+			TextSize = math.max(Theme.text.tiny, math.floor(width * 0.5)),
+			TextColor3 = style.accent,
+			TextXAlignment = Enum.TextXAlignment.Center,
+		}) or nil,
 	})
 end
 

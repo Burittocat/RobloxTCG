@@ -1953,11 +1953,14 @@ function Battle:renderPlayerPanel(panel, state, playerId, opts)
 			알아서도 안 되므로, 키를 자리 번호로 준다 — 상대가 카드를 내면
 			마지막 자리가 사라지는 모습이 된다.
 		]]
+		-- 상대가 낀 뒷면 (Cosmetics). 판 중에는 안 바뀌므로 만들 때 한 번만 칠한다.
+		local backId = state.backs and state.backs[playerId]
+
 		for index = 1, math.min(player.handCount, 12) do
 			table.insert(items, {
 				key = "back:" .. index,
 				build = function()
-					return CardView.cardBack(0)
+					return CardView.cardBack(0, backId)
 				end,
 			})
 		end

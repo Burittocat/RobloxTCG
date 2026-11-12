@@ -1,16 +1,21 @@
 --[[
-	꾸미기 화면 — 카드 테두리를 사고 낀다.
+	꾸미기 화면 — 카드 테두리와 카드 뒷면을 사고 낀다.
 
-	테두리는 내가 낸 카드에 둘러진다. 손패와 필드의 내 카드에, 그리고 **상대 화면에서도**
-	내 생물에 보인다(Cosmetics 머리말). 판에는 아무 영향이 없다.
+	  [테두리]     내가 낸 카드(손패 · 필드)에 둘러진다. 상대 화면에서도 내 생물에 보인다
+	  [카드 뒷면]  상대 화면에서 내 손패가 이 뒷면으로 보인다
+
+	판에는 아무 영향이 없다(Cosmetics 머리말).
 
 	카드팩 화면과 같은 태도다 — 여기에는 판정이 없다. 골드가 모자라면 [사기] 를 꺼두는
 	것까지만 하고, 진짜 판정(잔액 · 가졌나 · 저장)은 Lobby:buyCosmetic 이 한다. 결과는
 	**저장에 성공했을 때만** 화면에 바뀌어 온다.
 
-	칸마다 미리보기 카드가 하나씩 있다. 테두리를 말로 설명하는 것보다 그려 보이는 것이
-	빠르고, 미리보기도 전투와 **같은 함수**(CardView.frameStyle)로 칠한다 — 여기서 본
-	색과 판에서 보이는 색이 어긋나지 않게.
+	칸마다 미리보기가 있다. 말로 설명하는 것보다 그려 보이는 것이 빠르고, 미리보기도
+	판과 **같은 함수**(CardView.frameStyle · CardView.cardBack)로 칠한다 — 여기서 본 것과
+	판에서 보이는 것이 어긋나지 않게.
+
+	탭은 화면이 들고 있는다. 서버는 두 목록을 늘 같이 내려주고, 무언가를 사서 화면이 다시
+	와도 보던 탭이 그대로다 — 뒷면을 샀는데 테두리 탭으로 튕기면 방금 산 것이 안 보인다.
 ]]
 
 local CardView = require(script.Parent.CardView)
@@ -26,11 +31,19 @@ local TILE_WIDTH = 204
 local TILE_HEIGHT = 150
 local PREVIEW = Vector2.new(70, 96)
 
+-- 탭 순서와 글자. key 는 서버 payload 의 목록 이름이다(Net 의 wardrobe 화면).
+local TABS = {
+	{ key = "frames", label = "테두리", note = "낀 테두리는 내가 낸 카드에 둘러지고, 상대 화면에서도 보입니다." },
+	{ key = "backs", label = "카드 뒷면", note = "상대 화면에서 내 손패가 이 뒷면으로 보입니다." },
+}
+
 function Wardrobe.new(parent)
 	local self = setmetatable({}, Wardrobe)
 
 	local noop = function() end
 	self.callbacks = { buy = noop, equip = noop, back = noop }
+	self.tab = TABS[1].key
+	self.payload = nil
 
 	self:build(parent)
 	return self
@@ -73,9 +86,9 @@ function Wardrobe:build(parent)
 		BackgroundTransparency = 1,
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(660, 520),
+		Size = UDim2.fromOffset(660, 560),
 	}, {
-		Widgets.listLayout(Enum.FillDirection.Vertical, 12, Enum.HorizontalAlignment.Center),
+		Widgets.listLayout(Enum.FillDirection.Vertical, 10, Enum.HorizontalAlignment.Center),
 	})
 
 	--------------------------------------------------------------------
@@ -89,11 +102,11 @@ function Wardrobe:build(parent)
 		Size = UDim2.new(1, 0, 0, 44),
 	})
 
-	Widgets.label("꾸미기 — 카드 테두리", {
+	Widgets.label("꾸미기", {
 		Parent = header,
-		Size = UDim2.new(0.7, 0, 1, 0),
+		Size = UDim2.new(0.6, 0, 1, 0),
 		Font = Theme.font.bold,
-		TextSize = 28,
+		TextSize = 32,
 	})
 
 	local purse = new("Frame", {
@@ -120,24 +133,51 @@ function Wardrobe:build(parent)
 		TextXAlignment = Enum.TextXAlignment.Right,
 	})
 
-	Widgets.label("낀 테두리는 내가 낸 카드에 둘러지고, 상대 화면에서도 보입니다. 판에는 영향이 없습니다.", {
+	--------------------------------------------------------------------
+	-- 탭
+	--------------------------------------------------------------------
+	local tabRow = new("Frame", {
+		Name = "Tabs",
 		Parent = column,
 		LayoutOrder = 2,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 36),
+	}, {
+		Widgets.listLayout(Enum.FillDirection.Horizontal, 8, Enum.HorizontalAlignment.Left),
+	})
+
+	self.tabButtons = {}
+	for index, tab in TABS do
+		self.tabButtons[tab.key] = Widgets.button(tab.label, {
+			Name = "Tab_" .. tab.key,
+			Parent = tabRow,
+			LayoutOrder = index,
+			Size = UDim2.fromOffset(130, 36),
+			TextSize = Theme.text.label,
+		}, function()
+			self:selectTab(tab.key)
+		end)
+	end
+
+	self.note = Widgets.label("", {
+		Name = "TabNote",
+		Parent = column,
+		LayoutOrder = 3,
 		Size = UDim2.new(1, 0, 0, 20),
 		TextSize = Theme.text.small,
 		TextColor3 = Theme.color.textDim,
 	})
 
 	--------------------------------------------------------------------
-	-- 테두리 칸들 — 세 칸씩 두 줄
+	-- 칸들 — 세 칸씩 두 줄
 	--------------------------------------------------------------------
 	local listLayout = Widgets.listLayout(Enum.FillDirection.Horizontal, 10, Enum.HorizontalAlignment.Center)
 	listLayout.Wraps = true
 
 	self.grid = new("Frame", {
-		Name = "Frames",
+		Name = "Items",
 		Parent = column,
-		LayoutOrder = 3,
+		LayoutOrder = 4,
 		BackgroundTransparency = 1,
 		Size = UDim2.new(1, 0, 0, TILE_HEIGHT * 2 + 10),
 	}, {
@@ -150,7 +190,7 @@ function Wardrobe:build(parent)
 	self.message = Widgets.label("", {
 		Name = "WardrobeMessage",
 		Parent = column,
-		LayoutOrder = 4,
+		LayoutOrder = 5,
 		Size = UDim2.new(1, 0, 0, 22),
 		TextSize = Theme.text.body,
 		TextColor3 = Theme.color.textDim,
@@ -159,7 +199,7 @@ function Wardrobe:build(parent)
 
 	Widgets.button("뒤로", {
 		Parent = column,
-		LayoutOrder = 5,
+		LayoutOrder = 6,
 		Size = UDim2.fromOffset(200, 40),
 		TextSize = Theme.text.label,
 	}, function()
@@ -168,16 +208,16 @@ function Wardrobe:build(parent)
 end
 
 --==========================================================================
--- 테두리 한 칸
+-- 미리보기
 --==========================================================================
 
 --[[
-	미리보기 카드. 진짜 카드처럼 종류 색 바탕에 테두리를 두른다 — 테두리 색은 바탕과
-	어울려 보여야 의미가 있고, 회색 상자 위에서는 실제와 다르게 보인다.
-	바탕은 생물 색이다. 필드에 오래 남아 상대 눈에 가장 많이 띄는 것이 생물이다.
+	테두리 미리보기. 진짜 카드처럼 종류 색 바탕에 두른다 — 테두리 색은 바탕과 어울려
+	보여야 의미가 있고, 회색 상자 위에서는 실제와 다르게 보인다. 바탕은 생물 색이다 —
+	필드에 오래 남아 상대 눈에 가장 많이 띄는 것이 생물이다.
 ]]
-local function preview(frameId)
-	local color, thickness = CardView.frameStyle(frameId)
+local function framePreview(id)
+	local color, thickness = CardView.frameStyle(id)
 
 	return new("Frame", {
 		Name = "Preview",
@@ -198,6 +238,17 @@ local function preview(frameId)
 	})
 end
 
+-- 뒷면 미리보기. 판에서 쓰는 바로 그 함수를 크게 부른다.
+local function backPreview(id)
+	local card = CardView.cardBack(0, id, PREVIEW)
+	card.Name = "Preview"
+	return card
+end
+
+--==========================================================================
+-- 한 칸
+--==========================================================================
+
 --[[
 	칸 하나. 버튼은 상태에 따라 셋 중 하나다.
 
@@ -209,7 +260,7 @@ end
 ]]
 function Wardrobe:addTile(index, entry, gold)
 	local tile = Widgets.panel({
-		Name = "Frame_" .. entry.id,
+		Name = "Item_" .. entry.id,
 		Parent = self.grid,
 		LayoutOrder = index,
 		Size = UDim2.fromOffset(TILE_WIDTH, TILE_HEIGHT),
@@ -227,8 +278,8 @@ function Wardrobe:addTile(index, entry, gold)
 		end
 	end
 
-	local card = preview(entry.id)
-	card.Parent = tile
+	local preview = (self.tab == "backs") and backPreview(entry.id) or framePreview(entry.id)
+	preview.Parent = tile
 
 	local side = new("Frame", {
 		Parent = tile,
@@ -238,7 +289,7 @@ function Wardrobe:addTile(index, entry, gold)
 	})
 
 	Widgets.label(entry.name, {
-		Name = "FrameName",
+		Name = "ItemName",
 		Parent = side,
 		Size = UDim2.new(1, 0, 0, 24),
 		Font = Theme.font.bold,
@@ -255,7 +306,7 @@ function Wardrobe:addTile(index, entry, gold)
 	end
 
 	Widgets.label(status, {
-		Name = "FrameStatus",
+		Name = "ItemStatus",
 		Parent = side,
 		Position = UDim2.fromOffset(0, 28),
 		Size = UDim2.new(1, 0, 0, 20),
@@ -300,22 +351,46 @@ function Wardrobe:setVisible(visible)
 	self.gui.Enabled = visible
 end
 
+function Wardrobe:selectTab(key)
+	self.tab = key
+	if self.payload then
+		self:paint()
+	end
+end
+
 --[[
 	payload 는 서버가 보낸 그대로다. (Net 의 로비 프로토콜 — wardrobe 화면)
 ]]
 function Wardrobe:render(payload)
+	self.payload = payload
+	self:paint()
+
+	self.message.Text = payload.text or "골드는 캠페인 스테이지를 처음 깰 때와 빠른 대전에서 이길 때 받습니다"
+	self.message.TextColor3 = payload.failed and Theme.color.warn or Theme.color.textDim
+end
+
+-- 지금 탭의 칸들을 다시 그린다. 탭을 바꿀 때는 서버를 거치지 않는다 — 두 목록이 이미 와 있다.
+function Wardrobe:paint()
+	local payload = self.payload
 	local gold = tonumber(payload.gold) or 0
 	self.goldLabel.Text = tostring(gold)
 
+	for _, tab in TABS do
+		local selected = (tab.key == self.tab)
+		local button = self.tabButtons[tab.key]
+		button.BackgroundColor3 = selected and Theme.color.creature or Theme.color.panelSoft
+		button.TextColor3 = selected and Theme.color.text or Theme.color.textDim
+		if selected then
+			self.note.Text = tab.note
+		end
+	end
+
 	Widgets.clear(self.grid)
-	for index, entry in payload.frames or {} do
+	for index, entry in payload[self.tab] or {} do
 		if type(entry) == "table" and type(entry.id) == "string" then
 			self:addTile(index, entry, gold)
 		end
 	end
-
-	self.message.Text = payload.text or "골드는 캠페인 스테이지를 처음 깰 때와 빠른 대전에서 이길 때 받습니다"
-	self.message.TextColor3 = payload.failed and Theme.color.warn or Theme.color.textDim
 end
 
 return Wardrobe

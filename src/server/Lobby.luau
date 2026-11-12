@@ -6,7 +6,7 @@
 	  2. 빠른 대전 큐 등록/취소                        (Matchmaker)
 	  3. AI 연습·튜토리얼·캠페인은 큐를 타지 않고 이 자리에서 한 판 띄운다
 	  4. 덱 저장과 카드팩 — 가진 카드(CollectionStore)와 골드를 다룬다
-	  5. 꾸미기 — 카드 테두리를 사고 낀다 (Cosmetics. 저장은 컬렉션과 같은 값)
+	  5. 꾸미기 — 카드 테두리 · 뒷면을 사고 낀다 (Cosmetics. 저장은 컬렉션과 같은 값)
 
 	PvP 매치는 여기서 굴리지 않는다. 짝이 지어지면 두 사람은 예약 서버로 텔레포트되고
 	거기서 Arena 가 판을 연다. 로비 서버가 대전까지 맡으면 인원이 많은 서버일수록
@@ -182,9 +182,16 @@ function Lobby:goldFor(player)
 	return Collection.balance(self.campaignStore:get(player), self:collectionFor(player))
 end
 
--- 이 사람이 낀 카드 테두리. 판을 열 때 좌석에 실린다(MatchRunner:frames).
-function Lobby:frameFor(player)
-	return Cosmetics.equippedFrame(self:collectionFor(player))
+--[[
+	사람 좌석에 그 사람이 낀 꾸밈(테두리 · 뒷면)을 얹는다. -> seat
+	판을 여는 곳마다 이걸 거친다 — 한 곳이라도 빠뜨리면 그 모드에서만 꾸밈이 안 보인다.
+	(MatchRunner:looks 가 스냅샷에 싣는다)
+]]
+function Lobby:dress(seat)
+	local collection = self:collectionFor(seat.player)
+	seat.frame = Cosmetics.equippedFrame(collection)
+	seat.back = Cosmetics.equippedBack(collection)
+	return seat
 end
 
 function Lobby:setScreen(player, payload)
@@ -379,7 +386,7 @@ function Lobby:startTutorial(player)
 
 	local runner = MatchRunner.new(self.remotes, {
 		seats = {
-			[1] = { player = player, deck = Decks.tutorial(), frame = self:frameFor(player) },
+			[1] = self:dress({ player = player, deck = Decks.tutorial() }),
 			[2] = {
 				ai = AI.Difficulty.Easy,
 				name = "튜토리얼 상대",
@@ -462,7 +469,7 @@ function Lobby:startCampaignStage(player, index)
 
 	local runner = MatchRunner.new(self.remotes, {
 		seats = {
-			[1] = { player = player, deck = self:deckFor(player), frame = self:frameFor(player) },
+			[1] = self:dress({ player = player, deck = self:deckFor(player) }),
 			[2] = {
 				ai = stage.difficulty,
 				name = stage.name,
@@ -665,10 +672,12 @@ function Lobby:openWardrobe(player, text, failed)
 	end
 	self.matchmaker:cancel(player)
 
+	local collection = self:collectionFor(player)
 	self:setScreen(player, {
 		screen = Screen.Wardrobe,
 		gold = self:goldFor(player),
-		frames = Cosmetics.list(self:collectionFor(player)),
+		frames = Cosmetics.list(collection, Cosmetics.Kind.Frame),
+		backs = Cosmetics.list(collection, Cosmetics.Kind.Back),
 		text = text,
 		failed = failed == true,
 	})
@@ -683,7 +692,6 @@ function Lobby:buyCosmetic(player, id)
 		return
 	end
 
-	local frame = Cosmetics.frame(id)
 	local updated, reason = Cosmetics.buy(self.campaignStore:get(player), self:collectionFor(player), id)
 	if not updated then
 		self:openWardrobe(player, tostring(reason), true)
@@ -696,7 +704,12 @@ function Lobby:buyCosmetic(player, id)
 		return
 	end
 
-	self:openWardrobe(player, ("'%s' 테두리를 샀습니다 — 바로 끼웠습니다"):format(frame.name), false)
+	local def, kind = Cosmetics.item(id)
+	self:openWardrobe(
+		player,
+		("%s '%s' 구매 완료 — 바로 끼웠습니다"):format(Cosmetics.kindName(kind), def.name),
+		false
+	)
 end
 
 function Lobby:equipCosmetic(player, id)
@@ -716,7 +729,8 @@ function Lobby:equipCosmetic(player, id)
 		return
 	end
 
-	self:openWardrobe(player, ("'%s' 테두리로 바꿨습니다"):format(Cosmetics.frame(id).name), false)
+	local def, kind = Cosmetics.item(id)
+	self:openWardrobe(player, ("%s 변경 — 이제 '%s'"):format(Cosmetics.kindName(kind), def.name), false)
 end
 
 --==========================================================================
@@ -731,7 +745,7 @@ function Lobby:startPractice(player)
 
 	local runner = MatchRunner.new(self.remotes, {
 		seats = {
-			[1] = { player = player, deck = self:deckFor(player), frame = self:frameFor(player) },
+			[1] = self:dress({ player = player, deck = self:deckFor(player) }),
 			[2] = { ai = AI.Difficulty.Normal, name = "훈련용 AI" },
 		},
 		allowRestart = true, -- 연습이니까 R 로 계속 새 판을 열 수 있다
@@ -748,11 +762,7 @@ end
 function Lobby:startLocalMatch(match, players)
 	local seats = {}
 	for seat = 1, 2 do
-		seats[seat] = {
-			player = players[seat],
-			deck = self:deckFor(players[seat]),
-			frame = self:frameFor(players[seat]),
-		}
+		seats[seat] = self:dress({ player = players[seat], deck = self:deckFor(players[seat]) })
 	end
 
 	local runner = MatchRunner.new(self.remotes, {

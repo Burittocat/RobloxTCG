@@ -2669,7 +2669,8 @@ t:describe("꾸미기", function()
 		local _, _, kim = openWardrobe()
 		local gui = guiOf(kim)
 
-		t:eq(Screen.countNamed(gui, "Frame_FRAME_"), #FrameTable.list, "테두리마다 한 칸씩 있어야 합니다")
+		t:eq(Screen.countNamed(gui, "Item_FRAME_"), #FrameTable.list, "테두리마다 한 칸씩 있어야 합니다")
+		t:eq(Screen.countNamed(gui, "Item_BACK_"), 0, "처음에는 테두리 탭만 보여야 합니다")
 		t:eq(act(kim, DEFAULT).Text, "끼는 중")
 		t:falsy(act(kim, PAID.id).Active, "골드가 없으면 [사기] 가 꺼져 있어야 합니다")
 	end)
@@ -2757,6 +2758,99 @@ t:describe("꾸미기", function()
 
 		t:truthy(handFramedWith(world, kim, PAID))
 		t:truthy(handFramedWith(world, lee, BASIC))
+	end)
+
+	--------------------------------------------------------------------
+	-- 카드 뒷면
+	--------------------------------------------------------------------
+
+	local BackTable = require("../src/shared/Cosmetics/Backs")
+	local PAID_BACK, BASIC_BACK
+	for _, back in BackTable.list do
+		if back.id == BackTable.default then
+			BASIC_BACK = back
+		elseif back.price > 0 and not PAID_BACK then
+			PAID_BACK = back
+		end
+	end
+
+	local function openBackTab(world, player)
+		Screen.click(Screen.find(Screen.find(guiOf(player), "TCGWardrobe"), "Tab_backs"))
+		world:advance(0.5)
+	end
+
+	-- 이 패널의 뒷면 카드가 전부 이 뒷면 바탕인가.
+	local function backsIn(panel, back)
+		local cards = allNamedIn(panel, "CardBack")
+		if #cards == 0 then
+			return false, "뒷면 카드가 없습니다"
+		end
+		for _, card in cards do
+			if not sameColor(card.BackgroundColor3, back.base) then
+				return false, ("뒷면이 %s 가 아닙니다"):format(back.id)
+			end
+		end
+		return true
+	end
+
+	t:it("뒷면 탭으로 바꾸면 뒷면 칸이 보인다", function()
+		local world, _, kim = openWardrobe()
+		openBackTab(world, kim)
+		assertNoErrors(world, "뒷면 탭")
+
+		local gui = guiOf(kim)
+		t:eq(Screen.countNamed(gui, "Item_BACK_"), #BackTable.list, "뒷면마다 한 칸씩 있어야 합니다")
+		t:eq(Screen.countNamed(gui, "Item_FRAME_"), 0, "테두리 칸은 숨어야 합니다")
+		t:eq(act(kim, BackTable.default).Text, "끼는 중")
+	end)
+
+	t:it("뒷면을 사도 보던 탭에 그대로 있고 테두리는 안 바뀐다", function()
+		local world, _, kim = openWardrobe(500)
+		Screen.click(act(kim, PAID.id))
+		world:advance(1)
+
+		openBackTab(world, kim)
+		Screen.click(act(kim, PAID_BACK.id))
+		world:advance(1)
+		assertNoErrors(world, "뒷면 사기")
+
+		t:eq(act(kim, PAID_BACK.id).Text, "끼는 중", "산 뒷면이 바로 끼워져야 합니다")
+		t:eq(Screen.countNamed(guiOf(kim), "Item_BACK_"), #BackTable.list, "사고 나서도 뒷면 탭이어야 합니다")
+
+		local stored = collectionOf(world, kim)
+		t:eq(stored.cosmetics.back, PAID_BACK.id)
+		t:eq(stored.cosmetics.frame, PAID.id, "뒷면을 샀다고 테두리가 바뀌면 안 됩니다")
+		t:eq(stored.spent, PAID.price + PAID_BACK.price)
+	end)
+
+	--[[
+		뒷면은 **상대 화면에서** 보인다. 내 화면의 상대 패널에는 상대 뒷면이 뜬다.
+		좌석이 뒤바뀌면 내 뒷면이 내 화면에 뜨는데, 그건 아무 의미가 없는 꾸밈이 된다.
+	]]
+	t:it("상대 화면에서 내 손패가 내 뒷면으로 보인다", function()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		local lee = lobby:addPlayer("Lee")
+		giveGold(world, kim, 500)
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "꾸미기"))
+		world:advance(1)
+		openBackTab(world, kim)
+		Screen.click(act(kim, PAID_BACK.id))
+		world:advance(1)
+		Screen.click(Screen.findButton(guiOf(kim), "뒤로"))
+		world:advance(1)
+
+		clickQueue(kim)
+		clickQueue(lee)
+		world:advance(6)
+		assert(passMulligan(world, kim, lee), "멀리건 관문을 통과하지 못했습니다")
+		assertNoErrors(world, "뒷면 끼고 PvP")
+
+		t:truthy(backsIn(Screen.find(guiOf(lee), "FoePanel"), PAID_BACK))
+		t:truthy(backsIn(Screen.find(guiOf(kim), "FoePanel"), BASIC_BACK))
 	end)
 end)
 

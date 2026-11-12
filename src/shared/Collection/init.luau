@@ -18,7 +18,7 @@
 	  opened    깐 팩 수. 판정에는 안 쓴다 — 저장된 값을 보고 문제를 짚을 때 단서다
 	  receipts  처리한 Robux 영수증 ID (최근 MaxReceipts 개). 없어도 된다 — 아래 "Robux 팩"
 
-	cosmetics 산 테두리와 끼고 있는 것 { owned = { id, ... }, frame = id }. 없어도 된다 —
+	cosmetics 산 꾸밈과 종류마다 끼고 있는 것 { owned = { id, ... }, frame = id, back = id }. 없어도 된다 —
 	          규칙은 src/shared/Cosmetics 에 있다. 골드를 같이 쓰므로 같은 저장값에 둔다
 
 	**새 컬렉션을 만들 때는 Collection.copy 로 통째로 복사한 뒤 고친다.** 칸을 하나씩 옮겨
@@ -217,8 +217,11 @@ function Collection.validate(value)
 		if type(cosmetics) ~= "table" then
 			return false, "cosmetics 가 테이블이 아닙니다"
 		end
-		if cosmetics.frame ~= nil and type(cosmetics.frame) ~= "string" then
-			return false, "cosmetics.frame 이 문자열이 아닙니다"
+		-- owned 말고는 종류마다 낀 것 하나(frame · back · …). 전부 문자열이어야 한다.
+		for key, value in cosmetics do
+			if key ~= "owned" and type(value) ~= "string" then
+				return false, ("cosmetics.%s 이 문자열이 아닙니다"):format(tostring(key))
+			end
 		end
 		if cosmetics.owned ~= nil then
 			if type(cosmetics.owned) ~= "table" then
@@ -317,15 +320,24 @@ function Collection.copy(collection)
 		receipts = table.clone(collection.receipts)
 	end
 
-	local cosmetics = type(collection.cosmetics) == "table" and collection.cosmetics or {}
-	local owned = type(cosmetics.owned) == "table" and table.clone(cosmetics.owned) or {}
+	--[[
+		owned 말고 나머지 칸(frame · back · …)은 종류마다 낀 것 하나씩이다. 종류 이름을 여기
+		적지 않고 문자열 칸을 전부 옮긴다 — 종류가 늘 때 여기를 잊어도 지워지지 않게.
+	]]
+	local source = type(collection.cosmetics) == "table" and collection.cosmetics or {}
+	local cosmetics = { owned = type(source.owned) == "table" and table.clone(source.owned) or {} }
+	for key, value in source do
+		if key ~= "owned" and type(value) == "string" then
+			cosmetics[key] = value
+		end
+	end
 
 	return {
 		cards = cards,
 		spent = collection.spent or 0,
 		opened = collection.opened or 0,
 		receipts = receipts,
-		cosmetics = { owned = owned, frame = cosmetics.frame },
+		cosmetics = cosmetics,
 	}
 end
 

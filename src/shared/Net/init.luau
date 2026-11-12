@@ -59,9 +59,9 @@ end
 	  { kind = "deckReset" } 스타터 덱으로 되돌린다
 	  { kind = "shop" }      카드팩 화면을 연다
 	  { kind = "buyPack" }   팩 한 봉을 산다 (가격·잔액 판정은 서버가 한다)
-	  { kind = "wardrobe" }  꾸미기(카드 테두리) 화면을 연다
-	  { kind = "buyCosmetic", id = <테두리 id> }    테두리를 사고 바로 낀다
-	  { kind = "equipCosmetic", id = <테두리 id> }  가진 테두리로 갈아 낀다
+	  { kind = "wardrobe" }  꾸미기(카드 테두리 · 뒷면) 화면을 연다
+	  { kind = "buyCosmetic", id = <꾸밈 id> }    사고 그 종류에 바로 낀다
+	  { kind = "equipCosmetic", id = <꾸밈 id> }  가진 것으로 갈아 낀다 (종류는 id 가 정한다)
 	  { kind = "leave" }     대전 종료 후 로비로
 	  { kind = "requeue" }   대전 종료 후 로비로 돌아가 곧장 다시 큐
 
@@ -90,8 +90,8 @@ end
 	                          캠페인 목록. stages 는 Campaign.list 가 만든 그대로다 —
 	                          **상대 덱은 들어 있지 않다** (플레이어가 알면 안 되는 정보)
 	  { screen = "wardrobe", gold, frames = { { id, name, price, owned, equipped }, ... },
-	                        text = ?, failed = ? }
-	                          꾸미기 화면. frames 는 Cosmetics.list 그대로 — 색은 싣지 않는다
+	                        backs = { 같은 모양 }, text = ?, failed = ? }
+	                          꾸미기 화면. frames · backs 는 Cosmetics.list 그대로 — 색은 싣지 않는다
 	                          (클라이언트도 Cosmetics 를 읽는다)
 	  { screen = "battle" }                            전투 화면으로
 	  { screen = "error",   text = "..." }             큐 실패 등
@@ -157,10 +157,20 @@ end
 --[[
 	Rules.viewFor 의 결과 + 로그 꼬리를 전송 가능한 순수 배열 구조로 만든다.
 
-	frames 는 좌석마다 낀 카드 테두리 id `{ [1] = id, [2] = id }` 다. 룰 상태에 없는
-	겉모습이라 뷰 밖에서 따로 받는다(Cosmetics 머리말). 안 주면 둘 다 기본 테두리로 그린다.
+	looks 는 좌석마다 낀 꾸밈이다(Cosmetics 머리말). 룰 상태에 없는 겉모습이라 뷰 밖에서
+	따로 받는다. 안 주면 전부 기본으로 그린다.
+
+	    looks = { frames = { [1] = id, [2] = id }, backs = { [1] = id, [2] = id } }
 ]]
-function Net.packView(view, logTail, frames)
+local function seatPair(pair)
+	-- 1..2 배열이라 그대로 실어도 모양이 안 바뀐다. 비면 nil 대신 빈 문자열을 넣어 구멍을 막는다.
+	return {
+		pair and pair[1] or "",
+		pair and pair[2] or "",
+	}
+end
+
+function Net.packView(view, logTail, looks)
 	local cards = {}
 	for _, card in pairs(view.cards) do
 		table.insert(cards, card)
@@ -208,11 +218,9 @@ function Net.packView(view, logTail, frames)
 		]]
 		lastCombat = view.lastCombat,
 
-		-- 1..2 배열이라 그대로 실어도 모양이 안 바뀐다. 비면 nil 대신 빈 문자열을 넣어 구멍을 막는다.
-		frames = {
-			frames and frames[1] or "",
-			frames and frames[2] or "",
-		},
+		-- 꾸밈 (Cosmetics). 테두리는 낸 카드에, 뒷면은 상대 손패에 쓰인다.
+		frames = seatPair(looks and looks.frames),
+		backs = seatPair(looks and looks.backs),
 	}
 end
 
@@ -241,6 +249,7 @@ function Net.unpackView(payload)
 		log = payload.log or {},
 		lastCombat = payload.lastCombat,
 		frames = payload.frames or {},
+		backs = payload.backs or {},
 	}
 
 	for _, player in payload.players do

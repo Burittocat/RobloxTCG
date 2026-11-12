@@ -247,6 +247,92 @@ return function(t, ctx)
 	end)
 
 	--==================================================================
+	t:describe("카드 뒷면", function()
+		local function firstPaidBack()
+			for _, back in Cosmetics.Backs do
+				if back.price > 0 then
+					return back
+				end
+			end
+			error("돈 내고 사는 뒷면이 하나도 없습니다")
+		end
+
+		t:it("기본 뒷면은 공짜이고 새 컬렉션이 끼고 있다", function()
+			t:eq(Cosmetics.back(Cosmetics.DefaultBack).price, 0)
+			t:eq(Cosmetics.equippedBack(Collection.new()), Cosmetics.DefaultBack)
+		end)
+
+		t:it("뒷면 정의가 그릴 수 있는 모양이다", function()
+			for _, back in Cosmetics.Backs do
+				t:eq(#back.base, 3, back.id)
+				t:eq(#back.accent, 3, back.id)
+				t:eq(type(back.mark), "string", back.id)
+				t:truthy(type(back.fade) == "number" and back.fade >= 0 and back.fade <= 1, back.id)
+				-- 무늬는 한 글자다. 26px 칸에 두 글자를 넣으면 테두리를 뚫는다.
+				t:truthy(utf8.len(back.mark) <= 1, ("%s 무늬 '%s'"):format(back.id, back.mark))
+			end
+		end)
+
+		t:it("id 는 종류를 넘어서도 겹치지 않는다", function()
+			local seen = {}
+			for _, list in { Cosmetics.Frames, Cosmetics.Backs } do
+				for _, def in list do
+					t:falsy(seen[def.id], ("'%s' 가 두 번 있습니다"):format(def.id))
+					seen[def.id] = true
+				end
+			end
+		end)
+
+		--[[
+			종류마다 하나씩 낀다. 뒷면을 샀는데 테두리가 바뀌거나, 테두리를 바꿨는데
+			뒷면이 기본으로 돌아가면 안 된다.
+		]]
+		t:it("뒷면을 사도 테두리는 그대로다", function()
+			local frame, back = firstPaid(), firstPaidBack()
+			local collection = Cosmetics.buy(rich, Collection.new(), frame.id)
+			collection = Cosmetics.buy(rich, collection, back.id)
+
+			t:eq(Cosmetics.equippedFrame(collection), frame.id)
+			t:eq(Cosmetics.equippedBack(collection), back.id)
+			t:eq(collection.spent, frame.price + back.price)
+			t:allowed(Collection.validate(collection))
+		end)
+
+		t:it("테두리를 갈아 껴도 뒷면은 그대로다", function()
+			local back = firstPaidBack()
+			local collection = Cosmetics.buy(rich, Collection.new(), back.id)
+			collection = Cosmetics.equip(collection, Cosmetics.DefaultFrame)
+			t:eq(Cosmetics.equippedBack(collection), back.id)
+		end)
+
+		--[[
+			저장값의 frame 칸에 뒷면 id 를 적으면(손으로 고친 값) 그 뒷면이 테두리로 그려지면
+			안 된다. 칸과 종류가 맞아야 한다.
+		]]
+		t:it("다른 종류의 칸에 적힌 id 는 무시한다", function()
+			local back = firstPaidBack()
+			local collection = Cosmetics.buy(rich, Collection.new(), back.id)
+			collection.cosmetics.frame = back.id
+
+			t:eq(Cosmetics.equippedFrame(collection), Cosmetics.DefaultFrame)
+			t:eq(Cosmetics.frame(back.id), nil)
+		end)
+
+		t:it("팩을 사도 뒷면이 남는다", function()
+			local back = firstPaidBack()
+			local collection = Cosmetics.buy(rich, Collection.new(), back.id)
+			collection = Collection.buyPack(rich, collection, Rules.RNG.new(9))
+			t:eq(Cosmetics.equippedBack(collection), back.id, "골드 팩이 뒷면을 지웠습니다")
+		end)
+
+		t:it("목록은 종류별로 나온다", function()
+			t:eq(#Cosmetics.list(Collection.new(), Cosmetics.Kind.Back), #Cosmetics.Backs)
+			t:eq(#Cosmetics.list(Collection.new(), Cosmetics.Kind.Frame), #Cosmetics.Frames)
+			t:eq(#Cosmetics.list(Collection.new(), "nope"), 0)
+		end)
+	end)
+
+	--==================================================================
 	t:describe("저장값 검증", function()
 		t:it("cosmetics 모양이 틀리면 거부한다", function()
 			local function check(cosmetics, expected)
@@ -256,6 +342,7 @@ return function(t, ctx)
 
 			check("테두리", "cosmetics")
 			check({ frame = 3 }, "frame")
+			check({ back = false }, "back")
 			check({ owned = "FRAME_TIDE" }, "owned")
 			check({ owned = { 1 } }, "owned")
 		end)

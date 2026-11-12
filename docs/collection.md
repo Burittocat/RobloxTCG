@@ -114,37 +114,57 @@ PvP 규칙은 `Campaign.applyPvpWin`, 저장소에 적는 것은 `src/server/Pvp
 진행도에는 하루 상한을 세는 `pvpDay` · `pvpWins` 가 붙는다. 없어도 되는 칸이라 옛 저장값도
 그대로 통과하고, 저장소 이름은 바꾸지 않았다.
 
-## 꾸미기 — 카드 테두리
+## 꾸미기 — 카드 테두리 · 카드 뒷면
 
-내가 낸 카드에 두르는 테두리. **판에는 아무 영향이 없다.** 상대 화면에서도 내 생물에 보인다.
+**판에는 아무 영향이 없는** 겉모습이다. 종류마다 하나씩 낀다.
+
+| 종류 | 어디에 보이나 |
+|---|---|
+| 테두리 (`frame`) | 내가 낸 카드(손패 · 필드). 상대 화면에서도 내 생물에 보인다 |
+| 카드 뒷면 (`back`) | **상대 화면**의 내 패널에서 내 손패가 이 뒷면으로 보인다(TCG 슬리브와 같다) |
 
 | | |
 |---|---|
-| 목록 · 가격 | `src/shared/Cosmetics/Frames.luau` — 순수 테이블 (스모크 테스트가 Lune 에서 그대로 읽는다) |
-| 규칙 | `src/shared/Cosmetics/init.luau` — 가졌나 · 끼고 있나 · 사기 · 끼기 |
-| 저장 | 컬렉션과 **같은 저장값**의 `cosmetics = { owned = { id, ... }, frame = id }` |
-| 화면 | 시작 화면 **[꾸미기]** → `src/client/UI/Wardrobe.luau` |
+| 목록 · 가격 | `src/shared/Cosmetics/Frames.luau` · `src/shared/Cosmetics/Backs.luau` — 순수 테이블 (스모크 테스트가 Lune 에서 그대로 읽는다) |
+| 규칙 | `src/shared/Cosmetics/init.luau` — 가졌나 · 끼고 있나 · 사기 · 끼기. 종류를 가리지 않는다 |
+| 저장 | 컬렉션과 **같은 저장값**의 `cosmetics = { owned = { id, ... }, frame = id, back = id }` |
+| 화면 | 시작 화면 **[꾸미기]** → `src/client/UI/Wardrobe.luau` (탭: 테두리 / 카드 뒷면) |
 | 테스트 | `tests/specs/cosmetics.luau` (규칙) · `tests/smoke.luau` 의 "꾸미기" 절 (배선) |
 
-| 테두리 | 가격 |
-|---|---|
-| 기본 | 0 (모두 가진다 — 예전 카드 테두리와 같은 값) |
-| 청동 · 물결 · 서리 | 150 골드 |
-| 진홍 · 자수정 | 250 골드 |
+| 테두리 | 가격 | | 뒷면 | 가격 |
+|---|---|---|---|---|
+| 기본 | 0 | | 기본 | 0 |
+| 청동 · 물결 · 서리 | 150 골드 | | 밤하늘 · 불씨 · 숲 | 120 골드 |
+| 진홍 · 자수정 | 250 골드 | | 왕실 | 200 골드 |
+
+기본은 모두 가지며, 예전 카드 테두리 · 뒷면과 똑같은 값이다.
+
+**카드 앞면 바탕은 꾸미지 않는다.** 앞면 색이 생물 · 마법 · 코스트를 가르는 정보라, 꾸밈이
+그걸 덮으면 판을 읽기 어려워진다. "스킨" 은 그래서 뒷면으로 했다.
+
+### 종류를 늘리려면
+
+1. `src/shared/Cosmetics/` 에 목록 파일을 하나 더 둔다 (`Backs.luau` 를 본뜬다)
+2. `Cosmetics/init.luau` 의 `KINDS` · `KIND_NAME` 에 한 줄씩
+3. `Lobby:dress` · `Arena:loadDeck` 이 좌석에 싣고, `MatchRunner:looks` · `Net.packView` 가 스냅샷에 싣는다
+4. 화면 — `Wardrobe` 의 `TABS` 에 한 줄, 그리는 곳은 `CardView`
+
+저장 · 사기 · 끼기 · 검증(`Collection.validate` · `Collection.copy`)은 손대지 않아도 된다 —
+`cosmetics` 의 문자열 칸을 종류 이름 그대로 다룬다.
 
 ### 카드 데이터와 떼어 둔 레이어
 
-테두리는 카드가 아니라 **사람에** 붙는다. 그래서 카드 정의에도, 룰 상태(`GameState`)에도
-들어가지 않는다 — 룰 엔진은 테두리를 모른다.
+꾸밈은 카드가 아니라 **사람에** 붙는다. 그래서 카드 정의에도, 룰 상태(`GameState`)에도
+들어가지 않는다 — 룰 엔진은 꾸밈을 모른다.
 
-    로비/대전 서버  좌석에 frame (Lobby:frameFor · Arena:loadDeck)
+    로비/대전 서버  좌석에 frame · back (Lobby:dress · Arena:loadDeck)
          ↓
-    MatchRunner     스냅샷에 frames = { [1] = id, [2] = id }  (Net.packView 세 번째 인자)
+    MatchRunner     스냅샷에 frames · backs = { [1] = id, [2] = id }  (MatchRunner:looks → Net.packView)
          ↓
-    Battle          카드를 낸 사람(controllerId)의 테두리로 CardView 가 칠한다
+    Battle          카드를 낸 사람(controllerId)의 테두리, 상대 좌석의 뒷면으로 CardView 가 칠한다
 
-대전 서버(`Arena`)는 테두리도 덱처럼 **저장소에서 직접 읽는다.** 텔레포트 데이터로 나르면
-클라이언트가 안 산 테두리를 끼고 들어올 수 있다.
+대전 서버(`Arena`)는 꾸밈도 덱처럼 **저장소에서 직접 읽는다.** 텔레포트 데이터로 나르면
+클라이언트가 안 산 것을 끼고 들어올 수 있다.
 
 ### 테두리는 하이라이트를 이기지 못한다
 
@@ -164,6 +184,6 @@ PvP 규칙은 `Campaign.applyPvpWin`, 저장소에 적는 것은 `src/server/Pvp
 
 ## 아직 없는 것 (꾸미기)
 
-- 스킨(카드 바탕) · 이펙트(소환 연출) — 같은 `cosmetics` 칸에 종류를 늘리면 된다
-- Robux 로 파는 테두리 — `Lobby:processReceipt` 에 상품 갈래를 더하면 된다
+- 이펙트(소환 연출) — 위 "종류를 늘리려면" 대로. 연출이라 Studio 에서 보면서 만들어야 한다
+- Robux 로 파는 꾸밈 — `Lobby:processReceipt` 에 상품 갈래를 더하면 된다
 - 팩 여는 연출, 카드 아트

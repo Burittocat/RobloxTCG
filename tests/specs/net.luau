@@ -111,22 +111,33 @@ return function(t, ctx)
 			카드 테두리(코스메틱)는 룰 상태 밖에서 따로 실린다. 좌석 번호가 그대로 살아야
 			상대 생물이 상대 테두리로 그려진다. 한쪽이 비어도 구멍 없는 배열이어야 한다.
 		]]
-		t:it("좌석마다 테두리가 실려 간다", function()
+		t:it("좌석마다 테두리와 뒷면이 실려 간다", function()
 			local state = scenario()
-			local payload = Net.packView(Rules.viewFor(state, 1), state.log, { "FRAME_TIDE", "FRAME_CRIMSON" })
+			local payload = Net.packView(Rules.viewFor(state, 1), state.log, {
+				frames = { "FRAME_TIDE", "FRAME_CRIMSON" },
+				backs = { "BACK_NIGHT", "BACK_EMBER" },
+			})
 			assertTransferable(payload, "payload")
 
 			local view = Net.unpackView(payload)
 			t:eq(view.frames[1], "FRAME_TIDE")
 			t:eq(view.frames[2], "FRAME_CRIMSON")
+			t:eq(view.backs[1], "BACK_NIGHT")
+			t:eq(view.backs[2], "BACK_EMBER")
 		end)
 
-		t:it("테두리를 안 주면 빈 값으로 채워진다 — 구멍이 없다", function()
+		t:it("꾸밈을 안 주면 빈 값으로 채워진다 — 구멍이 없다", function()
 			local state = scenario()
-			local payload = Net.packView(Rules.viewFor(state, 1), state.log, { [2] = "FRAME_TIDE" })
+			local payload = Net.packView(Rules.viewFor(state, 1), state.log, { frames = { [2] = "FRAME_TIDE" } })
 			assertTransferable(payload, "payload")
 			t:eq(payload.frames[1], "")
 			t:eq(payload.frames[2], "FRAME_TIDE")
+			t:eq(payload.backs[1], "")
+			t:eq(payload.backs[2], "")
+
+			local bare = Net.packView(Rules.viewFor(state, 1), state.log)
+			assertTransferable(bare, "bare")
+			t:eq(#bare.frames, 2)
 		end)
 
 		--[[

@@ -64,12 +64,12 @@ function Arena.new(remotes, host)
 	self.host = host
 	self.arrivals = {} :: { [Player]: any }
 	self.decks = {} :: { [Player]: { string } }
-	self.frames = {} :: { [Player]: string } -- 낀 카드 테두리 (Cosmetics)
+	self.looks = {} :: { [Player]: { frame: string, back: string } } -- 낀 꾸밈 (Cosmetics)
 	self.runner = nil
 	self.closed = false
 	self.deckStore = DeckStore.new()
 	self.campaignStore = CampaignStore.new() -- PvP 승리 보상을 적는다 (PvpReward)
-	self.collectionStore = CollectionStore.new() -- 낀 테두리만 읽는다. 여기서 사고팔지는 않는다
+	self.collectionStore = CollectionStore.new() -- 낀 꾸밈만 읽는다. 여기서 사고팔지는 않는다
 
 	remotes.Lobby.OnServerEvent:Connect(function(player, payload)
 		local ok, err = pcall(function()
@@ -192,18 +192,22 @@ function Arena:loadDeck(player)
 		local deck = Decks.toList(entries)
 
 		--[[
-			낀 테두리도 같이 읽는다. 텔레포트 데이터로 나르지 않는 이유는 덱과 같다 —
+			낀 꾸밈(테두리 · 뒷면)도 같이 읽는다. 텔레포트 데이터로 나르지 않는 이유는 덱과 같다 —
 			클라이언트가 고칠 수 있는 값이면 안 산 테두리를 끼고 들어올 수 있다.
 			못 읽으면 CollectionStore 가 새 컬렉션을 주므로 기본 테두리가 된다. 판은 열린다.
 		]]
-		local frame = Cosmetics.equippedFrame(self.collectionStore:get(player, entries))
+		local collection = self.collectionStore:get(player, entries)
+		local looks = {
+			frame = Cosmetics.equippedFrame(collection),
+			back = Cosmetics.equippedBack(collection),
+		}
 
 		-- 읽는 사이에 나갔으면 남길 것이 없다.
 		if not self.arrivals[player] then
 			return
 		end
 
-		self.frames[player] = frame
+		self.looks[player] = looks
 		self.decks[player] = deck
 		self:tryStart()
 	end)
@@ -250,8 +254,15 @@ function Arena:tryStart()
 	end
 
 	local seats = {}
-	seats[a.arrival.seat] = { player = a.player, deck = a.deck, frame = self.frames[a.player] }
-	seats[b.arrival.seat] = { player = b.player, deck = b.deck, frame = self.frames[b.player] }
+	for _, entry in { a, b } do
+		local looks = self.looks[entry.player] or {}
+		seats[entry.arrival.seat] = {
+			player = entry.player,
+			deck = entry.deck,
+			frame = looks.frame,
+			back = looks.back,
+		}
+	end
 
 	--[[
 		시드는 여기서 뽑는다. 두 사람이 이미 모였으므로 서버끼리 합의할 필요가 없고,

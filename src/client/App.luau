@@ -13,7 +13,8 @@
 	    campaign       캠페인 스테이지 목록
 	    shop           카드팩
 	    wardrobe       꾸미기 (카드 테두리 · 뒷면)
-	    profile        내 프로필 (랭크 · 전적 · 덱 · 꾸밈)
+	    profile        프로필 (랭크 · 전적 · 덱 · 꾸밈) — 내 것, 또는 순위표에서 누른 사람
+	    leaderboard    순위표
 	    deck           덱 편집
 	    battle         전투 화면 — 여기서 Controller:start() 가 한 판을 연다
 ]]
@@ -30,6 +31,7 @@ local DeckEditor = require(script.Parent.UI.DeckEditor)
 local Shop = require(script.Parent.UI.Shop)
 local Wardrobe = require(script.Parent.UI.Wardrobe)
 local Profile = require(script.Parent.UI.Profile)
+local Leaderboard = require(script.Parent.UI.Leaderboard)
 local Controller = require(script.Parent.Controller)
 
 local Screen = Net.LobbyScreen
@@ -51,8 +53,16 @@ function App.new(playerGui, remotes)
 	self.shop = Shop.new(playerGui)
 	self.wardrobe = Wardrobe.new(playerGui)
 	self.profile = Profile.new(playerGui)
+	self.leaderboard = Leaderboard.new(playerGui)
 
-	self.profile.callbacks.back = function()
+	-- 프로필의 [뒤로] 는 온 곳으로 — 순위표에서 왔으면 순위표 (서버가 backTo 로 알려준다)
+	self.profile.callbacks.back = function(backTo)
+		self:send({ kind = if backTo == "leaderboard" then "leaderboard" else "home" })
+	end
+	self.leaderboard.callbacks.view = function(userId)
+		self:send({ kind = "viewProfile", userId = userId })
+	end
+	self.leaderboard.callbacks.back = function()
 		self:send({ kind = "home" })
 	end
 
@@ -138,6 +148,9 @@ function App.new(playerGui, remotes)
 	self.home.callbacks.profile = function()
 		self:send({ kind = "profile" })
 	end
+	self.home.callbacks.leaderboard = function()
+		self:send({ kind = "leaderboard" })
+	end
 
 	remotes.Lobby.OnClientEvent:Connect(function(payload)
 		if type(payload) == "table" and type(payload.screen) == "string" then
@@ -174,6 +187,20 @@ function App:show(payload)
 	end
 
 	self.deck:setVisible(false)
+
+	if screen == Screen.Leaderboard then
+		self.home:setVisible(false)
+		self.battle:setVisible(false)
+		self.campaign:setVisible(false)
+		self.shop:setVisible(false)
+		self.wardrobe:setVisible(false)
+		self.profile:setVisible(false)
+		self.leaderboard:setVisible(true)
+		self.leaderboard:render(payload)
+		return
+	end
+
+	self.leaderboard:setVisible(false)
 
 	if screen == Screen.Profile then
 		self.home:setVisible(false)

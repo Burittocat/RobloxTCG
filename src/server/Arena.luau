@@ -48,6 +48,7 @@ local Net = require(Shared.Net)
 
 local CampaignStore = require(script.Parent.CampaignStore)
 local CollectionStore = require(script.Parent.CollectionStore)
+local LeaderboardStore = require(script.Parent.LeaderboardStore)
 local DeckStore = require(script.Parent.DeckStore)
 local MatchRunner = require(script.Parent.MatchRunner)
 local PvpReward = require(script.Parent.PvpReward)
@@ -71,6 +72,7 @@ function Arena.new(remotes, host)
 	self.deckStore = DeckStore.new()
 	self.campaignStore = CampaignStore.new() -- PvP 승리 보상을 적는다 (PvpReward)
 	self.collectionStore = CollectionStore.new() -- 낀 꾸밈만 읽는다. 여기서 사고팔지는 않는다
+	self.leaderboard = LeaderboardStore.new() -- 판이 끝나면 랭크 점수를 적는다 (PvpReward)
 
 	remotes.Lobby.OnServerEvent:Connect(function(player, payload)
 		local ok, err = pcall(function()
@@ -280,7 +282,7 @@ function Arena:tryStart()
 		seed = seed,
 		onFinish = function(finished)
 			-- 보상부터 적는다. 로비로 돌려보내는 것은 그 뒤 몇 초가 지나서다(onMatchFinished).
-			PvpReward.pay(self.campaignStore, finished)
+			PvpReward.pay(self.campaignStore, finished, self.leaderboard)
 			self:onMatchFinished()
 		end,
 	})

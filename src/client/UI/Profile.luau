@@ -1,5 +1,8 @@
 --[[
-	내 프로필 — 랭크 · 전적 · 지금 덱 · 낀 꾸밈 · 모은 정도.
+	프로필 — 랭크 · 순위 · 전적 · 지금 덱 · 낀 꾸밈 · 모은 정도.
+
+	내 것은 시작 화면 [프로필] 에서, **남의 것**은 순위표에서 이름을 눌러 연다(mine = false).
+	남의 것에는 덱과 골드가 없다 — 서버가 아예 안 보낸다(Lobby:viewProfile).
 
 	**보기만 하는 화면이다.** 덱은 덱 편집에서, 꾸밈은 꾸미기에서 고친다. 여기서도 고치게
 	하면 같은 판정이 두 곳에 생긴다(Lobby:openProfile).
@@ -39,6 +42,7 @@ function Profile.new(parent)
 
 	local noop = function() end
 	self.callbacks = { back = noop }
+	self.backTo = "home"
 
 	self:build(parent)
 	return self
@@ -210,13 +214,14 @@ function Profile:build(parent)
 		TextXAlignment = Enum.TextXAlignment.Center,
 	})
 
+	-- 어디로 돌아갈지는 서버가 정해 보낸다(backTo) — 순위표에서 왔으면 순위표로.
 	Widgets.button("뒤로", {
 		Parent = column,
 		LayoutOrder = 5,
 		Size = UDim2.fromOffset(200, 40),
 		TextSize = Theme.text.label,
 	}, function()
-		self.callbacks.back()
+		self.callbacks.back(self.backTo)
 	end)
 end
 
@@ -329,6 +334,8 @@ end
 	payload 는 서버가 보낸 그대로다. (Net 의 로비 프로토콜 — profile 화면)
 ]]
 function Profile:render(payload)
+	local mine = payload.mine ~= false
+	self.backTo = (payload.backTo == "leaderboard") and "leaderboard" or "home"
 	self.nameLabel.Text = tostring(payload.name or "")
 
 	-- 랭크 ---------------------------------------------------------------
@@ -338,11 +345,13 @@ function Profile:render(payload)
 	self.tierLabel.Text = ("%s  <font size=\"20\">%d점</font>"):format(tier.name, points)
 	self.tierLabel.TextColor3 = rgb(tier.color)
 
-	if nextTier then
-		self.nextLabel.Text = ("%s까지 %d점"):format(nextTier.name, nextTier.points - points)
-	else
-		self.nextLabel.Text = "가장 높은 티어입니다"
+	local nextText = nextTier and ("%s까지 %d점"):format(nextTier.name, nextTier.points - points)
+		or "가장 높은 티어입니다"
+	-- 순위표(위 50명) 안이면 순위를 붙인다. 밖이면 말하지 않는다 — 몇 등인지 알 길이 없다(LeaderboardStore).
+	if tonumber(payload.place) then
+		nextText = ("순위 %d위 · %s"):format(payload.place, nextText)
 	end
+	self.nextLabel.Text = nextText
 
 	local wins, losses = tonumber(payload.wins) or 0, tonumber(payload.losses) or 0
 	local games = wins + losses
@@ -360,6 +369,21 @@ function Profile:render(payload)
 	lookSlot(self.looksPanel, 2, "뒷면", CardView.cardBack(0, back.id, PREVIEW), back.name)
 
 	-- 덱 -----------------------------------------------------------------
+	if not mine then
+		-- 남의 덱은 서버가 아예 안 보낸다(Lobby:viewProfile). 대전 상대에게 전략이 새는 정보다.
+		self:paintDeck({})
+		self.deckTitle.Text = "덱"
+		self.deckNote.Text = "다른 사람의 덱은 볼 수 없습니다"
+		self.deckNote.TextColor3 = Theme.color.textDim
+		self.statsLabel.Text = ("모은 카드 %d / %d   ·   캠페인 %d / %d"):format(
+			tonumber(payload.collected) or 0,
+			tonumber(payload.total) or 0,
+			tonumber(payload.cleared) or 0,
+			tonumber(payload.stages) or 0
+		)
+		return
+	end
+
 	local total, costs = self:paintDeck(payload.deck)
 	self.deckTitle.Text = ("내 덱 — %d장"):format(total)
 

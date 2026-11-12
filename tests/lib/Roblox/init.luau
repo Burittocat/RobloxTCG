@@ -166,6 +166,8 @@ function Roblox.newWorld(opts)
 		nextUserId = 100,
 		nextAccessCode = 1,
 		dataStores = {}, -- 이름 -> { key -> 값 }
+		orderedStores = {}, -- 이름 -> { key -> 정수 } (OrderedDataStore — 순위표)
+		knownNames = {}, -- UserId -> 이름 (Players:GetNameFromUserIdAsync)
 
 		memoryStore = {}, -- 이름 -> 큐
 		subscribers = {}, -- 토픽 -> { fn }
@@ -333,6 +335,19 @@ local function makePlayersService(server)
 			end
 		end
 		return nil
+	end
+
+	--[[
+		UserId → 이름. 진짜는 Roblox 웹 API 를 부르고, 모르는 id 면 에러를 낸다.
+		여기서는 이 월드에 한 번이라도 접속한 사람의 이름을 안다(World.knownNames).
+		에러도 진짜처럼 낸다 — 부르는 쪽이 pcall 로 감쌌는지가 여기서 드러난다.
+	]]
+	function service:GetNameFromUserIdAsync(userId)
+		local name = server.world.knownNames[userId]
+		if not name then
+			error(("GetNameFromUserIdAsync: 모르는 UserId %s"):format(tostring(userId)), 2)
+		end
+		return name
 	end
 
 	return service
@@ -513,6 +528,82 @@ function Server:service(name, vm)
 	]]
 	if name == "DataStoreService" then
 		return {
+			--[[
+				OrderedDataStore — 순위표가 쓴다. 진짜와 같은 성질:
+				  · 값은 **정수만** 담는다 (아니면 에러)
+				  · GetSortedAsync(ascending, pageSize) 가 페이지 객체를 준다.
+				    GetCurrentPage() → { { key, value }, ... }, IsFinished, AdvanceToNextPageAsync()
+				동률은 key 순으로 — 진짜는 순서를 약속하지 않지만, 테스트가 흔들리면 안 된다.
+			]]
+			GetOrderedDataStore = function(_, storeName)
+				world.orderedStores[storeName] = world.orderedStores[storeName] or {}
+				local store = world.orderedStores[storeName]
+
+				local function checkInteger(value, label)
+					if type(value) ~= "number" or value % 1 ~= 0 then
+						error(("%s: OrderedDataStore 는 정수만 담는다 (%s)"):format(label, tostring(value)), 3)
+					end
+				end
+
+				return {
+					GetAsync = function(_, key)
+						return store[key]
+					end,
+					SetAsync = function(_, key, value)
+						checkInteger(value, ("SetAsync(%s)"):format(tostring(key)))
+						store[key] = value
+					end,
+					UpdateAsync = function(_, key, transform)
+						local nextValue = transform(store[key])
+						if nextValue == nil then
+							return nil
+						end
+						checkInteger(nextValue, ("UpdateAsync(%s)"):format(tostring(key)))
+						store[key] = nextValue
+						return nextValue
+					end,
+					RemoveAsync = function(_, key)
+						local old = store[key]
+						store[key] = nil
+						return old
+					end,
+					GetSortedAsync = function(_, ascending, pageSize)
+						local all = {}
+						for key, value in store do
+							table.insert(all, { key = key, value = value })
+						end
+						table.sort(all, function(a, b)
+							if a.value ~= b.value then
+								if ascending then
+									return a.value < b.value
+								end
+								return a.value > b.value
+							end
+							return a.key < b.key
+						end)
+
+						local start = 1
+						local pages = {}
+						local function current()
+							local out = {}
+							for index = start, math.min(#all, start + pageSize - 1) do
+								table.insert(out, { key = all[index].key, value = all[index].value })
+							end
+							return out
+						end
+						pages.IsFinished = start + pageSize > #all
+						function pages:GetCurrentPage()
+							return current()
+						end
+						function pages:AdvanceToNextPageAsync()
+							start += pageSize
+							self.IsFinished = start + pageSize > #all
+						end
+						return pages
+					end,
+				}
+			end,
+
 			GetDataStore = function(_, storeName)
 				world.dataStores[storeName] = world.dataStores[storeName] or {}
 				local store = world.dataStores[storeName]
@@ -711,6 +802,7 @@ function Server:addPlayer(name, opts)
 	end
 
 	table.insert(self.players, player)
+	self.world.knownNames[player.UserId] = player.Name -- GetNameFromUserIdAsync 가 답할 수 있게
 
 	-- 서버의 PlayerAdded 가 먼저 돌고 클라이언트 스크립트가 그 뒤에 뜬다.
 	-- 진짜 Roblox 도 이 순서라서, 서버가 먼저 쏜 메시지를 클라이언트가 놓치는

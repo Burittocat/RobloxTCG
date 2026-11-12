@@ -159,6 +159,30 @@ function CollectionStore:save(player, collection)
 	return true
 end
 
+--[[
+	**다른 사람의** 컬렉션을 읽기만 한다. -> collection (못 읽으면 새 컬렉션)
+
+	프로필 보기가 쓴다(낀 꾸밈 · 모은 정도). get 과 달리 캐시에 넣지 않고, **없어도 만들어
+	저장하지 않는다** — 남의 저장값을 이 서버가 처음 만드는 일은 없어야 한다.
+]]
+function CollectionStore:read(userId)
+	local cached = self.cache[userId]
+	if cached then
+		return cached
+	end
+	if not self.store then
+		return Collection.new()
+	end
+
+	local ok, stored = pcall(function()
+		return self.store:GetAsync(("user_%d"):format(userId))
+	end)
+	if ok and stored ~= nil and Collection.validate(stored) then
+		return stored
+	end
+	return Collection.new()
+end
+
 -- 접속을 끊은 사람의 캐시는 들고 있을 이유가 없다.
 function CollectionStore:forget(player)
 	self.cache[player.UserId] = nil

@@ -38,7 +38,7 @@
 | `src/server/DeckStore.luau` · `src/client/UI/DeckEditor.luau` | [decks.md](decks.md) |
 | `src/shared/Collection/**` · `src/shared/Products.luau` · `src/server/CollectionStore.luau` · `src/server/PvpReward.luau` · `src/client/UI/Shop.luau` | [collection.md](collection.md) |
 | `src/shared/Net/**` | [architecture.md](architecture.md) |
-| `src/shared/Rank/**` · `src/server/PvpReward.luau` · `src/client/UI/Profile.luau` | [rank.md](rank.md) |
+| `src/shared/Rank/**` · `src/server/PvpReward.luau` · `src/server/LeaderboardStore.luau` · `src/client/UI/Profile.luau` · `src/client/UI/Leaderboard.luau` | [rank.md](rank.md) |
 | `tests/**` · `.github/workflows/**` | [testing.md](testing.md) |
 | `scripts/**` | [testing.md](testing.md) · [getting-started.md](getting-started.md) |
 

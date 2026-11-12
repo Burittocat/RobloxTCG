@@ -32,7 +32,7 @@ local PvpReward = {}
 	변화량은 **판이 시작될 때의 MMR** 로 계산한다(좌석의 mmr). 끝난 뒤에 다시 읽으면 먼저
 	적힌 쪽의 새 값으로 상대를 계산하게 되어 두 사람의 변화량이 어긋난다.
 ]]
-function PvpReward.rank(campaignStore, runner)
+function PvpReward.rank(campaignStore, runner, leaderboard)
 	local notes = {}
 	local state = runner.state
 	local winnerId = state and state.winnerId
@@ -58,6 +58,10 @@ function PvpReward.rank(campaignStore, runner)
 				notes[seatId] = { text = ("랭크를 저장하지 못했습니다: %s"):format(tostring(summary)), kind = "error" }
 			elseif summary then
 				notes[seatId] = { text = Rank.describe(summary), kind = "info" }
+				-- 순위표는 정렬용 사본이다. 실패해도 판 결과는 그대로 둔다(LeaderboardStore 머리말).
+				if leaderboard and summary.points ~= 0 then
+					leaderboard:record(seat.userId, summary.after)
+				end
 			end
 		end
 	end
@@ -109,8 +113,8 @@ function PvpReward.gold(campaignStore, runner)
 end
 
 -- 판이 끝나면 부르는 단 하나의 입구. 랭크 먼저 — 진 사람 몫까지 적는 쪽이 더 중요하다.
-function PvpReward.pay(campaignStore, runner)
-	local notes = PvpReward.rank(campaignStore, runner)
+function PvpReward.pay(campaignStore, runner, leaderboard)
+	local notes = PvpReward.rank(campaignStore, runner, leaderboard)
 
 	local goldSeat, goldNote = PvpReward.gold(campaignStore, runner)
 	if goldSeat then

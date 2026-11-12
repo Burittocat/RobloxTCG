@@ -60,6 +60,8 @@ end
 	  { kind = "shop" }      카드팩 화면을 연다
 	  { kind = "buyPack" }   팩 한 봉을 산다 (가격·잔액 판정은 서버가 한다)
 	  { kind = "profile" }   내 프로필 화면을 연다 (보기만 한다)
+	  { kind = "leaderboard" }  순위표를 연다
+	  { kind = "viewProfile", userId = <숫자> }  순위표에서 누른 사람의 프로필 (덱 · 골드는 안 나간다)
 	  { kind = "wardrobe" }  꾸미기(카드 테두리 · 뒷면) 화면을 연다
 	  { kind = "buyCosmetic", id = <꾸밈 id> }    사고 그 종류에 바로 낀다
 	  { kind = "equipCosmetic", id = <꾸밈 id> }  가진 것으로 갈아 낀다 (종류는 id 가 정한다)
@@ -70,9 +72,14 @@ end
 
 	  { screen = "home",    text = ?, rankPoints = ? }  시작 화면. rankPoints 는 보이는 랭크 점수
 	                          (MMR 은 어느 화면에도 싣지 않는다 — 숨은 점수다. Rank 머리말)
-	  { screen = "profile", name, rankPoints, wins, losses, deck = { { id, count }, ... },
-	                        deckPlayable, frame, back, collected, total, cleared, stages, gold }
-	                          내 프로필. deck 은 저장해 둔 덱, deckPlayable 은 가진 카드로 짜지나
+	  { screen = "profile", mine, backTo, name, rankPoints, place?, wins, losses,
+	                        deck = { { id, count }, ... }?, deckPlayable?, frame, back,
+	                        collected, total, cleared, stages, gold? }
+	                          프로필. mine 이 거짓이면 남의 것이라 deck · deckPlayable · gold 가 없다.
+	                          place 는 순위표 안이면 순위, 밖이면 nil. backTo 는 [뒤로] 가 보낼 kind
+	  { screen = "leaderboard", rows = { { place, userId, name, points }, ... },
+	                        me = { userId, name, points, place? }, size }
+	                          순위표. rows 는 1등부터. me.place 가 nil 이면 위 size 명 밖이다
 	  { screen = "queued",  elapsed = <이미 기다린 초> }
 	                          시각이 아니라 경과 초다. 클라이언트 시계와 서버 시계를
 	                          빼면 시계가 어긋난 사람의 타이머가 망가진다.
@@ -115,6 +122,7 @@ Net.LobbyScreen = table.freeze({
 	Shop = "shop",
 	Wardrobe = "wardrobe",
 	Profile = "profile",
+	Leaderboard = "leaderboard",
 	Error = "error",
 })
 

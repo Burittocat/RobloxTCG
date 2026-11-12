@@ -930,6 +930,11 @@ t:describe("같은 서버 매칭", function()
 		t:eq(stored.mmr, 1016, "같은 MMR 끼리면 k/2 = 16 이 오릅니다")
 		t:eq(stored.rankedWins, 1)
 
+		-- 순위표(정렬용 사본)에도 올라간다. 점수가 안 바뀐 쪽(0점에서 진 Kim)은 안 적는다.
+		local board = world.orderedStores["RankLeaderboard_v1"] or {}
+		t:eq(board[("user_%d"):format(lee.UserId)], 20, "이긴 사람이 순위표에 올라야 합니다")
+		t:eq(board[("user_%d"):format(kim.UserId)], nil)
+
 		local lost = progressOf(world, kim)
 		t:truthy(lost, "진 사람에게도 랭크는 적혀야 합니다")
 		t:eq(lost.gold, 0, "진 사람에게 골드는 없습니다")
@@ -1039,6 +1044,108 @@ t:describe("랭크 · 프로필", function()
 		local profile = Screen.find(guiOf(kim), "TCGProfile")
 		t:truthy(Screen.hasText(profile, "아직 랭크전 기록이 없습니다"))
 		t:truthy(Screen.hasText(profile, "브론즈"))
+	end)
+
+	--------------------------------------------------------------------
+	-- 순위표 (src/server/LeaderboardStore.luau)
+	--------------------------------------------------------------------
+
+	local BOARD = "RankLeaderboard_v1"
+
+	--[[
+		순위표에 남 셋을 미리 올려 둔다. 이 월드에 접속한 적 없는 사람들이라 이름은
+		knownNames 에 직접 넣는다 — 하나(9003)는 일부러 안 넣는다(이름을 못 찾는 경우).
+	]]
+	local function seedBoard(world)
+		world.orderedStores[BOARD] = {
+			user_9001 = 2100,
+			user_9002 = 640,
+			user_9003 = 230,
+		}
+		world.knownNames[9001] = "Champion"
+		world.knownNames[9002] = "Runner"
+		storeProgress(world, { UserId = 9001 }, {
+			cleared = 5,
+			gold = 900,
+			rankPoints = 2100,
+			mmr = 1777,
+			rankedWins = 120,
+			rankedLosses = 40,
+		})
+	end
+
+	local function openBoard()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		seedBoard(world)
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "순위표"))
+		world:advance(1)
+		assertNoErrors(world, "순위표 열기")
+		return world, lobby, kim, Screen.find(guiOf(kim), "TCGLeaderboard")
+	end
+
+	t:it("순위표가 점수 순으로 뜨고, 이름을 못 찾아도 뜬다", function()
+		local _, _, _, board = openBoard()
+
+		t:truthy(board and board.Enabled, "순위표 화면이 떠야 합니다")
+		t:eq(Screen.countNamed(board, "Row_"), 3)
+		t:truthy(Screen.hasText(Screen.find(board, "Row_1"), "Champion"), "1등은 가장 높은 점수")
+		t:truthy(Screen.hasText(Screen.find(board, "Row_1"), "마스터 2100점"))
+		t:truthy(Screen.hasText(Screen.find(board, "Row_2"), "Runner"))
+		t:truthy(Screen.hasText(Screen.find(board, "Row_3"), "플레이어 #9003"), "이름을 못 찾으면 번호로 그린다")
+		t:truthy(Screen.hasText(board, "위 밖"), "목록 밖이면 내 점수만 따로 보여줘야 합니다")
+	end)
+
+	t:it("이름을 누르면 그 사람의 프로필 — 덱 · 골드 · MMR 은 안 보인다", function()
+		local world, _, kim, board = openBoard()
+
+		Screen.click(Screen.find(board, "Row_1"))
+		world:advance(1)
+		assertNoErrors(world, "남의 프로필")
+
+		local profile = Screen.find(guiOf(kim), "TCGProfile")
+		t:truthy(profile and profile.Enabled, "프로필이 떠야 합니다")
+		t:truthy(Screen.hasText(profile, "Champion"))
+		t:truthy(Screen.hasText(profile, "마스터"))
+		t:truthy(Screen.hasText(profile, "순위 1위"))
+		t:truthy(Screen.hasText(profile, "120승 40패"))
+		t:truthy(Screen.hasText(profile, "다른 사람의 덱은 볼 수 없습니다"))
+		t:eq(Screen.countNamed(profile, "DeckCard_"), 0, "남의 덱 카드가 보이면 안 됩니다")
+		t:falsy(Screen.hasText(profile, "골드"), "남의 골드는 안 보여야 합니다")
+		t:falsy(Screen.hasText(profile, "1777"), "MMR 은 숨은 점수입니다")
+
+		-- 남의 프로필을 연 것이 그 사람 저장값을 만들거나 바꾸면 안 된다
+		-- (COLLECTION_STORE 상수는 이 파일 아래쪽에 선언돼 여기서는 안 보인다 — 이름을 그대로 쓴다)
+		local collections = world.dataStores["PlayerCollection_v1"] or {}
+		t:eq(collections.user_9001, nil, "남의 컬렉션을 만들어 저장하면 안 됩니다")
+
+		Screen.click(Screen.findButton(guiOf(kim), "뒤로"))
+		world:advance(1)
+		t:truthy(Screen.find(guiOf(kim), "TCGLeaderboard").Enabled, "순위표에서 왔으면 순위표로 돌아가야 합니다")
+	end)
+
+	t:it("내 줄을 누르면 내 프로필이 열린다", function()
+		local world, lobby, kim = openBoard()
+		-- 순위표의 줄은 userId 를 보낸다. 내 id 면 남의 프로필이 아니라 내 프로필(덱 포함)이어야 한다
+		lobby.remotes.Lobby._serverSignal:Fire(kim, { kind = "viewProfile", userId = kim.UserId })
+		world:advance(1)
+		assertNoErrors(world, "내 줄")
+
+		local profile = Screen.find(guiOf(kim), "TCGProfile")
+		t:truthy(Screen.hasText(profile, "내 덱"), "내 프로필이면 덱이 보여야 합니다")
+	end)
+
+	t:it("모양이 틀린 userId 는 무시한다", function()
+		local world, lobby, kim = openBoard()
+		for _, bad in { "9001", -1, 1.5, {} } do
+			lobby.remotes.Lobby._serverSignal:Fire(kim, { kind = "viewProfile", userId = bad })
+		end
+		world:advance(1)
+		assertNoErrors(world, "틀린 userId")
+		t:truthy(Screen.find(guiOf(kim), "TCGLeaderboard").Enabled, "화면이 그대로여야 합니다")
 	end)
 
 	t:it("큐에 서 있는 동안은 프로필 버튼이 숨는다", function()

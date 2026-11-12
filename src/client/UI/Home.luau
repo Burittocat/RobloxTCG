@@ -42,6 +42,7 @@ function Home.new(parent)
 		shop = noop,
 		wardrobe = noop,
 		profile = noop,
+		leaderboard = noop,
 	}
 
 	self.screen = "home"
@@ -83,15 +84,35 @@ function Home:build(parent)
 	Widgets.autoScale(root)
 
 	--[[
-		프로필은 오른쪽 위 모서리에 둔다. 가운데 메뉴는 세로 예산이 꽉 찼고(줄을 하나 더
+		순위표 · 프로필은 오른쪽 위 모서리에 둔다. 가운데 메뉴는 세로 예산이 꽉 찼고(줄을 하나 더
 		쌓으면 대기 상자가 밀린다), 프로필은 "판을 시작하는 버튼" 이 아니라 들여다보는
 		곳이라 메뉴 줄에 섞이지 않는 편이 맞다.
 	]]
-	self.profileButton = Widgets.button("프로필", {
-		Name = "ProfileButton",
+	self.corner = new("Frame", {
+		Name = "Corner",
 		Parent = root,
+		BackgroundTransparency = 1,
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, -20, 0, 20),
+		Size = UDim2.fromOffset(250, 40),
+	}, {
+		Widgets.listLayout(Enum.FillDirection.Horizontal, 10, Enum.HorizontalAlignment.Right),
+	})
+
+	self.leaderboardButton = Widgets.button("순위표", {
+		Name = "LeaderboardButton",
+		Parent = self.corner,
+		LayoutOrder = 1,
+		Size = UDim2.fromOffset(120, 40),
+		TextSize = Theme.text.label,
+	}, function()
+		self.callbacks.leaderboard()
+	end)
+
+	self.profileButton = Widgets.button("프로필", {
+		Name = "ProfileButton",
+		Parent = self.corner,
+		LayoutOrder = 2,
 		Size = UDim2.fromOffset(120, 40),
 		TextSize = Theme.text.label,
 	}, function()
@@ -332,7 +353,7 @@ function Home:render(payload)
 
 	self.menu.Visible = isHome
 	self.waitBox.Visible = not isHome
-	self.profileButton.Visible = isHome -- 큐에 서 있는 동안은 다른 화면으로 못 간다(메뉴와 같은 이유)
+	self.corner.Visible = isHome -- 큐에 서 있는 동안은 다른 화면으로 못 간다(메뉴와 같은 이유)
 	self.message.Text = ""
 	self.message.TextColor3 = Theme.color.textDim
 	self.subtitle.TextColor3 = Theme.color.textDim -- 시작 화면만 티어 색으로 다시 칠한다

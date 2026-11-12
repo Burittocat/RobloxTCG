@@ -7,7 +7,7 @@
 	  3. AI 연습·튜토리얼·캠페인은 큐를 타지 않고 이 자리에서 한 판 띄운다
 	  4. 덱 저장과 카드팩 — 가진 카드(CollectionStore)와 골드를 다룬다
 	  5. 꾸미기 — 카드 테두리 · 뒷면을 사고 낀다 (Cosmetics. 저장은 컬렉션과 같은 값)
-	  6. 프로필 — 랭크 · 전적 · 덱 · 꾸밈을 보여준다 (보기만 한다)
+	  6. 프로필 · 순위표 — 랭크 · 전적 · 덱 · 꾸밈을 보여준다. 순위표에서 남의 프로필도 (보기만 한다)
 
 	PvP 매치는 여기서 굴리지 않는다. 짝이 지어지면 두 사람은 예약 서버로 텔레포트되고
 	거기서 Arena 가 판을 연다. 로비 서버가 대전까지 맡으면 인원이 많은 서버일수록
@@ -36,6 +36,7 @@ local Rules = require(Shared.Rules)
 local CampaignStore = require(script.Parent.CampaignStore)
 local CollectionStore = require(script.Parent.CollectionStore)
 local DeckStore = require(script.Parent.DeckStore)
+local LeaderboardStore = require(script.Parent.LeaderboardStore)
 local MatchRunner = require(script.Parent.MatchRunner)
 local Matchmaker = require(script.Parent.Matchmaker)
 local PvpReward = require(script.Parent.PvpReward)
@@ -54,6 +55,8 @@ function Lobby.new(remotes, host)
 	self.deckStore = DeckStore.new()
 	self.campaignStore = CampaignStore.new()
 	self.collectionStore = CollectionStore.new()
+	self.leaderboard = LeaderboardStore.new()
+	self.lastLookup = {} :: { [Player]: number } -- 남의 프로필을 연 시각 (요청 아끼기 — viewProfile)
 
 	-- 캠페인 판을 두는 중인 사람 -> 스테이지 번호. 판이 끝나고 어디로 돌려보낼지의 근거다.
 	self.campaignStage = {} :: { [Player]: number }
@@ -91,6 +94,7 @@ function Lobby.new(remotes, host)
 		self.matchmaker:cancel(player)
 		self.screens[player] = nil
 		self.campaignStage[player] = nil
+		self.lastLookup[player] = nil
 		self.deckStore:forget(player)
 		self.campaignStore:forget(player)
 		self.collectionStore:forget(player)
@@ -294,6 +298,10 @@ function Lobby:onMessage(player, payload)
 		self:buyPack(player)
 	elseif payload.kind == "profile" then
 		self:openProfile(player)
+	elseif payload.kind == "leaderboard" then
+		self:openLeaderboard(player)
+	elseif payload.kind == "viewProfile" then
+		self:viewProfile(player, payload.userId)
 	elseif payload.kind == "wardrobe" then
 		self:openWardrobe(player)
 	elseif payload.kind == "buyCosmetic" then
@@ -707,7 +715,7 @@ end
 	안 뜬다. 덱은 판이 열릴 때 실제로 쓰일 덱(deckFor)이 아니라 저장해 둔 덱이다 — 프로필은
 	"내가 짜 둔 것" 을 보는 곳이다. 둘이 다르면(컬렉션을 못 읽음) 그 사실을 같이 싣는다.
 ]]
-function Lobby:openProfile(player)
+function Lobby:openProfile(player, backTo)
 	if self.host:runnerFor(player) then
 		return
 	end
@@ -720,8 +728,11 @@ function Lobby:openProfile(player)
 
 	self:setScreen(player, {
 		screen = Screen.Profile,
+		mine = true,
+		backTo = backTo or "home",
 		name = player.DisplayName,
 		rankPoints = Rank.pointsOf(progress),
+		place = LeaderboardStore.placeIn(self.leaderboard:top(), player.UserId),
 		wins = progress.rankedWins or 0,
 		losses = progress.rankedLosses or 0,
 		deck = entries,
@@ -733,6 +744,88 @@ function Lobby:openProfile(player)
 		cleared = progress.cleared or 0,
 		stages = Campaign.count(),
 		gold = self:goldFor(player),
+	})
+end
+
+--[[
+	**다른 사람의** 프로필 — 순위표에서 이름을 누르면 온다.
+
+	보이는 것: 이름 · 티어 · 순위 · 전적 · 낀 꾸밈 · 모은 정도 · 캠페인 진도.
+	**안 보이는 것: 덱과 골드.** 덱은 대전 상대에게 전략이 그대로 새는 정보고, 골드는
+	남이 알 이유가 없다. MMR 은 내 프로필에서도 안 보인다(숨은 점수).
+
+	userId 는 클라이언트가 보낸 값이라 모양을 본다. 아무 id 나 보내도 공개 정보만 나가므로
+	막을 이유는 없지만, 요청 한도를 먹으므로 한 사람이 1초에 한 번만 연다.
+	읽기만 한다 — 남의 캐시를 만들지도, 저장값을 만들지도 않는다(CampaignStore:read).
+]]
+local LOOKUP_COOLDOWN = 1
+
+function Lobby:viewProfile(player, userId)
+	if self.host:runnerFor(player) then
+		return
+	end
+	if type(userId) ~= "number" or userId % 1 ~= 0 or userId <= 0 then
+		return
+	end
+	if userId == player.UserId then
+		self:openProfile(player, "leaderboard")
+		return
+	end
+
+	local now = os.clock()
+	if self.lastLookup[player] and now - self.lastLookup[player] < LOOKUP_COOLDOWN then
+		return
+	end
+	self.lastLookup[player] = now
+	self.matchmaker:cancel(player)
+
+	local progress = self.campaignStore:read(userId)
+	local collection = self.collectionStore:read(userId)
+	local have, total = Collection.progress(collection)
+
+	self:setScreen(player, {
+		screen = Screen.Profile,
+		mine = false,
+		backTo = "leaderboard",
+		name = self.leaderboard:nameOf(userId),
+		rankPoints = Rank.pointsOf(progress),
+		place = LeaderboardStore.placeIn(self.leaderboard:top(), userId),
+		wins = progress.rankedWins or 0,
+		losses = progress.rankedLosses or 0,
+		frame = Cosmetics.equippedFrame(collection),
+		back = Cosmetics.equippedBack(collection),
+		collected = have,
+		total = total,
+		cleared = progress.cleared or 0,
+		stages = Campaign.count(),
+	})
+end
+
+--==========================================================================
+-- 순위표
+--==========================================================================
+
+--[[
+	랭크 점수 위 50명. 내가 그 안에 없으면 내 점수만 아래에 따로 보여준다 —
+	OrderedDataStore 는 "이 사람이 몇 등인가" 를 묻는 길이 없다(전부 훑어야 한다).
+]]
+function Lobby:openLeaderboard(player)
+	if self.host:runnerFor(player) then
+		return
+	end
+	self.matchmaker:cancel(player)
+
+	local rows = self.leaderboard:top()
+	self:setScreen(player, {
+		screen = Screen.Leaderboard,
+		rows = rows,
+		me = {
+			userId = player.UserId,
+			name = player.Name,
+			points = Rank.pointsOf(self.campaignStore:get(player)),
+			place = LeaderboardStore.placeIn(rows, player.UserId),
+		},
+		size = LeaderboardStore.Size,
 	})
 end
 
@@ -854,7 +947,7 @@ function Lobby:startLocalMatch(match, players)
 		startingPlayerId = match.startingPlayerId,
 		-- 게시된 게임의 Arena 와 같은 보상. 판이 열리는 곳만 다르다.
 		onFinish = function(finished)
-			PvpReward.pay(self.campaignStore, finished)
+			PvpReward.pay(self.campaignStore, finished, self.leaderboard)
 		end,
 	})
 

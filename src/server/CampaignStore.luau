@@ -89,6 +89,31 @@ function CampaignStore:get(player)
 	return progress
 end
 
+--[[
+	**다른 사람의** 진행도를 읽기만 한다. -> progress (못 읽으면 처음부터인 진행도)
+
+	프로필 보기(순위표에서 누른 사람)가 쓴다. get 과 다른 점 둘 — 캐시에 **넣지 않는다**
+	(이 서버에 없는 사람의 값을 들고 있으면 낡아도 아무도 안 지운다), 그리고 그 사람이
+	이 서버에 있으면 캐시를 그대로 준다(저장소보다 새 값이다).
+]]
+function CampaignStore:read(userId)
+	local cached = self.cache[userId]
+	if cached then
+		return cached
+	end
+	if not self.store then
+		return Campaign.newProgress()
+	end
+
+	local ok, stored = pcall(function()
+		return self.store:GetAsync(("user_%d"):format(userId))
+	end)
+	if ok and stored ~= nil and Campaign.validateProgress(stored) then
+		return stored
+	end
+	return Campaign.newProgress()
+end
+
 -- 이미 읽어 둔 진행도. 아직 안 읽었으면 nil — **저장소를 읽지 않는다**(yield 하지 않는다).
 function CampaignStore:peek(player)
 	return self.cache[player.UserId]

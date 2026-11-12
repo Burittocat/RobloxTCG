@@ -103,8 +103,29 @@ MMR 은 **어느 화면에도 싣지 않는다.** 서버가 클라이언트로 �
 
 큐에 서 있는 동안은 [프로필] 버튼이 숨는다(메뉴와 같은 이유).
 
+## 순위표
+
+시작 화면 오른쪽 위 **[순위표]** → `src/client/UI/Leaderboard.luau` (`Lobby:openLeaderboard`).
+
+| | |
+|---|---|
+| 저장 | OrderedDataStore `RankLeaderboard_v1` — 키 `user_<UserId>`, 값 랭크 점수. **정렬용 사본**이다(진짜는 진행도의 `rankPoints`) |
+| 적는 곳 | `PvpReward.rank` — 랭크 점수가 바뀐 좌석만. 실패해도 판 결과는 그대로(다음 판에 맞춰진다) |
+| 읽는 곳 | `src/server/LeaderboardStore.luau` — 위 50명, 30초 캐시(요청 한도). 이 서버에서 새로 적으면 캐시를 버린다 |
+| 이름 | 이 서버에 있으면 Player.Name, 없으면 `GetNameFromUserIdAsync`. 못 찾으면 "플레이어 #id" |
+
+- 내가 50명 안이면 내 줄을 초록 테두리로, 밖이면 아래에 "50위 밖 · 실버 245점"
+  (OrderedDataStore 는 "이 사람이 몇 등" 을 물을 수 없다)
+- 이름을 누르면 **그 사람의 프로필**(`Lobby:viewProfile`). 덱 · 골드 · MMR 은 안 나간다 —
+  덱은 대전 상대에게 전략이 새는 정보다. 읽기만 하고 남의 캐시 · 저장값을 만들지 않는다
+  (`CampaignStore:read` · `CollectionStore:read`). 한 사람이 1초에 한 번만 연다
+- 프로필의 [뒤로] 는 온 곳으로(`backTo`)
+
+테스트 하네스에 OrderedDataStore 와 `Players:GetNameFromUserIdAsync` 를 더했다
+(`tests/lib/Roblox/init.luau` — `world.orderedStores` · `world.knownNames`).
+
 ## 아직 없는 것
 
-- 다른 사람의 프로필 보기 (대전 상대 · 순위표)
 - 시즌 — 랭크 점수를 주기적으로 깎아 다시 오르게 하는 것
 - 티어별 보상
+- 대전 상대의 프로필 (판이 끝난 화면에서 바로)

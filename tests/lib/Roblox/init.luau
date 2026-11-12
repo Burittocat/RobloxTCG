@@ -536,8 +536,19 @@ function Server:service(name, vm)
 				동률은 key 순으로 — 진짜는 순서를 약속하지 않지만, 테스트가 흔들리면 안 된다.
 			]]
 			GetOrderedDataStore = function(_, storeName)
+				--[[
+					표는 **부를 때마다** 이름으로 찾는다. 참조를 미리 잡아두면, 테스트가
+					`world.orderedStores[이름] = { ... }` 로 표를 갈아치웠을 때 이 객체만 옛 표를
+					계속 들고 있다 — 진짜 저장소에서는 있을 수 없는 일이고, 저장값이
+					통째로 사라진 것처럼 보인다(2026-11-13 에 순위표 스모크 둘이 여기서 깨졌다).
+				]]
+				-- 표는 부르는 즉시 만들어 둔다 — 테스트가 아무 일도 일어나기 전에 world.orderedStores 를 들여다본다.
 				world.orderedStores[storeName] = world.orderedStores[storeName] or {}
-				local store = world.orderedStores[storeName]
+
+				local function store()
+					world.orderedStores[storeName] = world.orderedStores[storeName] or {}
+					return world.orderedStores[storeName]
+				end
 
 				local function checkInteger(value, label)
 					if type(value) ~= "number" or value % 1 ~= 0 then
@@ -547,29 +558,29 @@ function Server:service(name, vm)
 
 				return {
 					GetAsync = function(_, key)
-						return store[key]
+						return store()[key]
 					end,
 					SetAsync = function(_, key, value)
 						checkInteger(value, ("SetAsync(%s)"):format(tostring(key)))
-						store[key] = value
+						store()[key] = value
 					end,
 					UpdateAsync = function(_, key, transform)
-						local nextValue = transform(store[key])
+						local nextValue = transform(store()[key])
 						if nextValue == nil then
 							return nil
 						end
 						checkInteger(nextValue, ("UpdateAsync(%s)"):format(tostring(key)))
-						store[key] = nextValue
+						store()[key] = nextValue
 						return nextValue
 					end,
 					RemoveAsync = function(_, key)
-						local old = store[key]
-						store[key] = nil
+						local old = store()[key]
+						store()[key] = nil
 						return old
 					end,
 					GetSortedAsync = function(_, ascending, pageSize)
 						local all = {}
-						for key, value in store do
+						for key, value in store() do
 							table.insert(all, { key = key, value = value })
 						end
 						table.sort(all, function(a, b)
@@ -605,31 +616,42 @@ function Server:service(name, vm)
 			end,
 
 			GetDataStore = function(_, storeName)
+				--[[
+					표는 **부를 때마다** 이름으로 찾는다. 참조를 미리 잡아두면, 테스트가
+					`world.dataStores[이름] = { ... }` 로 표를 갈아치웠을 때 이 객체만 옛 표를
+					계속 들고 있다 — 진짜 저장소에서는 있을 수 없는 일이고, 저장값이
+					통째로 사라진 것처럼 보인다(2026-11-13 에 순위표 스모크 둘이 여기서 깨졌다).
+				]]
+				-- 표는 부르는 즉시 만들어 둔다 — 테스트가 아무 일도 일어나기 전에 world.dataStores 를 들여다본다.
 				world.dataStores[storeName] = world.dataStores[storeName] or {}
-				local store = world.dataStores[storeName]
+
+				local function store()
+					world.dataStores[storeName] = world.dataStores[storeName] or {}
+					return world.dataStores[storeName]
+				end
 
 				return {
 					GetAsync = function(_, key)
-						return serialized(store[key], ("GetAsync(%s)"):format(tostring(key)))
+						return serialized(store()[key], ("GetAsync(%s)"):format(tostring(key)))
 					end,
 
 					SetAsync = function(_, key, value)
-						store[key] = serialized(value, ("SetAsync(%s)"):format(tostring(key)))
+						store()[key] = serialized(value, ("SetAsync(%s)"):format(tostring(key)))
 					end,
 
 					UpdateAsync = function(_, key, transform)
-						local current = serialized(store[key], "UpdateAsync 현재값")
+						local current = serialized(store()[key], "UpdateAsync 현재값")
 						local nextValue = transform(current)
 						if nextValue == nil then
 							return nil -- 진짜 DataStore 도 nil 을 돌려주면 쓰지 않는다
 						end
-						store[key] = serialized(nextValue, ("UpdateAsync(%s)"):format(tostring(key)))
-						return store[key]
+						store()[key] = serialized(nextValue, ("UpdateAsync(%s)"):format(tostring(key)))
+						return store()[key]
 					end,
 
 					RemoveAsync = function(_, key)
-						local old = store[key]
-						store[key] = nil
+						local old = store()[key]
+						store()[key] = nil
 						return old
 					end,
 				}

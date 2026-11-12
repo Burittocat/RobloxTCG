@@ -40,6 +40,7 @@ return function(t, ctx)
 			blockedTokens = opts.blockedTokens,
 			maxMatches = opts.maxMatches,
 			startingPlayerFor = opts.startingPlayerFor,
+			mmrWindow = opts.mmrWindow,
 		})
 	end
 

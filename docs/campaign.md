@@ -12,7 +12,7 @@
 |---|---|
 | 스테이지 표 | `src/shared/Campaign/init.luau` — 이름·상대 덱·난이도·라이프·보상이 한 줄씩 |
 | 저장 위치 | `DataStore` — 이름 `CampaignProgress_v1`, 키는 `user_<UserId>` |
-| 저장 모양 | `{ cleared = 3, gold = 250 }` |
+| 저장 모양 | `{ cleared = 3, gold = 250, pvpDay?, pvpWins? }` — 뒤의 둘은 PvP 승리 보상의 하루 상한([카드팩과 컬렉션](collection.md)) |
 | 판을 여는 곳 | `Lobby:startCampaignStage` — 튜토리얼·AI 연습과 같은 자리 |
 
 플레이어는 **자기가 저장한 덱**으로 둔다. 튜토리얼과 다른 점이다(튜토리얼은 가르칠 것을
@@ -88,7 +88,8 @@
 
 ## 아직 없는 것
 
-- **골드를 쓸 곳** — 카드팩·코스메틱이 붙기 전까지 숫자만 쌓인다. [다음 단계](roadmap.md) 의 BM
+- ~~**골드를 쓸 곳**~~ — 카드팩이 붙었다. [카드팩과 컬렉션](collection.md). `gold` 는 이제
+  **번 합**이고, 목록에 뜨는 숫자는 팩에 쓴 것을 뺀 잔액이다
 - **판 중간 저장** — 대전 중에 나가면 그 판은 처음부터다. `GameState.serialize/deserialize`
   가 이미 있으므로 재료는 있지만, `MatchRunner` 가 "저장된 상태로 복원" 경로를 새로
   가져야 한다

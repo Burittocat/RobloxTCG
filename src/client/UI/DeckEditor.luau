@@ -50,9 +50,17 @@ end
 	카드 한 장을 나타내는 줄. 목록에서도 덱에서도 같은 모양을 쓴다 —
 	같은 카드가 자리에 따라 달라 보이면 옮겨 다니는 동안 눈이 카드를 놓친다.
 ]]
-local function cardRow(parent, def, order, count, onClick, onInspect)
+--[[
+	owned 는 왼쪽 목록에서만 준다 — "덱에 몇 장 / 가진 것 몇 장" 을 같이 적는다.
+	코스트 카드처럼 무한인 것은 nil 을 줘서 예전처럼 덱 매수만 적는다.
+
+	**가지지 않은 카드도 목록에 남긴다.** 흐리게 둘 뿐이다. 숨기면 무엇을 모아야 하는지,
+	카드팩에서 무엇이 나올 수 있는지가 안 보인다 (캠페인의 잠긴 칸과 같은 이유).
+]]
+local function cardRow(parent, def, order, count, onClick, onInspect, owned)
 	local body = def.power and ("%d/%d"):format(def.power, def.toughness) or "—"
 	local tags = keywordText(def)
+	local missing = owned ~= nil and owned <= 0
 
 	local button = Widgets.button("", {
 		Name = "Card_" .. def.id,
@@ -60,6 +68,7 @@ local function cardRow(parent, def, order, count, onClick, onInspect)
 		LayoutOrder = order,
 		Size = UDim2.new(1, 0, 0, 34),
 		BackgroundColor3 = Theme.color.panelSoft,
+		BackgroundTransparency = missing and 0.6 or 0,
 	}, onClick)
 
 	-- 왼쪽 클릭은 넣고 빼는 것, 오른쪽 클릭은 들여다보는 것. 두 조작이 섞이면
@@ -73,6 +82,7 @@ local function cardRow(parent, def, order, count, onClick, onInspect)
 		Position = UDim2.fromOffset(10, 0),
 		Size = UDim2.new(1, -120, 1, 0),
 		TextSize = Theme.text.label,
+		TextColor3 = missing and Theme.color.textFaint or Theme.color.text,
 	})
 
 	Widgets.label(("%s  %s"):format(def.cost and ("%d코"):format(def.cost) or "—", body), {
@@ -84,13 +94,20 @@ local function cardRow(parent, def, order, count, onClick, onInspect)
 		TextXAlignment = Enum.TextXAlignment.Right,
 	})
 
-	if count then
-		Widgets.label(("x%d"):format(count), {
+	local countText = nil
+	if owned ~= nil then
+		countText = ("%d/%d"):format(count or 0, owned)
+	elseif count then
+		countText = ("x%d"):format(count)
+	end
+
+	if countText then
+		Widgets.label(countText, {
 			Name = "Count",
 			Parent = button,
 			Position = UDim2.new(1, -44, 0, 0),
 			Size = UDim2.fromOffset(34, 34),
-			TextColor3 = Theme.color.accent,
+			TextColor3 = (count and count > 0) and Theme.color.accent or Theme.color.textFaint,
 			Font = Theme.font.bold,
 			TextXAlignment = Enum.TextXAlignment.Right,
 		})
@@ -107,6 +124,7 @@ function DeckEditor.new(parent)
 	local self = setmetatable({}, DeckEditor)
 
 	self.counts = {} -- cardId -> 매수
+	self.owned = nil -- cardId -> 가진 매수. nil 이면 서버가 안 알려준 것 — 제한 없이 둔다
 	self.callbacks = {} -- save / reset / back 을 App 이 채운다
 
 	self:build(parent)
@@ -236,7 +254,11 @@ function DeckEditor:build(parent)
 		return scroll, titleLabel
 	end
 
-	self.catalogList = makeColumn("Catalog", ("카드 %d종 — 누르면 덱에 한 장"):format(Registry.count()), 1)
+	self.catalogList = makeColumn(
+		"Catalog",
+		("카드 %d종 — 누르면 덱에 한 장 · 흐린 카드는 카드팩에서"):format(Registry.count()),
+		1
+	)
 	self.deckList, self.deckTitle = makeColumn("Deck", "내 덱", 2)
 
 	--------------------------------------------------------------------
@@ -317,9 +339,31 @@ function DeckEditor:showDetail(def)
 	local count = self.counts[def.id] or 0
 	local max = Decks.maxCopies(def.id)
 	local note = (max >= Config.deckSize) and ("내 덱에 %d장 (매수 제한 없음)"):format(count)
-		or ("내 덱에 %d장 / 최대 %d장"):format(count, max)
+		or ("내 덱에 %d장 / 최대 %d장 · 가진 것 %d장"):format(count, max, self:ownedCount(def.id))
 
 	self.detail.show(def, note)
+end
+
+--[[
+	이 카드를 몇 장 가졌나. 코스트 카드처럼 매수 제한이 없는 종류는 무한이라 덱 한 벌을
+	다 채울 만큼으로 친다 (Collection.countOf 와 같은 규칙 — 그쪽이 서버의 판정이다).
+]]
+function DeckEditor:ownedCount(cardId)
+	if Decks.maxCopies(cardId) >= Config.deckSize then
+		return Config.deckSize
+	end
+	if self.owned == nil then
+		return Decks.maxCopies(cardId)
+	end
+	return self.owned[cardId] or 0
+end
+
+-- 왼쪽 목록에 "덱/보유" 로 적을 값. 무한인 카드는 nil — 덱 매수만 적는다.
+function DeckEditor:ownedLabel(cardId)
+	if self.owned == nil or Decks.maxCopies(cardId) >= Config.deckSize then
+		return nil
+	end
+	return self.owned[cardId] or 0
 end
 
 function DeckEditor:hideDetail()
@@ -353,6 +397,17 @@ function DeckEditor:add(cardId)
 	end
 	if current >= max then
 		self:setMessage(("이 카드는 %d장까지입니다"):format(max), false)
+		return
+	end
+
+	-- 4장 제한보다 먼저 걸리는 경우가 많다. 이유가 다르니 말도 다르게 한다.
+	local owned = self:ownedCount(cardId)
+	if current >= owned then
+		self:setMessage(
+			owned == 0 and "가지지 않은 카드입니다 — 카드팩에서 나옵니다"
+				or ("%d장만 가지고 있습니다"):format(owned),
+			false
+		)
 		return
 	end
 
@@ -439,7 +494,7 @@ function DeckEditor:render()
 			self:add(def.id)
 		end, function()
 			self:showDetail(def)
-		end)
+		end, self:ownedLabel(def.id))
 	end
 
 	order = 0
@@ -476,6 +531,14 @@ function DeckEditor:load(payload)
 	self.counts = {}
 	for _, entry in payload.entries or {} do
 		self.counts[entry.id] = entry.count
+	end
+
+	self.owned = nil
+	if type(payload.owned) == "table" then
+		self.owned = {}
+		for _, entry in payload.owned do
+			self.owned[entry.id] = entry.count
+		end
 	end
 
 	self:hideDetail()

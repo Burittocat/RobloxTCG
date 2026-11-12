@@ -11,9 +11,13 @@
 	    home / error   시작 화면
 	    queued / found / waiting   시작 화면 위의 대기 표시
 	    campaign       캠페인 스테이지 목록
+	    shop           카드팩
 	    deck           덱 편집
 	    battle         전투 화면 — 여기서 Controller:start() 가 한 판을 연다
 ]]
+
+local MarketplaceService = game:GetService("MarketplaceService")
+local Players = game:GetService("Players")
 
 local Net = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").Net)
 
@@ -21,6 +25,7 @@ local Battle = require(script.Parent.UI.Battle)
 local Home = require(script.Parent.UI.Home)
 local CampaignScreen = require(script.Parent.UI.Campaign)
 local DeckEditor = require(script.Parent.UI.DeckEditor)
+local Shop = require(script.Parent.UI.Shop)
 local Controller = require(script.Parent.Controller)
 
 local Screen = Net.LobbyScreen
@@ -39,6 +44,24 @@ function App.new(playerGui, remotes)
 	self.battle = Battle.new(playerGui)
 	self.deck = DeckEditor.new(playerGui)
 	self.campaign = CampaignScreen.new(playerGui)
+	self.shop = Shop.new(playerGui)
+
+	-- 사는 것도 보내기만 한다. 무엇이 나왔는지는 서버가 저장한 뒤에 화면째 내려준다.
+	self.shop.callbacks.buy = function()
+		self:send({ kind = "buyPack" })
+	end
+	self.shop.callbacks.back = function()
+		self:send({ kind = "home" })
+	end
+	--[[
+		Robux 구매 창은 클라이언트가 띄운다(Roblox 가 그렇게 정했다). 무엇을 줄지는 여기서
+		아무것도 정하지 않는다 — 결제가 되면 서버가 영수증을 받아 처리하고 화면을 내려준다.
+	]]
+	self.shop.callbacks.buyRobux = function(productId)
+		if type(productId) == "number" and productId ~= 0 then
+			MarketplaceService:PromptProductPurchase(Players.LocalPlayer, productId)
+		end
+	end
 
 	--[[
 		목록에서 고른 번호를 그대로 서버에 보낸다. 여기서 "열려 있나" 를 다시 보지 않는 이유는
@@ -85,6 +108,9 @@ function App.new(playerGui, remotes)
 	self.home.callbacks.deck = function()
 		self:send({ kind = "deck" })
 	end
+	self.home.callbacks.shop = function()
+		self:send({ kind = "shop" })
+	end
 
 	remotes.Lobby.OnClientEvent:Connect(function(payload)
 		if type(payload) == "table" and type(payload.screen) == "string" then
@@ -114,12 +140,24 @@ function App:show(payload)
 		self.home:setVisible(false)
 		self.battle:setVisible(false)
 		self.campaign:setVisible(false)
+		self.shop:setVisible(false)
 		self.deck:setVisible(true)
 		self.deck:load(payload)
 		return
 	end
 
 	self.deck:setVisible(false)
+
+	if screen == Screen.Shop then
+		self.home:setVisible(false)
+		self.battle:setVisible(false)
+		self.campaign:setVisible(false)
+		self.shop:setVisible(true)
+		self.shop:render(payload)
+		return
+	end
+
+	self.shop:setVisible(false)
 
 	if screen == Screen.Campaign then
 		self.home:setVisible(false)

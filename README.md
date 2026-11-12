@@ -52,5 +52,5 @@ rojo build --output build.rbxlx    # 이 파일을 Studio 로 열면 바로 플�
 
 룰 엔진 · PvE AI · 전투 UI · 튜토리얼 · 덱 편집 · 빠른 대전 매칭 · PvE 캠페인까지 동작한다.
 캠페인은 스테이지 5개를 하나씩 뚫고 깰 때마다 골드를 받는다 — [PvE 캠페인](docs/campaign.md).
-남은 큰 것은 **BM(카드팩 · 코스메틱)** — 골드는 이미 쌓이고 있고 쓸 곳이 없을 뿐이다.
-[다음 단계](docs/roadmap.md).
+골드로 카드팩을 사서 카드를 모으고, 가진 카드로만 덱을 짠다 — [카드팩과 컬렉션](docs/collection.md).
+남은 큰 것은 **골드 수급처와 코스메틱**. [다음 단계](docs/roadmap.md).

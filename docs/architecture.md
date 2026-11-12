@@ -29,11 +29,15 @@ src/shared/Matchmaking/  ← 짝짓기 판단. 이것도 Roblox API 를 쓰지 �
                            (만료 · 중복 · 좌석 배정. 두 큐 백엔드가 공유한다)
 src/shared/Campaign/     ← PvE 스테이지 표와 진행도 규칙. 이것도 순수 함수다
                            (해금 · 보상. 상대 덱은 엔트리 모양이라 덱 편집기와 같은 검사를 받는다)
+src/shared/Collection/   ← 가진 카드 · 카드팩 · 골드 잔액 · Robux 영수증. 이것도 순수 함수다 (docs/collection.md)
+src/shared/Products.luau ← Robux 상품 ID. 0 이면 버튼이 안 뜬다
 
 src/server/
   Boot.server.luau       부팅 · 공개 서버인지 예약 서버인지 판단해 분기
   Lobby.luau             시작 화면 · 큐 · 튜토리얼 · 캠페인 · AI 연습  (공개 서버)
   CampaignStore.luau     캠페인 진행도와 골드 (DataStore)
+  CollectionStore.luau   가진 카드와 팩에 쓴 골드 (DataStore)
+  PvpReward.luau         PvP 승자에게 골드 (Arena · 같은 서버 매칭이 같이 쓴다)
   Arena.luau             도착한 둘을 맞춰보고 한 판을 연다    (예약 서버)
   Host.luau              이 서버에서 도는 매치들의 명부. 행동을 어느 판으로 보낼지
   MatchRunner.luau       상태의 주인. 좌석 2개(사람/AI) · 검증 · 스냅샷 전송
@@ -55,6 +59,7 @@ src/client/
   UI/Reconcile.luau      카드를 키로 들고 고쳐 그린다 (없으면 카드 연출이 원리적으로 불가능)
   UI/Home.luau           시작 화면 (빠른 대전 / 튜토리얼 / 캠페인 / AI 연습 / 덱 편집)
   UI/Campaign.luau       캠페인 스테이지 목록 (판정은 한 줄도 없다 — 서버가 계산해 내려준다)
+  UI/Shop.luau           카드팩 화면 (무엇이 나올지는 서버가 정한다)
   UI/Battle.luau         전투 화면 전체 (룰 판정은 한 줄도 없다)
 
 tests/

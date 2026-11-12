@@ -871,6 +871,61 @@ t:describe("같은 서버 매칭", function()
 
 		t:truthy(Screen.hasText(guiOf(kim), "승리"), "남은 쪽이 이겨야 합니다")
 	end)
+
+	--------------------------------------------------------------------
+	-- 승리 보상 (규칙은 tests/specs/campaign.luau 의 "PvP 승리 보상")
+	--------------------------------------------------------------------
+
+	local function progressOf(world, player)
+		return world.dataStores["CampaignProgress_v1"][("user_%d"):format(player.UserId)]
+	end
+
+	t:it("들어오자마자 항복받은 승리는 보상이 없다", function()
+		local world, _, kim, lee = matchTwo()
+
+		concede(world, kim)
+		world:advance(2)
+		assertNoErrors(world, "바로 항복")
+
+		t:truthy(Screen.hasText(guiOf(lee), "승리"))
+		t:eq(progressOf(world, lee), nil, "부계정 농사를 막으려면 짧은 판은 아무것도 적지 않아야 합니다")
+	end)
+
+	t:it("몇 턴을 둔 판을 이기면 골드가 저장된다", function()
+		local world, _, kim, lee = matchTwo()
+
+		-- 양쪽이 페이즈만 넘기며 턴을 돌린다. 4 = Campaign.PvpReward.minTurns
+		for _ = 1, 300 do
+			if Screen.hasText(guiOf(kim), "턴 4") then
+				break
+			end
+			local acted = false
+			for _, player in { kim, lee } do
+				passIfResponding(world, player)
+				local endPhase = activeButton(player, "페이즈 종료")
+				if endPhase then
+					Screen.click(endPhase)
+					world:advance(0.8)
+					acted = true
+				end
+			end
+			if not acted then
+				world:advance(0.5)
+			end
+		end
+		t:truthy(Screen.hasText(guiOf(kim), "턴 4"), "4턴까지 가야 합니다")
+
+		concede(world, kim)
+		world:advance(2)
+		assertNoErrors(world, "4턴 뒤 항복")
+
+		local stored = progressOf(world, lee)
+		t:truthy(stored, "이긴 사람의 진행도가 저장돼야 합니다")
+		t:eq(stored.gold, 25, "Campaign.PvpReward.gold")
+		t:eq(stored.pvpWins, 1)
+		t:eq(stored.cleared, 0, "캠페인 진도는 건드리지 않습니다")
+		t:eq(progressOf(world, kim), nil, "진 사람에게는 아무것도 적지 않습니다")
+	end)
 end)
 
 --==========================================================================
@@ -1759,11 +1814,47 @@ end)
 	Studio 에서는 API 접근이 꺼져 있으면 저장 자체가 안 되므로, 게시하기 전에
 	여기서 "눌러서 저장되고 그 덱으로 판이 열리는가" 까지 확인해둔다.
 ]]
+--[[
+	카드를 전부 4장씩 가진 사람으로 만든다 (코스트 카드는 원래 무한이라 안 적는다).
+
+	덱 편집 테스트 몇 개는 스타터에 없는 카드를 넣어 본다. 컬렉션이 생긴 뒤로 새로 온
+	사람은 스타터 카드만 가지므로, 그 테스트들은 "다 모은 사람" 으로 시작한다.
+	서버가 처음 읽기 전에 저장소에 넣어둬야 한다 — 한 번 읽으면 캐시에서 준다.
+]]
+local COLLECTION_STORE = "PlayerCollection_v1"
+local ALL_CARDS = {
+	"CRE_SCOUT", "CRE_GUARD", "CRE_BRUTE", "CRE_RAIDER", "CRE_HAWK", "CRE_WYVERN",
+	"CRE_BULWARK", "CRE_ARCHER", "CRE_SKYPIERCER", "CRE_SCRIBE", "CRE_HERALD", "CRE_SQUIRE",
+	"CRE_SENTRY", "CRE_FALCONER", "CRE_LANCER", "CRE_BERSERKER", "CRE_TITAN",
+	"SPL_FIREBOLT", "SPL_RALLY", "SPL_WARCRY", "SPL_EXECUTE", "SPL_NEGATE", "SPL_RECALL",
+	"SPL_SHOCK", "SPL_BULWARK_UP", "SPL_MEND", "SPL_INSIGHT", "SPL_ARCHIVE", "SPL_SNIPE",
+	"SPL_BANISH", "SPL_REINFORCE",
+}
+
+local function collectionOf(world, player)
+	local store = world.dataStores[COLLECTION_STORE]
+	return store and store[("user_%d"):format(player.UserId)]
+end
+
+local function ownEverything(world, player)
+	local cards = {}
+	for _, id in ALL_CARDS do
+		table.insert(cards, { id = id, count = 4 })
+	end
+
+	world.dataStores[COLLECTION_STORE] = world.dataStores[COLLECTION_STORE] or {}
+	world.dataStores[COLLECTION_STORE][("user_%d"):format(player.UserId)] =
+		{ cards = cards, spent = 0, opened = 0 }
+end
+
 t:describe("덱 편집", function()
-	local function openEditor()
+	local function openEditor(ownAll)
 		local world = Roblox.newWorld()
 		local lobby = world:newServer():boot()
 		local kim = lobby:addPlayer("Kim")
+		if ownAll then
+			ownEverything(world, kim)
+		end
 		world:advance(2)
 
 		Screen.click(Screen.findButton(guiOf(kim), "덱 편집"))
@@ -1798,7 +1889,7 @@ t:describe("덱 편집", function()
 	end)
 
 	t:it("저장한 덱으로 다음 판이 열린다", function()
-		local world, _, kim = openEditor()
+		local world, _, kim = openEditor(true)
 
 		-- 스타터에 없는 카드(초소병)를 넣고 그만큼 코스트를 뺀다.
 		local catalog = Screen.find(guiOf(kim), "Catalog")
@@ -1842,7 +1933,7 @@ t:describe("덱 편집", function()
 	end)
 
 	t:it("다시 열면 저장한 덱이 그대로 있다", function()
-		local world, _, kim = openEditor()
+		local world, _, kim = openEditor(true)
 
 		local catalog = Screen.find(guiOf(kim), "Catalog")
 		local deckList = Screen.find(guiOf(kim), "Deck")
@@ -1929,7 +2020,7 @@ t:describe("덱 편집", function()
 	end)
 
 	t:it("상세를 열어둔 채 카드를 넣으면 숫자가 따라간다", function()
-		local world, _, kim = openEditor()
+		local world, _, kim = openEditor(true)
 		local gui = guiOf(kim)
 
 		local catalog = Screen.find(gui, "Catalog")
@@ -1972,6 +2063,88 @@ t:describe("덱 편집", function()
 
 		t:truthy(Screen.hasText(guiOf(kim), "60 / 60 장"))
 		t:truthy(Screen.hasText(guiOf(kim), "되돌"), "결과를 알려줘야 합니다")
+	end)
+
+	--------------------------------------------------------------------
+	-- 가진 카드로만 짠다
+	--------------------------------------------------------------------
+
+	t:it("가지지 않은 카드는 넣을 수 없다", function()
+		local world, _, kim = openEditor()
+		local gui = guiOf(kim)
+
+		-- 자리를 하나 만들고, 스타터에 없는 초소병을 넣어 본다.
+		Screen.click(Screen.findNamed(Screen.find(gui, "Deck"), "Card_COST_BASIC"))
+		world:advance(0.2)
+		Screen.click(Screen.findNamed(Screen.find(gui, "Catalog"), "Card_CRE_SENTRY"))
+		world:advance(0.2)
+
+		t:truthy(Screen.hasText(gui, "59 / 60 장"), "안 들어가야 합니다")
+		t:truthy(Screen.hasText(gui, "가지지 않은 카드"), "왜 안 되는지 말해줘야 합니다")
+		t:falsy(Screen.findNamed(Screen.find(gui, "Deck"), "Card_CRE_SENTRY"), "덱 쪽에 생기면 안 됩니다")
+	end)
+
+	t:it("목록에 '덱/가진 것' 이 적힌다", function()
+		local _, _, kim = openEditor()
+		local catalog = Screen.find(guiOf(kim), "Catalog")
+
+		-- 창공의 매: 스타터에 3장, 가진 것도 3장
+		local hawk = Screen.find(Screen.findNamed(catalog, "Card_CRE_HAWK"), "Count")
+		t:eq(hawk and hawk.Text, "3/3")
+
+		local sentry = Screen.find(Screen.findNamed(catalog, "Card_CRE_SENTRY"), "Count")
+		t:eq(sentry and sentry.Text, "0/0", "가지지 않은 카드도 목록에는 남아야 합니다")
+	end)
+
+	--[[
+		화면이 막아도 리모트는 손으로 부를 수 있다. 서버가 다시 봐야 한다 (Lobby:saveDeck).
+		덱 규칙(60장 · 4장 제한)은 통과하는 덱이라, 걸리는 것은 "가졌나" 하나뿐이다.
+	]]
+	t:it("가지지 않은 카드로 짠 덱은 리모트로 보내도 저장되지 않는다", function()
+		local world, lobby, kim = openEditor()
+
+		local cheat = { { id = "COST_BASIC", count = 52 }, { id = "CRE_TITAN", count = 4 }, { id = "SPL_EXECUTE", count = 4 } }
+		lobby.remotes.Lobby._serverSignal:Fire(kim, { kind = "deckSave", entries = cheat })
+		world:advance(1)
+		assertNoErrors(world, "가지지 않은 카드로 저장")
+
+		t:truthy(Screen.hasText(guiOf(kim), "가지고 있습니다"), "왜 안 되는지 말해줘야 합니다")
+
+		local stored = world.dataStores["PlayerDecks_v1"][("user_%d"):format(kim.UserId)]
+		t:eq(stored, nil, "저장소에 들어가면 안 됩니다")
+	end)
+
+	--[[
+		컬렉션이 생기기 전에 덱을 저장해둔 사람. 업데이트 날 그 덱이 "가지지 않은 카드" 로
+		거부되면 자기가 짠 덱을 빼앗기는 것이다 — 덱의 카드를 물려받아야 한다.
+	]]
+	t:it("컬렉션 전에 짜둔 덱은 그대로 쓸 수 있다", function()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+
+		local legacy = { { id = "COST_BASIC", count = 52 }, { id = "CRE_TITAN", count = 4 }, { id = "SPL_EXECUTE", count = 4 } }
+		world.dataStores["PlayerDecks_v1"][("user_%d"):format(kim.UserId)] = legacy
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "덱 편집"))
+		world:advance(1)
+		Screen.click(Screen.findButton(guiOf(kim), "저장"))
+		world:advance(1)
+		assertNoErrors(world, "옛 덱 다시 저장")
+
+		t:truthy(Screen.hasText(guiOf(kim), "저장했습니다"), "옛 덱을 그대로 저장할 수 있어야 합니다")
+
+		local collection = collectionOf(world, kim)
+		t:truthy(collection, "처음 읽을 때 컬렉션이 저장돼야 합니다")
+
+		local titans = 0
+		for _, entry in collection.cards do
+			if entry.id == "CRE_TITAN" then
+				titans = entry.count
+			end
+		end
+		t:eq(titans, 4, "옛 덱의 카드를 물려받아야 합니다")
 	end)
 end)
 
@@ -2191,6 +2364,237 @@ t:describe("캠페인", function()
 		판을 지면서 테스트가 흔들렸다. 서버가 부르는 계산은 Campaign.applyClear 하나이고,
 		그 결과가 저장소까지 가는 배선은 위 테스트가 이미 지나간다.
 	]]
+end)
+
+--==========================================================================
+-- 카드팩
+--==========================================================================
+
+--[[
+	무엇이 나오는지 · 골드 계산 · 4장 넘는 장의 환급은 tests/specs/collection.luau 가 본다.
+	여기서 보는 것은 배선이다 — 버튼이 잔액을 따라 켜지고 꺼지는가, 산 결과가 저장소까지
+	가는가, 서버가 잔액을 다시 보는가, 산 카드가 덱 편집에 실제로 나타나는가.
+
+	골드는 캠페인을 깨서 버는 것이라, 여기서는 진행도를 저장소에 미리 넣어두고 시작한다.
+	(이겨서 골드가 쌓이는 경로는 위 "캠페인" 절이 본다)
+]]
+t:describe("카드팩", function()
+	local PROGRESS = "CampaignProgress_v1"
+
+	local function openShop(gold)
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+
+		if gold then
+			world.dataStores[PROGRESS][("user_%d"):format(kim.UserId)] = { cleared = 2, gold = gold }
+		end
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "카드팩"))
+		world:advance(1)
+		assertNoErrors(world, "카드팩 열기")
+
+		return world, lobby, kim
+	end
+
+	local function shopGold(player)
+		local label = Screen.find(Screen.find(guiOf(player), "TCGShop"), "Gold")
+		return label and label.Text
+	end
+
+	t:it("골드가 없으면 팩 열기가 꺼져 있고 어디서 버는지 알려준다", function()
+		local _, _, kim = openShop()
+		local gui = guiOf(kim)
+
+		local buy = Screen.findButton(gui, "팩 열기")
+		t:truthy(buy, "팩 열기 버튼이 보여야 합니다")
+		t:falsy(buy.Active, "골드가 모자라면 꺼져 있어야 합니다")
+		t:truthy(Screen.hasText(gui, "캠페인"), "골드를 어디서 버는지 말해줘야 합니다")
+		t:truthy(Screen.hasText(gui, "모은 카드"), "모은 정도가 보여야 합니다")
+	end)
+
+	t:it("사면 다섯 장이 펼쳐지고 저장소까지 간다", function()
+		local world, _, kim = openShop(130)
+		t:eq(shopGold(kim), "130")
+
+		Screen.click(Screen.findButton(guiOf(kim), "팩 열기"))
+		world:advance(1)
+		assertNoErrors(world, "팩 사기")
+
+		t:eq(Screen.countNamed(guiOf(kim), "Pull_"), 5, "나온 카드가 다섯 장 펼쳐져야 합니다")
+
+		--[[
+			화면 문구만 보면 "샀다고 말하는 것" 까지밖에 확인이 안 된다. 저장된 값을 본다.
+			spent 는 가격에서 중복 환급을 뺀 순지출이라 100 이하다.
+		]]
+		local stored = collectionOf(world, kim)
+		t:truthy(stored, "컬렉션이 저장돼야 합니다")
+		t:eq(stored.opened, 1)
+		t:truthy(stored.spent > 0 and stored.spent <= 100, ("순지출 %s"):format(tostring(stored.spent)))
+		t:eq(shopGold(kim), tostring(130 - stored.spent), "잔액이 줄어 있어야 합니다")
+	end)
+
+	--[[
+		버튼을 꺼둔 것은 화면의 편의다. 서버가 잔액을 다시 본다 (Lobby:buyPack).
+	]]
+	t:it("골드가 모자란데 리모트로 사려 해도 거부한다", function()
+		local world, lobby, kim = openShop(40)
+
+		lobby.remotes.Lobby._serverSignal:Fire(kim, { kind = "buyPack" })
+		world:advance(1)
+		assertNoErrors(world, "모자란 골드로 사기")
+
+		t:truthy(Screen.hasText(guiOf(kim), "모자랍니다"), "왜 안 되는지 말해줘야 합니다")
+		t:eq(Screen.countNamed(guiOf(kim), "Pull_"), 0, "카드가 나오면 안 됩니다")
+		t:eq(collectionOf(world, kim).opened, 0, "저장소에 산 기록이 남으면 안 됩니다")
+	end)
+
+	t:it("산 카드는 덱 편집에 바로 나타난다", function()
+		local world, _, kim = openShop(1000)
+
+		for _ = 1, 3 do
+			Screen.click(Screen.findButton(guiOf(kim), "팩 열기"))
+			world:advance(1)
+		end
+		assertNoErrors(world, "팩 세 봉")
+
+		Screen.click(Screen.findButton(guiOf(kim), "뒤로"))
+		world:advance(1)
+		Screen.click(Screen.findButton(guiOf(kim), "덱 편집"))
+		world:advance(1)
+		assertNoErrors(world, "산 뒤 덱 편집")
+
+		-- 저장된 컬렉션의 매수가 목록의 "덱/가진 것" 에 그대로 나와야 한다.
+		local catalog = Screen.find(guiOf(kim), "Catalog")
+		for _, entry in collectionOf(world, kim).cards do
+			local count = Screen.find(Screen.findNamed(catalog, "Card_" .. entry.id), "Count")
+			t:truthy(
+				count and count.Text:sub(-#tostring(entry.count) - 1) == "/" .. entry.count,
+				("%s 는 %d장 가졌는데 목록에는 '%s'"):format(entry.id, entry.count, tostring(count and count.Text))
+			)
+		end
+	end)
+
+	--[[
+		캠페인 목록 머리의 골드도 **쓸 수 있는 골드**여야 한다. 번 합을 그대로 보여주면
+		상점과 숫자가 달라서 "골드가 어디 갔나" 가 된다.
+	]]
+	t:it("캠페인 목록의 골드도 쓴 만큼 줄어 있다", function()
+		local world, _, kim = openShop(130)
+
+		Screen.click(Screen.findButton(guiOf(kim), "팩 열기"))
+		world:advance(1)
+		Screen.click(Screen.findButton(guiOf(kim), "뒤로"))
+		world:advance(1)
+		Screen.click(Screen.findButton(guiOf(kim), "캠페인"))
+		world:advance(1)
+		assertNoErrors(world, "산 뒤 캠페인 목록")
+
+		local purse = Screen.find(Screen.find(guiOf(kim), "TCGCampaign"), "Purse")
+		local balance = tostring(130 - collectionOf(world, kim).spent)
+		t:truthy(Screen.hasText(purse, balance), ("캠페인 목록에 잔액 %s 가 떠야 합니다"):format(balance))
+	end)
+
+	--------------------------------------------------------------------
+	-- Robux 팩 (규칙은 tests/specs/collection.luau 의 "Robux 팩")
+	--------------------------------------------------------------------
+
+	--[[
+		영수증은 진짜로는 Roblox 가 보낸다. 여기서는 서버가 꽂아둔 ProcessReceipt 를
+		테스트가 직접 부른다. 상품 ID 는 설정 파일의 값을 그대로 쓴다 — 0(아직 상품 없음)
+		이어도 서버는 "그 ID 의 영수증" 으로 처리한다. 진짜 영수증에 0 이 올 일은 없다.
+	]]
+	local Products = require("../src/shared/Products")
+
+	local function receipt(lobby, player, purchaseId, productId)
+		local handler = lobby.marketplace and lobby.marketplace.ProcessReceipt
+		assert(handler, "로비가 MarketplaceService.ProcessReceipt 를 걸어야 합니다")
+		return tostring(handler({
+			PlayerId = player.UserId,
+			ProductId = productId or Products.robuxPack,
+			PurchaseId = purchaseId,
+			CurrencySpent = 99,
+		}))
+	end
+
+	local GRANTED = "Enum.ProductPurchaseDecision.PurchaseGranted"
+	local NOT_YET = "Enum.ProductPurchaseDecision.NotProcessedYet"
+
+	t:it("상품 ID 가 비어 있으면 Robux 버튼이 없다", function()
+		local _, _, kim = openShop()
+		local button = Screen.findButton(guiOf(kim), "Robux로 열기")
+
+		if Products.robuxPack == 0 then
+			t:falsy(button, "상품을 만들기 전에는 버튼이 보이면 안 됩니다")
+		else
+			t:truthy(button, "상품 ID 가 있으면 버튼이 보여야 합니다")
+		end
+	end)
+
+	t:it("영수증이 오면 팩이 들어가고 화면에 펼쳐진다", function()
+		local world, lobby, kim = openShop()
+
+		t:eq(receipt(lobby, kim, "purchase-1"), GRANTED)
+		world:advance(1)
+		assertNoErrors(world, "Robux 영수증")
+
+		t:eq(Screen.countNamed(guiOf(kim), "Pull_"), 5, "카드팩 화면에 있으면 바로 펼쳐져야 합니다")
+
+		local stored = collectionOf(world, kim)
+		t:eq(stored.opened, 1)
+		t:truthy(stored.spent <= 0, "골드를 쓰면 안 됩니다")
+		t:eq(stored.receipts and stored.receipts[1], "purchase-1", "영수증이 카드와 같이 저장돼야 합니다")
+	end)
+
+	--[[
+		Roblox 는 "처리했다" 를 못 받으면 같은 영수증을 다시 보낸다. 두 번 주면 안 되고,
+		두 번째에도 **처리했다고 답해야** 한다 — 아니면 영원히 다시 온다.
+	]]
+	t:it("같은 영수증이 다시 와도 한 번만 준다", function()
+		local world, lobby, kim = openShop()
+
+		t:eq(receipt(lobby, kim, "purchase-1"), GRANTED)
+		world:advance(1)
+		t:eq(receipt(lobby, kim, "purchase-1"), GRANTED, "다시 온 영수증에도 처리했다고 답해야 합니다")
+		world:advance(1)
+		assertNoErrors(world, "같은 영수증 두 번")
+
+		t:eq(collectionOf(world, kim).opened, 1, "팩은 한 봉만 들어가야 합니다")
+	end)
+
+	--[[
+		서버가 바뀌어도(다른 로비로 재접속) 저장소의 영수증 기록이 막아야 한다.
+		캐시만 보고 판단하면 새 서버에서 또 준다.
+	]]
+	t:it("다른 서버로 다시 와도 같은 영수증은 주지 않는다", function()
+		local world, lobby, kim = openShop()
+		t:eq(receipt(lobby, kim, "purchase-1"), GRANTED)
+		world:advance(1)
+
+		-- 같은 사람이 다른 로비로 옮겨 간다 (하네스의 텔레포트가 사람을 옮기는 방식과 같다).
+		local other = world:newServer():boot()
+		lobby:removePlayer(kim)
+		other:addPlayer(kim.Name, { player = kim })
+		world:advance(2)
+
+		t:eq(receipt(other, kim, "purchase-1"), GRANTED)
+		world:advance(1)
+		assertNoErrors(world, "다른 서버에서 같은 영수증")
+
+		t:eq(collectionOf(world, kim).opened, 1, "다른 서버에서도 한 봉만이어야 합니다")
+	end)
+
+	t:it("모르는 상품과 접속해 있지 않은 사람의 영수증은 미룬다", function()
+		local world, lobby, kim = openShop()
+
+		t:eq(receipt(lobby, kim, "other-product", Products.robuxPack + 987654), NOT_YET)
+		t:eq(receipt(lobby, { UserId = 424242 }, "someone-else"), NOT_YET, "나간 사람 것은 다음 접속에 처리합니다")
+		world:advance(1)
+		assertNoErrors(world, "미루는 영수증")
+
+		t:eq(collectionOf(world, kim).opened, 0)
+	end)
 end)
 
 --==========================================================================

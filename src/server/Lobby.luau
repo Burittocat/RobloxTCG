@@ -1,10 +1,11 @@
 --[[
 	공개 서버(= 로비)에서 도는 것.
 
-	여기서는 카드를 한 장도 내지 않는다. 하는 일은 셋이다.
+	여기서는 카드를 한 장도 내지 않는다. 하는 일은 넷이다.
 	  1. 시작 화면 상태를 클라이언트에 알려준다        (Lobby 리모트)
 	  2. 빠른 대전 큐 등록/취소                        (Matchmaker)
 	  3. AI 연습·튜토리얼·캠페인은 큐를 타지 않고 이 자리에서 한 판 띄운다
+	  4. 덱 저장과 카드팩 — 가진 카드(CollectionStore)와 골드를 다룬다
 
 	PvP 매치는 여기서 굴리지 않는다. 짝이 지어지면 두 사람은 예약 서버로 텔레포트되고
 	거기서 Arena 가 판을 연다. 로비 서버가 대전까지 맡으면 인원이 많은 서버일수록
@@ -14,6 +15,7 @@
 	 accessCode 가 없는 매치가 그 경우다.)
 ]]
 
+local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -22,12 +24,17 @@ local AI = require(Shared.AI)
 local Net = require(Shared.Net)
 
 local Campaign = require(Shared.Campaign)
+local Collection = require(Shared.Collection)
 local Decks = require(Shared.Decks)
+local Products = require(Shared.Products)
+local Rules = require(Shared.Rules)
 
 local CampaignStore = require(script.Parent.CampaignStore)
+local CollectionStore = require(script.Parent.CollectionStore)
 local DeckStore = require(script.Parent.DeckStore)
 local MatchRunner = require(script.Parent.MatchRunner)
 local Matchmaker = require(script.Parent.Matchmaker)
+local PvpReward = require(script.Parent.PvpReward)
 
 local Screen = Net.LobbyScreen
 
@@ -42,6 +49,7 @@ function Lobby.new(remotes, host)
 	self.screens = {} :: { [Player]: any }
 	self.deckStore = DeckStore.new()
 	self.campaignStore = CampaignStore.new()
+	self.collectionStore = CollectionStore.new()
 
 	-- 캠페인 판을 두는 중인 사람 -> 스테이지 번호. 판이 끝나고 어디로 돌려보낼지의 근거다.
 	self.campaignStage = {} :: { [Player]: number }
@@ -81,10 +89,30 @@ function Lobby.new(remotes, host)
 		self.campaignStage[player] = nil
 		self.deckStore:forget(player)
 		self.campaignStore:forget(player)
+		self.collectionStore:forget(player)
 	end)
 
 	for _, player in Players:GetPlayers() do
 		self:onPlayerAdded(player)
+	end
+
+	--[[
+		Robux 결제. 콜백은 **플레이스에 하나뿐**이고, 결제한 사람이 있는 서버에서 불린다.
+		대전 서버(Arena)는 이걸 걸지 않는다 — 구매 버튼은 로비의 카드팩 화면에만 있고,
+		혹시 대전 중에 처리 못 한 영수증이 있으면 Roblox 가 로비에 돌아온 뒤 다시 보낸다.
+
+		pcall 로 감싼다. 콜백이 에러로 죽으면 Roblox 는 아무 답도 못 받은 것으로 치는데,
+		그보다 "아직 못 했다" 고 분명히 답하는 쪽이 다시 보내줄 것이 확실하다.
+	]]
+	MarketplaceService.ProcessReceipt = function(receipt)
+		local ok, decision = pcall(function()
+			return self:processReceipt(receipt)
+		end)
+		if not ok then
+			warn(("[TCG] 영수증 처리 실패: %s"):format(tostring(decision)))
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+		return decision
 	end
 
 	self.matchmaker:start()
@@ -128,7 +156,28 @@ function Lobby:deckFor(player)
 	if not player then
 		return Decks.starter()
 	end
-	return Decks.toList(self.deckStore:get(player))
+
+	--[[
+		저장할 때 이미 "가진 카드로 짰나" 를 봤지만(saveDeck), 판을 열 때 한 번 더 본다.
+		저장된 덱은 믿지 않는다는 DeckStore 의 태도와 같다. 걸리는 것은 컬렉션을 못 읽어
+		스타터로 놀고 있는 사람 정도라, 그 사람은 스타터로 둔다.
+	]]
+	local entries = self.deckStore:get(player)
+	local covered = Collection.covers(self:collectionFor(player), entries)
+	if not covered then
+		return Decks.starter()
+	end
+	return Decks.toList(entries)
+end
+
+-- 가진 카드. 컬렉션이 아직 없는 사람은 저장해둔 덱의 카드를 물려받는다(CollectionStore:get).
+function Lobby:collectionFor(player)
+	return self.collectionStore:get(player, self.deckStore:get(player))
+end
+
+-- 쓸 수 있는 골드. 번 것은 캠페인 진행도에, 쓴 것은 컬렉션에 있다(Collection 머리말).
+function Lobby:goldFor(player)
+	return Collection.balance(self.campaignStore:get(player), self:collectionFor(player))
 end
 
 function Lobby:setScreen(player, payload)
@@ -193,6 +242,10 @@ function Lobby:onMessage(player, payload)
 		self:saveDeck(player, payload.entries)
 	elseif payload.kind == "deckReset" then
 		self:resetDeck(player)
+	elseif payload.kind == "shop" then
+		self:openShop(player)
+	elseif payload.kind == "buyPack" then
+		self:buyPack(player)
 	elseif payload.kind == "tutorial" then
 		self:startTutorial(player)
 	elseif payload.kind == "practice" then
@@ -239,11 +292,20 @@ function Lobby:openDeck(player)
 	self:setScreen(player, {
 		screen = Screen.Deck,
 		entries = self.deckStore:get(player),
+		owned = Collection.owned(self:collectionFor(player)),
 	})
 end
 
 function Lobby:saveDeck(player, entries)
-	local ok, reason = self.deckStore:save(player, entries)
+	--[[
+		가진 카드로 짰는지는 여기서 본다. DeckStore 는 덱 규칙(60장 · 4장 제한)만 안다 —
+		저장소마다 서로를 알게 하면 하나를 고칠 때 셋을 같이 고치게 된다.
+		화면도 가진 것보다 많이는 못 넣게 막지만(DeckEditor:add), 리모트는 손으로도 부른다.
+	]]
+	local ok, reason = Collection.covers(self:collectionFor(player), entries)
+	if ok then
+		ok, reason = self.deckStore:save(player, entries)
+	end
 
 	--[[
 		실패해도 화면은 덱 편집 그대로 두고 이유만 알려준다. 시작 화면으로 되돌리면
@@ -255,18 +317,21 @@ function Lobby:saveDeck(player, entries)
 	self:setScreen(player, {
 		screen = Screen.Deck,
 		entries = self.deckStore:get(player),
+		owned = Collection.owned(self:collectionFor(player)),
 		saved = ok,
 		text = ok and "저장했습니다" or tostring(reason or "저장하지 못했습니다"),
 	})
 end
 
 function Lobby:resetDeck(player)
+	-- 스타터 덱은 언제나 가진 카드로 짤 수 있다 (Collection.new 가 스타터 매수만큼 준다).
 	local starter = Decks.starterEntries()
 	local ok = self.deckStore:save(player, starter)
 
 	self:setScreen(player, {
 		screen = Screen.Deck,
 		entries = self.deckStore:get(player),
+		owned = Collection.owned(self:collectionFor(player)),
 		saved = ok,
 		text = ok and "스타터 덱으로 되돌렸습니다" or "되돌렸지만 저장하지 못했습니다",
 	})
@@ -337,10 +402,14 @@ function Lobby:openCampaign(player, text)
 
 	local progress = self.campaignStore:get(player)
 
+	--[[
+		목록 머리에 뜨는 골드는 **쓸 수 있는 골드**다. progress.gold 는 지금까지 번 합이라,
+		팩을 산 사람에게 그대로 보여주면 상점과 숫자가 다르다.
+	]]
 	self:setScreen(player, {
 		screen = Screen.Campaign,
 		stages = Campaign.list(progress),
-		gold = progress.gold,
+		gold = self:goldFor(player),
 		text = text,
 	})
 end
@@ -431,6 +500,145 @@ function Lobby:onCampaignFinish(player, index, runner)
 end
 
 --==========================================================================
+-- 카드팩
+--==========================================================================
+
+--[[
+	상점 화면을 연다. pulls 가 있으면 방금 깐 팩의 결과다.
+
+	덱 편집과 같은 이유로 대전 중에는 열지 않는다.
+
+	내려보내는 것은 숫자뿐이다 — 잔액·가격·장수·모은 정도. 살 수 있는지는 화면이
+	잔액과 가격을 비교해 버튼을 켜고 끄지만, 판정은 buyPack 이 다시 한다.
+]]
+function Lobby:openShop(player, pulls, text, failed)
+	if self.host:runnerFor(player) then
+		return
+	end
+	self.matchmaker:cancel(player)
+
+	local collection = self:collectionFor(player)
+	local have, total = Collection.progress(collection)
+
+	self:setScreen(player, {
+		screen = Screen.Shop,
+		gold = self:goldFor(player),
+		price = Collection.Pack.price,
+		size = Collection.Pack.size,
+		rares = Collection.Pack.rares,
+		collected = have,
+		total = total,
+		pulls = pulls,
+		text = text,
+		failed = failed == true,
+		-- 0 이면 화면이 Robux 버튼을 숨긴다 (Products 주석)
+		robuxProductId = Products.robuxPack,
+	})
+end
+
+--[[
+	Robux 영수증 하나를 처리한다. -> Enum.ProductPurchaseDecision
+
+	답은 둘뿐이다.
+	  PurchaseGranted   줬다(또는 이미 줬다). Roblox 는 이 영수증을 다시 안 보낸다
+	  NotProcessedYet   아직 못 줬다. Roblox 가 나중에(다음 접속 등) 다시 보낸다
+
+	**저장에 성공한 뒤에만 Granted 라고 답한다.** 먼저 답하고 저장이 실패하면 돈은 나갔는데
+	카드는 없다 — 되돌릴 방법이 없다. 반대로 저장은 됐는데 답이 안 가면 같은 영수증이 또
+	오지만, 그건 영수증 기록(Collection.grantPack)이 걸러준다.
+
+	이미 처리한 영수증이면 아무것도 안 주고 Granted 라고 답한다 — NotProcessedYet 으로 답하면
+	Roblox 가 영원히 다시 보낸다.
+]]
+function Lobby:processReceipt(receipt)
+	local NotYet = Enum.ProductPurchaseDecision.NotProcessedYet
+	local Granted = Enum.ProductPurchaseDecision.PurchaseGranted
+
+	-- 우리가 모르는 상품. 상품을 늘리면 여기에 갈래가 생긴다.
+	if receipt.ProductId ~= Products.robuxPack then
+		return NotYet
+	end
+
+	-- 결제한 사람이 이 서버에 없다(그 사이에 나갔다). 저장소를 직접 고칠 수도 있지만,
+	-- 그러면 그 사람이 지금 있는 서버의 캐시와 어긋난다. 다음 접속 때 다시 온다.
+	local player = Players:GetPlayerByUserId(receipt.PlayerId)
+	if not player then
+		return NotYet
+	end
+
+	local purchaseId = tostring(receipt.PurchaseId)
+	local collection = self:collectionFor(player)
+
+	if Collection.hasReceipt(collection, purchaseId) then
+		return Granted
+	end
+
+	local rng = Rules.RNG.new(Random.new():NextInteger(1, 2147483646))
+	local updated, results = Collection.grantPack(collection, purchaseId, rng)
+	if not updated then
+		warn(("[TCG] Robux 팩을 만들지 못했습니다 (%s): %s"):format(player.Name, tostring(results)))
+		return NotYet
+	end
+
+	local ok, reason = self.collectionStore:save(player, updated)
+	if not ok then
+		warn(("[TCG] Robux 팩을 저장하지 못했습니다 — 다시 받을 때 처리합니다 (%s): %s"):format(
+			player.Name,
+			tostring(reason)
+		))
+		return NotYet
+	end
+
+	-- 카드팩 화면에 있으면 바로 펼쳐 보여준다. 다른 화면이면 카드는 이미 컬렉션에 있다.
+	local current = self.screens[player]
+	if current and current.screen == Screen.Shop then
+		self:openShop(player, results, "Robux 팩을 열었습니다", false)
+	end
+
+	return Granted
+end
+
+--[[
+	팩 한 봉을 산다.
+
+	난수 시드는 이 서버가 뽑는다. 클라이언트가 보낸 값이나 클라이언트가 볼 수 있는 값에서
+	유도하면 무엇이 나올지 미리 계산할 수 있다 (Arena 가 매치 시드를 직접 뽑는 것과 같은 이유).
+
+	**저장에 성공해야 결과를 보여준다.** 저장이 실패하면 CollectionStore 가 캐시를 되돌리고,
+	화면에는 카드 대신 "못 샀다" 가 뜬다. 카드를 보여줬는데 다음 접속에 없으면 그게 더 나쁘다.
+]]
+function Lobby:buyPack(player)
+	if self.host:runnerFor(player) then
+		return
+	end
+
+	local progress = self.campaignStore:get(player)
+	local collection = self:collectionFor(player)
+	local rng = Rules.RNG.new(Random.new():NextInteger(1, 2147483646))
+
+	local updated, results = Collection.buyPack(progress, collection, rng)
+	if not updated then
+		self:openShop(player, nil, tostring(results), true)
+		return
+	end
+
+	local ok, reason = self.collectionStore:save(player, updated)
+	if not ok then
+		self:openShop(player, nil, ("팩을 열지 못했습니다: %s"):format(tostring(reason)), true)
+		return
+	end
+
+	local refund = 0
+	for _, pull in results do
+		refund += pull.refund
+	end
+
+	local text = refund > 0 and ("팩을 열었습니다 — 중복 카드는 골드 %d 로 돌려받았습니다"):format(refund)
+		or "팩을 열었습니다"
+	self:openShop(player, results, text, false)
+end
+
+--==========================================================================
 -- AI 연습
 --==========================================================================
 
@@ -466,6 +674,10 @@ function Lobby:startLocalMatch(match, players)
 		seats = seats,
 		seed = match.seed,
 		startingPlayerId = match.startingPlayerId,
+		-- 게시된 게임의 Arena 와 같은 보상. 판이 열리는 곳만 다르다.
+		onFinish = function(finished)
+			PvpReward.pay(self.campaignStore, finished)
+		end,
 	})
 
 	self.host:attach(runner)

@@ -12,7 +12,10 @@
 
 	진행도 (DataStore 에 그대로 들어가는 모양)
 
-	    { cleared = 3, gold = 250 }
+	    { cleared = 3, gold = 250, pvpDay = 20404, pvpWins = 2 }
+
+	pvpDay · pvpWins 는 PvP 승리 보상의 하루 상한을 세는 칸이다(아래 PvpReward).
+	없어도 된다 — 그 전부터 있던 저장값과 같은 모양이라 저장소 이름을 바꾸지 않았다.
 
 	cleared 는 **깬 스테이지 중 가장 큰 번호**다. 목록이 아닌 이유: 스테이지는 순서대로만
 	열리므로 3 을 깼다는 것은 1·2 도 깼다는 뜻이고, 그러면 목록은 같은 사실을 더 비싸게
@@ -178,6 +181,20 @@ function Campaign.newProgress()
 end
 
 --[[
+	진행도 사본. **필드를 하나씩 옮겨 적지 않는다** — 그러면 필드가 늘어날 때마다
+	(pvpDay · pvpWins 가 그랬다) 옮겨 적는 곳마다 빠뜨려서 조용히 지워진다.
+]]
+local function copy(progress)
+	local out = {}
+	for key, value in progress do
+		out[key] = value
+	end
+	out.cleared = out.cleared or 0
+	out.gold = out.gold or 0
+	return out
+end
+
+--[[
 	저장소에서 온 값이 쓸 수 있는 모양인가. -> ok, reason
 
 	저장된 값을 믿지 않는 이유는 DeckStore 와 같다 — 스테이지를 지우거나 줄이면
@@ -197,6 +214,14 @@ function Campaign.validateProgress(value)
 
 	if value.cleared > Campaign.count() then
 		return false, ("깬 스테이지가 %d 인데 표에는 %d 개뿐입니다"):format(value.cleared, Campaign.count())
+	end
+
+	-- PvP 보상 기록은 없어도 된다(그 전부터 있던 저장값). 있으면 모양은 맞아야 한다.
+	for _, field in { "pvpDay", "pvpWins" } do
+		local number = value[field]
+		if number ~= nil and (type(number) ~= "number" or number % 1 ~= 0 or number < 0) then
+			return false, ("'%s' 가 0 이상의 정수가 아닙니다"):format(field)
+		end
 	end
 
 	return true
@@ -222,19 +247,84 @@ end
 ]]
 function Campaign.applyClear(progress, index)
 	local stage = Campaign.get(index)
-	local cleared = progress.cleared or 0
-	local gold = progress.gold or 0
+	local updated = copy(progress)
 
-	if not stage or index > cleared + 1 then
+	if not stage or index > updated.cleared + 1 then
 		-- 열리지도 않은 번호. 부르는 쪽이 막았어야 하는 것이라 진행도는 그대로 둔다.
-		return { cleared = cleared, gold = gold }, 0
+		return updated, 0
 	end
 
-	if index <= cleared then
-		return { cleared = cleared, gold = gold }, 0 -- 이미 깬 곳. 다시 깨도 보상은 없다
+	if index <= updated.cleared then
+		return updated, 0 -- 이미 깬 곳. 다시 깨도 보상은 없다
 	end
 
-	return { cleared = index, gold = gold + stage.gold }, stage.gold
+	updated.cleared = index
+	updated.gold += stage.gold
+	return updated, stage.gold
+end
+
+--==========================================================================
+-- PvP 승리 보상 (★ 기획서 미확정 — docs/open-questions.md)
+--==========================================================================
+
+--[[
+	캠페인 골드는 첫 클리어에만 나와서 다 합쳐도 팩 여섯 봉이다. 그 뒤로 컬렉션이 멈추지
+	않게 하는 수급처가 PvP 승리다.
+
+	  gold      한 판 이기면 받는 골드
+	  perDay    하루에 보상받는 승리 수. 4 × 25 = 100 = 하루 팩 한 봉
+	  minTurns  이 턴 수(양쪽 턴을 합친 state.turn)가 안 된 판은 보상이 없다
+
+	제한이 둘인 이유는 **부계정 농사** 다. 계정 둘로 큐에 서서 한쪽이 바로 항복하면
+	보상이 무한히 나온다. 하루 상한이 총량을 막고, 최소 턴이 "들어오자마자 항복" 을 막는다.
+	정상적으로 이긴 판이 일찍 끝나서(상대가 2턴 만에 나감) 못 받는 것은 감수한다.
+
+	골드는 진행도의 gold(= 번 합)에 더한다. 화폐를 새로 만들지 않는다 — 팩은 이미
+	"번 합 − 쓴 합" 으로 잔액을 계산하고 있다(Collection 머리말).
+
+	날짜는 UTC 기준 `os.time() // 86400`. 서버마다 시계 기준이 같아야 하고, 사람마다
+	시간대를 따지면 시간대를 바꿔 하루를 두 번 사는 길이 생긴다.
+]]
+Campaign.PvpReward = table.freeze({
+	gold = 25,
+	perDay = 4,
+	minTurns = 4,
+})
+
+function Campaign.dayOf(unixTime)
+	return math.floor(unixTime / 86400)
+end
+
+-- 오늘 이미 보상받은 승리 수. 날짜가 바뀌었으면 0 이다.
+function Campaign.pvpWinsToday(progress, day)
+	if progress.pvpDay ~= day then
+		return 0
+	end
+	return progress.pvpWins or 0
+end
+
+--[[
+	PvP 한 판을 이겼다. -> 새 진행도, 받은 골드, 못 받았다면 이유
+
+	applyClear 와 같이 원래 진행도를 고치지 않는다.
+]]
+function Campaign.applyPvpWin(progress, day, turns)
+	local updated = copy(progress)
+	local reward = Campaign.PvpReward
+
+	if (tonumber(turns) or 0) < reward.minTurns then
+		return updated, 0, ("%d턴 안에 끝난 판은 보상이 없습니다"):format(reward.minTurns)
+	end
+
+	local wins = Campaign.pvpWinsToday(progress, day)
+	if wins >= reward.perDay then
+		return updated, 0, ("오늘 받을 수 있는 승리 보상(%d판)을 다 받았습니다"):format(reward.perDay)
+	end
+
+	updated.pvpDay = day
+	updated.pvpWins = wins + 1
+	updated.gold += reward.gold
+	return updated, reward.gold
 end
 
 --==========================================================================

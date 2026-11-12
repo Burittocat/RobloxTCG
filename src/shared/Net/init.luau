@@ -57,6 +57,8 @@ end
 	  { kind = "deck" }      덱 편집 화면을 연다 (서버가 저장된 덱을 내려준다)
 	  { kind = "deckSave", entries = { { id, count }, ... } }  덱 저장
 	  { kind = "deckReset" } 스타터 덱으로 되돌린다
+	  { kind = "shop" }      카드팩 화면을 연다
+	  { kind = "buyPack" }   팩 한 봉을 산다 (가격·잔액 판정은 서버가 한다)
 	  { kind = "leave" }     대전 종료 후 로비로
 	  { kind = "requeue" }   대전 종료 후 로비로 돌아가 곧장 다시 큐
 
@@ -68,10 +70,20 @@ end
 	                          빼면 시계가 어긋난 사람의 타이머가 망가진다.
 	  { screen = "found",   opponent = "이름" }        곧 대전 서버로 이동
 	  { screen = "waiting", text = "상대를 기다리는 중" }  예약 서버에 먼저 도착
-	  { screen = "deck",    entries = { { id, count }, ... }, text = ?, saved = ? }
-	                          덱 편집 화면. entries 는 지금 저장된 덱
+	  { screen = "deck",    entries = { { id, count }, ... }, owned = { { id, count }, ... },
+	                        text = ?, saved = ? }
+	                          덱 편집 화면. entries 는 지금 저장된 덱, owned 는 가진 카드
+	                          (코스트 카드는 안 들어 있다 — 무한이다. Collection.owned)
+	  { screen = "shop",    gold, price, size, rares, collected, total,
+	                        pulls = { { id, rarity, kept, refund }, ... }?, text = ?, failed = ?,
+	                        robuxProductId }
+	                          robuxProductId 가 0 이면 Robux 버튼을 숨긴다(Products 주석).
+	                          Robux 결제는 이 리모트를 타지 않는다 — 클라이언트가 구매 창을 띄우고,
+	                          Roblox 가 서버에 영수증을 보내면 서버가 이 화면을 다시 내려준다
+	                          카드팩 화면. gold 는 쓸 수 있는 골드, collected/total 은 모은 정도.
+	                          pulls 는 방금 깐 팩 — **저장에 성공했을 때만** 실린다
 	  { screen = "campaign", stages = { { index, name, note, difficulty, life, gold,
-	                                     unlocked, cleared }, ... }, gold = <가진 골드>, text = ? }
+	                                     unlocked, cleared }, ... }, gold = <쓸 수 있는 골드>, text = ? }
 	                          캠페인 목록. stages 는 Campaign.list 가 만든 그대로다 —
 	                          **상대 덱은 들어 있지 않다** (플레이어가 알면 안 되는 정보)
 	  { screen = "battle" }                            전투 화면으로
@@ -88,6 +100,7 @@ Net.LobbyScreen = table.freeze({
 	Battle = "battle",
 	Deck = "deck",
 	Campaign = "campaign",
+	Shop = "shop",
 	Error = "error",
 })
 

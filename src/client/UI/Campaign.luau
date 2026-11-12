@@ -33,38 +33,8 @@ function Campaign.new(parent)
 	return self
 end
 
---==========================================================================
--- 골드 표시
---==========================================================================
-
---[[
-	골드 아이콘 한 칸.
-
-	`Theme.image.gold` 가 비어 있으면 **글자로 그린다.** 에셋을 아직 안 올렸다고 화면이
-	비면 그때까지 캠페인을 못 보게 되므로, 빈 값이 정상 경로다. ID 를 채우는 순간
-	같은 자리에 그림이 들어온다 — 이 함수 말고 고칠 곳은 없다.
-]]
-local function goldIcon(props)
-	local merged = {
-		BackgroundTransparency = 1,
-		Size = UDim2.fromOffset(18, 18),
-	}
-	for key, value in props or {} do
-		merged[key] = value
-	end
-
-	if Theme.image.gold ~= "" then
-		merged.Image = Theme.image.gold
-		return new("ImageLabel", merged)
-	end
-
-	merged.Font = Theme.font.bold
-	merged.Text = "G"
-	merged.TextColor3 = Theme.color.accent
-	merged.TextSize = Theme.text.label
-	merged.TextXAlignment = Enum.TextXAlignment.Center
-	return new("TextLabel", merged)
-end
+-- 골드 아이콘은 카드팩 화면과 같은 것을 쓴다 (Widgets.goldIcon).
+local goldIcon = Widgets.goldIcon
 
 --==========================================================================
 -- 뼈대

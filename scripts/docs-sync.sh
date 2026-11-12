@@ -35,6 +35,7 @@ src/shared/Cards/* src/shared/Decks/*|docs/rules.md docs/decks.md
 src/shared/Matchmaking/* src/server/Matchmaker/* src/server/Arena.luau src/server/Lobby.luau|docs/matchmaking.md
 src/client/UI/DeckEditor.luau src/server/DeckStore.luau|docs/decks.md
 src/shared/Campaign/* src/server/CampaignStore.luau src/client/UI/Campaign.luau|docs/campaign.md
+src/shared/Collection/* src/server/CollectionStore.luau src/server/PvpReward.luau src/client/UI/Shop.luau|docs/collection.md
 src/client/Tutorial.luau|docs/tutorial.md
 src/client/UI/* src/client/Controller.luau src/client/App.luau src/shared/Net/*|docs/architecture.md
 tests/* .github/workflows/*|docs/testing.md

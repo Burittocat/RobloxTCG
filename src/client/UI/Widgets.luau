@@ -151,6 +151,35 @@ function Widgets.setEnabled(button, enabled)
 end
 
 --[[
+	골드 아이콘 한 칸. 캠페인 목록과 카드팩 화면이 같은 것을 쓴다.
+
+	`Theme.image.gold` 가 비어 있으면 **글자로 그린다.** 에셋을 아직 안 올렸다고 화면이
+	비면 그때까지 그 화면을 못 보게 되므로, 빈 값이 정상 경로다. ID 를 채우는 순간
+	같은 자리에 그림이 들어온다 — 이 함수 말고 고칠 곳은 없다.
+]]
+function Widgets.goldIcon(props)
+	local merged = {
+		BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(18, 18),
+	}
+	for key, value in props or {} do
+		merged[key] = value
+	end
+
+	if Theme.image.gold ~= "" then
+		merged.Image = Theme.image.gold
+		return new("ImageLabel", merged)
+	end
+
+	merged.Font = Theme.font.bold
+	merged.Text = "G"
+	merged.TextColor3 = Theme.color.accent
+	merged.TextSize = Theme.text.label
+	merged.TextXAlignment = Enum.TextXAlignment.Center
+	return new("TextLabel", merged)
+end
+
+--[[
 	화면 전체 배율을 창 크기에 맞춘다. 전체 화면을 채우는 root 프레임에 건다.
 
 	    Widgets.autoScale(root)

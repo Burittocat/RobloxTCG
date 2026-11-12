@@ -44,8 +44,10 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Decks = require(Shared.Decks)
 local Net = require(Shared.Net)
 
+local CampaignStore = require(script.Parent.CampaignStore)
 local DeckStore = require(script.Parent.DeckStore)
 local MatchRunner = require(script.Parent.MatchRunner)
+local PvpReward = require(script.Parent.PvpReward)
 local Settings = require(script.Parent.Matchmaker.Settings)
 
 local Screen = Net.LobbyScreen
@@ -63,6 +65,7 @@ function Arena.new(remotes, host)
 	self.runner = nil
 	self.closed = false
 	self.deckStore = DeckStore.new()
+	self.campaignStore = CampaignStore.new() -- PvP 승리 보상을 적는다 (PvpReward)
 
 	remotes.Lobby.OnServerEvent:Connect(function(player, payload)
 		local ok, err = pcall(function()
@@ -247,7 +250,9 @@ function Arena:tryStart()
 	self.runner = MatchRunner.new(self.remotes, {
 		seats = seats,
 		seed = seed,
-		onFinish = function()
+		onFinish = function(finished)
+			-- 보상부터 적는다. 로비로 돌려보내는 것은 그 뒤 몇 초가 지나서다(onMatchFinished).
+			PvpReward.pay(self.campaignStore, finished)
 			self:onMatchFinished()
 		end,
 	})

@@ -123,6 +123,61 @@ function CampaignStore:save(player, progress)
 	return true
 end
 
+--[[
+	저장된 값 위에서 바꾼다. -> ok, gained, reason
+
+	transform(progress) -> 새 진행도, 받은 골드, 못 받은 이유
+
+	save 와 다른 점: save 는 이 서버의 캐시를 그대로 덮어쓴다. 로비에서는 그래도 된다 —
+	한 사람은 한 서버에만 있다. 그런데 **PvP 보상은 대전 서버(예약 서버)가 쓴다.** 그
+	서버의 캐시는 도착할 때 읽은 것이라, 그대로 덮으면 그 사이 다른 곳에서 쓴 값을 지운다.
+	그래서 UpdateAsync 안에서 **지금 저장된 값**을 받아 그 위에서 계산한다.
+
+	gained 가 0 이면 쓰지 않는다(상한에 걸렸다 등). 저장된 값이 모양이 틀렸으면 손대지
+	않는다 — 새 진행도로 덮으면 깬 스테이지가 사라진다.
+]]
+function CampaignStore:update(player, transform)
+	local gained, reason = 0, nil
+	local result = nil
+
+	if not self.store then
+		result, gained, reason = transform(self:get(player))
+		if gained > 0 then
+			self.cache[player.UserId] = result
+		end
+		return true, gained, reason
+	end
+
+	local ok, err = pcall(function()
+		self.store:UpdateAsync(keyFor(player), function(current)
+			local base = current
+			if base == nil then
+				base = Campaign.newProgress()
+			elseif not Campaign.validateProgress(base) then
+				reason = "저장된 진행도가 맞지 않아 보상을 적지 못했습니다"
+				gained = 0
+				return nil
+			end
+
+			result, gained, reason = transform(base)
+			if gained <= 0 then
+				return nil
+			end
+			return result
+		end)
+	end)
+
+	if not ok then
+		warn(("[TCG] 진행도를 고치지 못했습니다 (%s): %s"):format(player.Name, tostring(err)))
+		return false, 0, "저장하지 못했습니다 (잠시 뒤 다시 시도해주세요)"
+	end
+
+	if gained > 0 then
+		self.cache[player.UserId] = result
+	end
+	return true, gained, reason
+end
+
 -- 접속을 끊은 사람의 캐시는 들고 있을 이유가 없다.
 function CampaignStore:forget(player)
 	self.cache[player.UserId] = nil

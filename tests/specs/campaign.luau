@@ -175,6 +175,73 @@ return function(t, ctx)
 	end)
 
 	--==================================================================
+	t:describe("PvP 승리 보상", function()
+		local reward = Campaign.PvpReward
+		local DAY = 20404
+		local LONG = reward.minTurns + 10
+
+		t:it("이기면 골드를 받는다", function()
+			local updated, gained = Campaign.applyPvpWin(fresh(), DAY, LONG)
+			t:eq(gained, reward.gold)
+			t:eq(updated.gold, reward.gold)
+			t:eq(Campaign.pvpWinsToday(updated, DAY), 1)
+		end)
+
+		t:it("하루 상한을 넘으면 받지 못한다", function()
+			local progress = fresh()
+			local total = 0
+			for _ = 1, reward.perDay + 3 do
+				local gained
+				progress, gained = Campaign.applyPvpWin(progress, DAY, LONG)
+				total += gained
+			end
+
+			t:eq(total, reward.gold * reward.perDay)
+			local _, gained, reason = Campaign.applyPvpWin(progress, DAY, LONG)
+			t:eq(gained, 0)
+			t:truthy(tostring(reason):find("오늘", 1, true), tostring(reason))
+		end)
+
+		t:it("날이 바뀌면 다시 받는다", function()
+			local progress = fresh()
+			for _ = 1, reward.perDay do
+				progress = Campaign.applyPvpWin(progress, DAY, LONG)
+			end
+			local _, gained = Campaign.applyPvpWin(progress, DAY + 1, LONG)
+			t:eq(gained, reward.gold)
+		end)
+
+		--[[
+			부계정 두 개로 큐에 서서 한쪽이 바로 항복하는 농사를 막는다.
+		]]
+		t:it("너무 일찍 끝난 판은 보상이 없다", function()
+			local updated, gained, reason = Campaign.applyPvpWin(fresh(), DAY, reward.minTurns - 1)
+			t:eq(gained, 0)
+			t:eq(updated.gold, 0)
+			t:truthy(reason)
+		end)
+
+		t:it("하루 상한이 팩 값을 넘지 않는다", function()
+			-- 넘으면 PvP 만으로 하루에 팩 두 봉이 된다. 기획을 바꾸려면 이 숫자부터 고친다.
+			t:truthy(reward.gold * reward.perDay <= 100, ("하루 %d 골드"):format(reward.gold * reward.perDay))
+		end)
+
+		t:it("캠페인 클리어가 PvP 기록을 지우지 않는다", function()
+			-- applyClear 가 { cleared, gold } 만 새로 만들면 pvpDay 가 사라져 상한이 풀린다.
+			local progress = Campaign.applyPvpWin(fresh(), DAY, LONG)
+			local cleared = Campaign.applyClear(progress, 1)
+			t:eq(cleared.pvpDay, DAY)
+			t:eq(cleared.pvpWins, 1)
+		end)
+
+		t:it("보상 기록이 붙은 진행도도 검증을 통과한다", function()
+			t:allowed(Campaign.validateProgress(Campaign.applyPvpWin(fresh(), DAY, LONG)))
+			local ok, reason = Campaign.validateProgress({ cleared = 0, gold = 0, pvpWins = -1 })
+			t:denied(ok, reason, "pvpWins")
+		end)
+	end)
+
+	--==================================================================
 	t:describe("진행도 검증", function()
 		t:it("새 진행도는 통과한다", function()
 			t:allowed(Campaign.validateProgress(fresh()))

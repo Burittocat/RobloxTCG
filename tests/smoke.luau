@@ -2802,6 +2802,17 @@ t:describe("꾸미기", function()
 		t:eq(Screen.countNamed(gui, "Item_BACK_"), #BackTable.list, "뒷면마다 한 칸씩 있어야 합니다")
 		t:eq(Screen.countNamed(gui, "Item_FRAME_"), 0, "테두리 칸은 숨어야 합니다")
 		t:eq(act(kim, BackTable.default).Text, "끼는 중")
+
+		-- 칸마다 등급 글자가 붙는다 (Grades.luau)
+		local GradeTable = require("../src/shared/Cosmetics/Grades")
+		local gradeName = {}
+		for _, grade in GradeTable.list do
+			gradeName[grade.id] = grade.name
+		end
+		for _, back in BackTable.list do
+			local tag = Screen.find(Screen.find(gui, "Item_" .. back.id), "ItemGrade")
+			t:eq(tag and tag.Text, gradeName[back.grade], back.id .. " 의 등급 글자")
+		end
 	end)
 
 	t:it("뒷면을 사도 보던 탭에 그대로 있고 테두리는 안 바뀐다", function()

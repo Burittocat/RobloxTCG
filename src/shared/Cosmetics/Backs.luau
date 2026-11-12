@@ -10,6 +10,7 @@
 	카드 앞면 바탕은 건드리지 않는다. 앞면 색은 "생물 · 마법 · 코스트" 를 가르는 정보라
 	(Theme.color.creature 등) 그걸 꾸밈이 덮으면 판을 읽기 어려워진다.
 
+	  grade    등급 (Grades.luau 의 id). price 는 그 등급의 가격과 같아야 한다(테스트가 본다)
 	  base     뒷면 바탕색 (0~255)
 	  accent   테두리와 무늬 색
 	  mark     가운데 무늬 한 글자. 빈 문자열이면 무늬 없음.
@@ -27,6 +28,7 @@ return table.freeze({
 		table.freeze({
 			id = "BACK_BASIC",
 			name = "기본",
+			grade = "Normal",
 			price = 0,
 			base = { 46, 54, 74 },
 			accent = { 74, 85, 112 },
@@ -36,7 +38,8 @@ return table.freeze({
 		table.freeze({
 			id = "BACK_NIGHT",
 			name = "밤하늘",
-			price = 120,
+			grade = "Scarce",
+			price = 100,
 			base = { 24, 30, 66 },
 			accent = { 156, 176, 244 },
 			mark = "●",
@@ -45,7 +48,8 @@ return table.freeze({
 		table.freeze({
 			id = "BACK_EMBER",
 			name = "불씨",
-			price = 120,
+			grade = "Rare",
+			price = 150,
 			base = { 78, 32, 26 },
 			accent = { 244, 146, 84 },
 			mark = "◆",
@@ -54,7 +58,8 @@ return table.freeze({
 		table.freeze({
 			id = "BACK_GROVE",
 			name = "숲",
-			price = 120,
+			grade = "Epic",
+			price = 250,
 			base = { 28, 60, 42 },
 			accent = { 136, 206, 124 },
 			mark = "▲",
@@ -63,7 +68,8 @@ return table.freeze({
 		table.freeze({
 			id = "BACK_ROYAL",
 			name = "왕실",
-			price = 200,
+			grade = "Gorgeous",
+			price = 400,
 			base = { 60, 28, 76 },
 			accent = { 236, 200, 116 },
 			mark = "★",

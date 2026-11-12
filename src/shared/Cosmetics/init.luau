@@ -11,6 +11,8 @@
 	  frame  테두리 — 내가 낸 카드(손패 · 필드)에 둘러진다. 목록은 Frames.luau
 	  back   뒷면   — 상대가 내 손패를 볼 때 보인다. 목록은 Backs.luau
 
+	모든 꾸밈은 **등급**이 있고, 가격은 등급이 정한다(Grades.luau).
+
 	종류마다 **하나씩** 낀다. 종류를 늘리려면 목록 파일을 하나 더 두고 아래 KINDS 에 한 줄을
 	더하면 된다 — 사기 · 끼기 · 저장 · 검증은 종류를 가리지 않는다.
 
@@ -42,8 +44,31 @@
 local Collection = require(script.Parent.Collection)
 local FrameTable = require(script.Frames)
 local BackTable = require(script.Backs)
+local GradeTable = require(script.Grades)
 
 local Cosmetics = {}
+
+--==========================================================================
+-- 등급 — 일반 · 희귀 · 레어 · 에픽 · 고져스 (Grades.luau)
+--==========================================================================
+
+Cosmetics.Grades = GradeTable.list
+
+local gradeById, gradeRank = {}, {}
+for rank, grade in GradeTable.list do
+	gradeById[grade.id] = grade
+	gradeRank[grade.id] = rank
+end
+
+-- 등급 정의. 없는 id 면 nil.
+function Cosmetics.grade(id)
+	return gradeById[id]
+end
+
+-- 등급 순위. 일반이 1, 고져스가 5. 없는 id 면 0.
+function Cosmetics.gradeRank(id)
+	return gradeRank[id] or 0
+end
 
 Cosmetics.Kind = table.freeze({
 	Frame = "frame",
@@ -235,7 +260,8 @@ end
 --==========================================================================
 
 --[[
-	꾸미기 화면의 한 종류 목록. -> { { id, name, price, owned, equipped }, ... }
+	꾸미기 화면의 한 종류 목록. -> { { id, name, grade, price, owned, equipped }, ... }
+	grade 는 등급 id 다 — 글자와 색은 클라이언트가 Cosmetics.grade 로 찾는다.
 	kind 를 안 주면 테두리다.
 
 	색은 싣지 않는다. 클라이언트도 이 모듈을 읽으므로 id 만 있으면 된다 — 색을 두 곳에서
@@ -254,6 +280,7 @@ function Cosmetics.list(collection, kind)
 		table.insert(out, {
 			id = def.id,
 			name = def.name,
+			grade = def.grade,
 			price = def.price,
 			owned = Cosmetics.owns(collection, def.id),
 			equipped = def.id == equipped,

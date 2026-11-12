@@ -10,6 +10,8 @@
 	것까지만 하고, 진짜 판정(잔액 · 가졌나 · 저장)은 Lobby:buyCosmetic 이 한다. 결과는
 	**저장에 성공했을 때만** 화면에 바뀌어 온다.
 
+	칸마다 등급(일반 · 희귀 · 레어 · 에픽 · 고져스)이 색 글자로 붙는다. 가격은 등급이 정한다.
+
 	칸마다 미리보기가 있다. 말로 설명하는 것보다 그려 보이는 것이 빠르고, 미리보기도
 	판과 **같은 함수**(CardView.frameStyle · CardView.cardBack)로 칠한다 — 여기서 본 것과
 	판에서 보이는 것이 어긋나지 않게.
@@ -17,6 +19,9 @@
 	탭은 화면이 들고 있는다. 서버는 두 목록을 늘 같이 내려주고, 무언가를 사서 화면이 다시
 	와도 보던 탭이 그대로다 — 뒷면을 샀는데 테두리 탭으로 튕기면 방금 산 것이 안 보인다.
 ]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Cosmetics = require(ReplicatedStorage:WaitForChild("Shared").Cosmetics)
 
 local CardView = require(script.Parent.CardView)
 local Theme = require(script.Parent.Theme)
@@ -305,10 +310,27 @@ function Wardrobe:addTile(index, entry, gold)
 		status = ("%d G"):format(entry.price or 0)
 	end
 
+	--[[
+		등급. 글자보다 **색**이 먼저 읽혀야 한다 — "희귀" 와 "레어" 는 뜻이 같은 낱말이라
+		글자만으로는 어느 쪽이 높은지 모른다(Grades 머리말).
+	]]
+	local grade = Cosmetics.grade(entry.grade)
+	if grade then
+		Widgets.label(grade.name, {
+			Name = "ItemGrade",
+			Parent = side,
+			Position = UDim2.fromOffset(0, 26),
+			Size = UDim2.new(1, 0, 0, 18),
+			Font = Theme.font.bold,
+			TextSize = Theme.text.small,
+			TextColor3 = Color3.fromRGB(grade.color[1], grade.color[2], grade.color[3]),
+		})
+	end
+
 	Widgets.label(status, {
 		Name = "ItemStatus",
 		Parent = side,
-		Position = UDim2.fromOffset(0, 28),
+		Position = UDim2.fromOffset(0, 48),
 		Size = UDim2.new(1, 0, 0, 20),
 		Font = Theme.font.bold,
 		TextSize = Theme.text.label,

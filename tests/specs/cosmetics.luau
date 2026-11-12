@@ -333,6 +333,67 @@ return function(t, ctx)
 	end)
 
 	--==================================================================
+	t:describe("등급", function()
+		t:it("다섯 등급이 일반 · 희귀 · 레어 · 에픽 · 고져스 순서다", function()
+			local names = {}
+			for _, grade in Cosmetics.Grades do
+				table.insert(names, grade.name)
+			end
+			t:eq(table.concat(names, ","), "일반,희귀,레어,에픽,고져스")
+		end)
+
+		t:it("높은 등급일수록 비싸다", function()
+			for rank = 2, #Cosmetics.Grades do
+				local low, high = Cosmetics.Grades[rank - 1], Cosmetics.Grades[rank]
+				t:truthy(high.price > low.price, ("%s(%d) 가 %s(%d) 보다 싸거나 같습니다"):format(high.name, high.price, low.name, low.price))
+			end
+			t:eq(Cosmetics.Grades[1].price, 0, "일반은 공짜여야 기본 꾸밈이 일반 등급일 수 있습니다")
+		end)
+
+		--[[
+			가격은 등급이 정한다. 목록 파일에도 price 가 적혀 있는데(Lune 테스트가 그대로
+			읽으려고), 그 값이 등급과 어긋나면 화면의 등급 글자와 가격이 따로 논다.
+		]]
+		t:it("모든 꾸밈의 가격이 등급의 가격과 같다", function()
+			for _, list in { Cosmetics.Frames, Cosmetics.Backs } do
+				for _, def in list do
+					local grade = Cosmetics.grade(def.grade)
+					t:truthy(grade, ("%s 의 등급 '%s' 가 없습니다"):format(def.id, tostring(def.grade)))
+					t:eq(def.price, grade.price, ("%s 는 %s 인데 가격이"):format(def.id, grade.name))
+				end
+			end
+		end)
+
+		t:it("기본 꾸밈은 일반 등급이다", function()
+			t:eq(Cosmetics.frame(Cosmetics.DefaultFrame).grade, Cosmetics.Grades[1].id)
+			t:eq(Cosmetics.back(Cosmetics.DefaultBack).grade, Cosmetics.Grades[1].id)
+		end)
+
+		t:it("뒷면은 등급마다 하나씩 있다", function()
+			local seen = {}
+			for _, back in Cosmetics.Backs do
+				t:falsy(seen[back.grade], ("뒷면 등급 %s 가 겹칩니다"):format(back.grade))
+				seen[back.grade] = true
+			end
+			for _, grade in Cosmetics.Grades do
+				t:truthy(seen[grade.id], ("%s 등급 뒷면이 없습니다"):format(grade.name))
+			end
+		end)
+
+		t:it("화면 목록에 등급이 실린다", function()
+			for _, entry in Cosmetics.list(Collection.new(), Cosmetics.Kind.Back) do
+				t:truthy(Cosmetics.grade(entry.grade), entry.id)
+			end
+		end)
+
+		t:it("순위는 일반이 가장 낮고 고져스가 가장 높다", function()
+			t:eq(Cosmetics.gradeRank("Normal"), 1)
+			t:eq(Cosmetics.gradeRank("Gorgeous"), #Cosmetics.Grades)
+			t:eq(Cosmetics.gradeRank("nope"), 0)
+		end)
+	end)
+
+	--==================================================================
 	t:describe("저장값 검증", function()
 		t:it("cosmetics 모양이 틀리면 거부한다", function()
 			local function check(cosmetics, expected)

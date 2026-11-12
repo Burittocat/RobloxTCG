@@ -18,6 +18,12 @@
 	  opened    깐 팩 수. 판정에는 안 쓴다 — 저장된 값을 보고 문제를 짚을 때 단서다
 	  receipts  처리한 Robux 영수증 ID (최근 MaxReceipts 개). 없어도 된다 — 아래 "Robux 팩"
 
+	cosmetics 산 테두리와 끼고 있는 것 { owned = { id, ... }, frame = id }. 없어도 된다 —
+	          규칙은 src/shared/Cosmetics 에 있다. 골드를 같이 쓰므로 같은 저장값에 둔다
+
+	**새 컬렉션을 만들 때는 Collection.copy 로 통째로 복사한 뒤 고친다.** 칸을 하나씩 옮겨
+	적으면, 나중에 붙인 칸(receipts, cosmetics)을 빠뜨린 경로에서 그 칸이 조용히 지워진다.
+
 	--------------------------------------------------------------------------
 	골드는 어디에 있나
 
@@ -201,6 +207,31 @@ function Collection.validate(value)
 		end
 	end
 
+	--[[
+		cosmetics 는 모양만 본다. **없는 테두리 id 는 거부하지 않는다** — 테두리를 지운 뒤 옛
+		저장값을 읽으면 그렇게 되는데, 그걸로 컬렉션 전체를 못 읽게 하면 카드까지 못 쓴다.
+		그리는 쪽이 모르는 id 를 기본 테두리로 바꾼다(Cosmetics.frameOrDefault).
+	]]
+	if value.cosmetics ~= nil then
+		local cosmetics = value.cosmetics
+		if type(cosmetics) ~= "table" then
+			return false, "cosmetics 가 테이블이 아닙니다"
+		end
+		if cosmetics.frame ~= nil and type(cosmetics.frame) ~= "string" then
+			return false, "cosmetics.frame 이 문자열이 아닙니다"
+		end
+		if cosmetics.owned ~= nil then
+			if type(cosmetics.owned) ~= "table" then
+				return false, "cosmetics.owned 가 배열이 아닙니다"
+			end
+			for _, id in cosmetics.owned do
+				if type(id) ~= "string" then
+					return false, "cosmetics.owned 에 문자열이 아닌 값이 있습니다"
+				end
+			end
+		end
+	end
+
 	if type(value.cards) ~= "table" then
 		return false, "cards 가 배열이 아닙니다"
 	end
@@ -267,6 +298,37 @@ function Collection.covers(collection, entries)
 	return true
 end
 
+--[[
+	컬렉션 통째 사본. -> collection
+
+	팩을 사거나 테두리를 사는 쪽은 이걸 받아서 고친다. 원래 값은 건드리지 않는다 —
+	저장이 실패하면 부르는 쪽이 옛 값으로 되돌릴 수 있어야 한다(applyCards 머리말).
+
+	cosmetics 는 언제나 채워서 돌려준다. 고치는 쪽이 "없으면 만들기" 를 매번 안 해도 된다.
+]]
+function Collection.copy(collection)
+	local cards = {}
+	for _, entry in collection.cards or {} do
+		table.insert(cards, { id = entry.id, count = entry.count })
+	end
+
+	local receipts = nil
+	if collection.receipts then
+		receipts = table.clone(collection.receipts)
+	end
+
+	local cosmetics = type(collection.cosmetics) == "table" and collection.cosmetics or {}
+	local owned = type(cosmetics.owned) == "table" and table.clone(cosmetics.owned) or {}
+
+	return {
+		cards = cards,
+		spent = collection.spent or 0,
+		opened = collection.opened or 0,
+		receipts = receipts,
+		cosmetics = { owned = owned, frame = cosmetics.frame },
+	}
+end
+
 -- 쓸 수 있는 골드. 번 것(캠페인) - 쓴 것(여기).
 function Collection.balance(progress, collection)
 	return math.max(0, (progress and progress.gold or 0) - (collection and collection.spent or 0))
@@ -327,14 +389,11 @@ function Collection.applyCards(collection, cards)
 		end
 	end
 
-	return {
-		cards = toEntries(counts),
-		spent = collection.spent - refund, -- 음수가 될 수 있다 (머리말)
-		opened = collection.opened,
-		receipts = collection.receipts,
-	},
-		results,
-		refund
+	local updated = Collection.copy(collection)
+	updated.cards = toEntries(counts)
+	updated.spent = collection.spent - refund -- 음수가 될 수 있다 (머리말)
+
+	return updated, results, refund
 end
 
 --[[
@@ -351,12 +410,9 @@ function Collection.buyPack(progress, collection, rng)
 		return nil, ("골드가 모자랍니다 (%d / %d)"):format(balance, price)
 	end
 
-	local paid = {
-		cards = collection.cards,
-		spent = collection.spent + price,
-		opened = collection.opened + 1,
-		receipts = collection.receipts,
-	}
+	local paid = Collection.copy(collection)
+	paid.spent = collection.spent + price
+	paid.opened = collection.opened + 1
 
 	local updated, results = Collection.applyCards(paid, Collection.rollPack(rng))
 	return updated, results
@@ -413,12 +469,9 @@ function Collection.grantPack(collection, purchaseId, rng)
 		table.remove(receipts, 1)
 	end
 
-	local opened = {
-		cards = collection.cards,
-		spent = collection.spent,
-		opened = collection.opened + 1,
-		receipts = receipts,
-	}
+	local opened = Collection.copy(collection)
+	opened.opened = collection.opened + 1
+	opened.receipts = receipts
 
 	return Collection.applyCards(opened, Collection.rollPack(rng))
 end

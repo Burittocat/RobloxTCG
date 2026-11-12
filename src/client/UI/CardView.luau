@@ -4,6 +4,9 @@
 	아직 아트가 없으므로 종류별 색 + 코스트 + 스탯 + 키워드 칩으로만 구분한다.
 	나중에 이미지가 생기면 가운데 빈 자리에 ImageLabel 을 끼우면 된다.
 
+	테두리는 카드를 낸 사람이 낀 코스메틱이다(opts.frame — Cosmetics 머리말). 카드 정의가
+	아니라 사람에 붙으므로 여기 들어오는 길도 def 가 아니라 opts 다.
+
 	모든 카드는 TextButton 이다 — 필드 위 생물도 대상 지정 때 눌러야 하므로
 	"누를 수 있는지" 를 나중에 바꾸는 것보다 처음부터 버튼으로 두는 게 단순하다.
 ]]
@@ -12,6 +15,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Rules = require(Shared.Rules)
+local Cosmetics = require(Shared.Cosmetics)
 
 local Theme = require(script.Parent.Theme)
 local Widgets = require(script.Parent.Widgets)
@@ -119,7 +123,22 @@ local function keywordRow(keywords, height)
 end
 
 --[[
+	카드 테두리(코스메틱) 한 벌의 색과 두께. -> Color3, thickness
+
+	없는 id · nil · 빈 문자열은 기본 테두리다(Cosmetics.frameOrDefault). 서버가 테두리를
+	안 실어 보낸 스냅샷도 그래서 예전과 똑같이 그려진다.
+]]
+function CardView.frameStyle(frameId)
+	local frame = Cosmetics.frameOrDefault(frameId)
+	return Color3.fromRGB(frame.color[1], frame.color[2], frame.color[3]), frame.thickness
+end
+
+--[[
 	선택/대상 하이라이트. 카드 크기가 바뀌면 줄 전체가 흔들리므로 테두리만 바꾼다.
+
+	**하이라이트가 테두리(코스메틱)를 이긴다.** 테두리는 아무 일도 없을 때만 보인다 —
+	"누를 수 있는 카드" 가 꾸밈에 묻히면 그건 꾸밈이 아니라 오조작의 원인이다. 그래서
+	테두리 두께는 하이라이트(4)보다 늘 얇다(Cosmetics 의 thickness 주석).
 ]]
 local function outlineFor(opts)
 	if opts.selected then
@@ -128,7 +147,7 @@ local function outlineFor(opts)
 	if opts.highlighted then
 		return Theme.color.ok, Theme.outline.highlighted
 	end
-	return Theme.color.stroke, Theme.outline.idle
+	return CardView.frameStyle(opts.frame)
 end
 
 --==========================================================================

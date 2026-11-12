@@ -1,11 +1,12 @@
 --[[
 	공개 서버(= 로비)에서 도는 것.
 
-	여기서는 카드를 한 장도 내지 않는다. 하는 일은 넷이다.
+	여기서는 카드를 한 장도 내지 않는다. 하는 일은 다섯이다.
 	  1. 시작 화면 상태를 클라이언트에 알려준다        (Lobby 리모트)
 	  2. 빠른 대전 큐 등록/취소                        (Matchmaker)
 	  3. AI 연습·튜토리얼·캠페인은 큐를 타지 않고 이 자리에서 한 판 띄운다
 	  4. 덱 저장과 카드팩 — 가진 카드(CollectionStore)와 골드를 다룬다
+	  5. 꾸미기 — 카드 테두리를 사고 낀다 (Cosmetics. 저장은 컬렉션과 같은 값)
 
 	PvP 매치는 여기서 굴리지 않는다. 짝이 지어지면 두 사람은 예약 서버로 텔레포트되고
 	거기서 Arena 가 판을 연다. 로비 서버가 대전까지 맡으면 인원이 많은 서버일수록
@@ -25,6 +26,7 @@ local Net = require(Shared.Net)
 
 local Campaign = require(Shared.Campaign)
 local Collection = require(Shared.Collection)
+local Cosmetics = require(Shared.Cosmetics)
 local Decks = require(Shared.Decks)
 local Products = require(Shared.Products)
 local Rules = require(Shared.Rules)
@@ -180,6 +182,11 @@ function Lobby:goldFor(player)
 	return Collection.balance(self.campaignStore:get(player), self:collectionFor(player))
 end
 
+-- 이 사람이 낀 카드 테두리. 판을 열 때 좌석에 실린다(MatchRunner:frames).
+function Lobby:frameFor(player)
+	return Cosmetics.equippedFrame(self:collectionFor(player))
+end
+
 function Lobby:setScreen(player, payload)
 	self.screens[player] = payload
 	self.remotes.Lobby:FireClient(player, self:outgoing(payload))
@@ -246,6 +253,12 @@ function Lobby:onMessage(player, payload)
 		self:openShop(player)
 	elseif payload.kind == "buyPack" then
 		self:buyPack(player)
+	elseif payload.kind == "wardrobe" then
+		self:openWardrobe(player)
+	elseif payload.kind == "buyCosmetic" then
+		self:buyCosmetic(player, payload.id)
+	elseif payload.kind == "equipCosmetic" then
+		self:equipCosmetic(player, payload.id)
 	elseif payload.kind == "tutorial" then
 		self:startTutorial(player)
 	elseif payload.kind == "practice" then
@@ -366,7 +379,7 @@ function Lobby:startTutorial(player)
 
 	local runner = MatchRunner.new(self.remotes, {
 		seats = {
-			[1] = { player = player, deck = Decks.tutorial() },
+			[1] = { player = player, deck = Decks.tutorial(), frame = self:frameFor(player) },
 			[2] = {
 				ai = AI.Difficulty.Easy,
 				name = "튜토리얼 상대",
@@ -449,7 +462,7 @@ function Lobby:startCampaignStage(player, index)
 
 	local runner = MatchRunner.new(self.remotes, {
 		seats = {
-			[1] = { player = player, deck = self:deckFor(player) },
+			[1] = { player = player, deck = self:deckFor(player), frame = self:frameFor(player) },
 			[2] = {
 				ai = stage.difficulty,
 				name = stage.name,
@@ -639,6 +652,74 @@ function Lobby:buyPack(player)
 end
 
 --==========================================================================
+-- 꾸미기 (카드 테두리)
+--==========================================================================
+
+--[[
+	꾸미기 화면을 연다. 덱 편집과 같은 이유로 대전 중에는 열지 않는다 — 테두리는 판이
+	열릴 때 좌석에 실리므로, 두는 중에 바꾸면 "바꿨는데 안 바뀌는" 것처럼 보인다.
+]]
+function Lobby:openWardrobe(player, text, failed)
+	if self.host:runnerFor(player) then
+		return
+	end
+	self.matchmaker:cancel(player)
+
+	self:setScreen(player, {
+		screen = Screen.Wardrobe,
+		gold = self:goldFor(player),
+		frames = Cosmetics.list(self:collectionFor(player)),
+		text = text,
+		failed = failed == true,
+	})
+end
+
+--[[
+	테두리를 산다. 카드팩과 같은 순서다 — 판정(Cosmetics.buy) → 저장 → **저장에 성공해야**
+	샀다고 말한다. 실패하면 CollectionStore 가 캐시를 되돌리므로 골드도 그대로다.
+]]
+function Lobby:buyCosmetic(player, id)
+	if self.host:runnerFor(player) then
+		return
+	end
+
+	local frame = Cosmetics.frame(id)
+	local updated, reason = Cosmetics.buy(self.campaignStore:get(player), self:collectionFor(player), id)
+	if not updated then
+		self:openWardrobe(player, tostring(reason), true)
+		return
+	end
+
+	local ok, saveReason = self.collectionStore:save(player, updated)
+	if not ok then
+		self:openWardrobe(player, ("사지 못했습니다: %s"):format(tostring(saveReason)), true)
+		return
+	end
+
+	self:openWardrobe(player, ("'%s' 테두리를 샀습니다 — 바로 끼웠습니다"):format(frame.name), false)
+end
+
+function Lobby:equipCosmetic(player, id)
+	if self.host:runnerFor(player) then
+		return
+	end
+
+	local updated, reason = Cosmetics.equip(self:collectionFor(player), id)
+	if not updated then
+		self:openWardrobe(player, tostring(reason), true)
+		return
+	end
+
+	local ok, saveReason = self.collectionStore:save(player, updated)
+	if not ok then
+		self:openWardrobe(player, ("바꾸지 못했습니다: %s"):format(tostring(saveReason)), true)
+		return
+	end
+
+	self:openWardrobe(player, ("'%s' 테두리로 바꿨습니다"):format(Cosmetics.frame(id).name), false)
+end
+
+--==========================================================================
 -- AI 연습
 --==========================================================================
 
@@ -650,7 +731,7 @@ function Lobby:startPractice(player)
 
 	local runner = MatchRunner.new(self.remotes, {
 		seats = {
-			[1] = { player = player, deck = self:deckFor(player) },
+			[1] = { player = player, deck = self:deckFor(player), frame = self:frameFor(player) },
 			[2] = { ai = AI.Difficulty.Normal, name = "훈련용 AI" },
 		},
 		allowRestart = true, -- 연습이니까 R 로 계속 새 판을 열 수 있다
@@ -667,7 +748,11 @@ end
 function Lobby:startLocalMatch(match, players)
 	local seats = {}
 	for seat = 1, 2 do
-		seats[seat] = { player = players[seat], deck = self:deckFor(players[seat]) }
+		seats[seat] = {
+			player = players[seat],
+			deck = self:deckFor(players[seat]),
+			frame = self:frameFor(players[seat]),
+		}
 	end
 
 	local runner = MatchRunner.new(self.remotes, {

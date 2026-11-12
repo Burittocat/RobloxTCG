@@ -108,6 +108,28 @@ return function(t, ctx)
 		end)
 
 		--[[
+			카드 테두리(코스메틱)는 룰 상태 밖에서 따로 실린다. 좌석 번호가 그대로 살아야
+			상대 생물이 상대 테두리로 그려진다. 한쪽이 비어도 구멍 없는 배열이어야 한다.
+		]]
+		t:it("좌석마다 테두리가 실려 간다", function()
+			local state = scenario()
+			local payload = Net.packView(Rules.viewFor(state, 1), state.log, { "FRAME_TIDE", "FRAME_CRIMSON" })
+			assertTransferable(payload, "payload")
+
+			local view = Net.unpackView(payload)
+			t:eq(view.frames[1], "FRAME_TIDE")
+			t:eq(view.frames[2], "FRAME_CRIMSON")
+		end)
+
+		t:it("테두리를 안 주면 빈 값으로 채워진다 — 구멍이 없다", function()
+			local state = scenario()
+			local payload = Net.packView(Rules.viewFor(state, 1), state.log, { [2] = "FRAME_TIDE" })
+			assertTransferable(payload, "payload")
+			t:eq(payload.frames[1], "")
+			t:eq(payload.frames[2], "FRAME_TIDE")
+		end)
+
+		--[[
 			**전투 결과가 화면까지 가는가.**
 
 			화면은 이걸로 돌진·충격 연출을 재생한다(Battle.playCombat). 스냅샷만

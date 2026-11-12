@@ -12,6 +12,7 @@
 	    queued / found / waiting   시작 화면 위의 대기 표시
 	    campaign       캠페인 스테이지 목록
 	    shop           카드팩
+	    wardrobe       꾸미기 (카드 테두리)
 	    deck           덱 편집
 	    battle         전투 화면 — 여기서 Controller:start() 가 한 판을 연다
 ]]
@@ -26,6 +27,7 @@ local Home = require(script.Parent.UI.Home)
 local CampaignScreen = require(script.Parent.UI.Campaign)
 local DeckEditor = require(script.Parent.UI.DeckEditor)
 local Shop = require(script.Parent.UI.Shop)
+local Wardrobe = require(script.Parent.UI.Wardrobe)
 local Controller = require(script.Parent.Controller)
 
 local Screen = Net.LobbyScreen
@@ -45,6 +47,18 @@ function App.new(playerGui, remotes)
 	self.deck = DeckEditor.new(playerGui)
 	self.campaign = CampaignScreen.new(playerGui)
 	self.shop = Shop.new(playerGui)
+	self.wardrobe = Wardrobe.new(playerGui)
+
+	-- 테두리도 보내기만 한다. 샀는지 · 꼈는지는 서버가 저장한 뒤 화면째 내려준다.
+	self.wardrobe.callbacks.buy = function(id)
+		self:send({ kind = "buyCosmetic", id = id })
+	end
+	self.wardrobe.callbacks.equip = function(id)
+		self:send({ kind = "equipCosmetic", id = id })
+	end
+	self.wardrobe.callbacks.back = function()
+		self:send({ kind = "home" })
+	end
 
 	-- 사는 것도 보내기만 한다. 무엇이 나왔는지는 서버가 저장한 뒤에 화면째 내려준다.
 	self.shop.callbacks.buy = function()
@@ -111,6 +125,9 @@ function App.new(playerGui, remotes)
 	self.home.callbacks.shop = function()
 		self:send({ kind = "shop" })
 	end
+	self.home.callbacks.wardrobe = function()
+		self:send({ kind = "wardrobe" })
+	end
 
 	remotes.Lobby.OnClientEvent:Connect(function(payload)
 		if type(payload) == "table" and type(payload.screen) == "string" then
@@ -147,6 +164,18 @@ function App:show(payload)
 	end
 
 	self.deck:setVisible(false)
+
+	if screen == Screen.Wardrobe then
+		self.home:setVisible(false)
+		self.battle:setVisible(false)
+		self.campaign:setVisible(false)
+		self.shop:setVisible(false)
+		self.wardrobe:setVisible(true)
+		self.wardrobe:render(payload)
+		return
+	end
+
+	self.wardrobe:setVisible(false)
 
 	if screen == Screen.Shop then
 		self.home:setVisible(false)

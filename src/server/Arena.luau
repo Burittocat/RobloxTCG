@@ -41,10 +41,12 @@ local TeleportService = game:GetService("TeleportService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Cosmetics = require(Shared.Cosmetics)
 local Decks = require(Shared.Decks)
 local Net = require(Shared.Net)
 
 local CampaignStore = require(script.Parent.CampaignStore)
+local CollectionStore = require(script.Parent.CollectionStore)
 local DeckStore = require(script.Parent.DeckStore)
 local MatchRunner = require(script.Parent.MatchRunner)
 local PvpReward = require(script.Parent.PvpReward)
@@ -62,10 +64,12 @@ function Arena.new(remotes, host)
 	self.host = host
 	self.arrivals = {} :: { [Player]: any }
 	self.decks = {} :: { [Player]: { string } }
+	self.frames = {} :: { [Player]: string } -- 낀 카드 테두리 (Cosmetics)
 	self.runner = nil
 	self.closed = false
 	self.deckStore = DeckStore.new()
 	self.campaignStore = CampaignStore.new() -- PvP 승리 보상을 적는다 (PvpReward)
+	self.collectionStore = CollectionStore.new() -- 낀 테두리만 읽는다. 여기서 사고팔지는 않는다
 
 	remotes.Lobby.OnServerEvent:Connect(function(player, payload)
 		local ok, err = pcall(function()
@@ -184,13 +188,22 @@ end
 ]]
 function Arena:loadDeck(player)
 	task.spawn(function()
-		local deck = Decks.toList(self.deckStore:get(player))
+		local entries = self.deckStore:get(player)
+		local deck = Decks.toList(entries)
+
+		--[[
+			낀 테두리도 같이 읽는다. 텔레포트 데이터로 나르지 않는 이유는 덱과 같다 —
+			클라이언트가 고칠 수 있는 값이면 안 산 테두리를 끼고 들어올 수 있다.
+			못 읽으면 CollectionStore 가 새 컬렉션을 주므로 기본 테두리가 된다. 판은 열린다.
+		]]
+		local frame = Cosmetics.equippedFrame(self.collectionStore:get(player, entries))
 
 		-- 읽는 사이에 나갔으면 남길 것이 없다.
 		if not self.arrivals[player] then
 			return
 		end
 
+		self.frames[player] = frame
 		self.decks[player] = deck
 		self:tryStart()
 	end)
@@ -237,8 +250,8 @@ function Arena:tryStart()
 	end
 
 	local seats = {}
-	seats[a.arrival.seat] = { player = a.player, deck = a.deck }
-	seats[b.arrival.seat] = { player = b.player, deck = b.deck }
+	seats[a.arrival.seat] = { player = a.player, deck = a.deck, frame = self.frames[a.player] }
+	seats[b.arrival.seat] = { player = b.player, deck = b.deck, frame = self.frames[b.player] }
 
 	--[[
 		시드는 여기서 뽑는다. 두 사람이 이미 모였으므로 서버끼리 합의할 필요가 없고,

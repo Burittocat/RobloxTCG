@@ -2598,6 +2598,169 @@ t:describe("카드팩", function()
 end)
 
 --==========================================================================
+-- 꾸미기 (카드 테두리) — 규칙은 tests/specs/cosmetics.luau
+--==========================================================================
+
+t:describe("꾸미기", function()
+	local PROGRESS = "CampaignProgress_v1"
+	-- 순수 테이블만 읽는다 (Cosmetics/init 은 script.Parent 를 써서 Lune 에서 바로 못 읽는다).
+	local FrameTable = require("../src/shared/Cosmetics/Frames")
+	local DEFAULT, BASIC = FrameTable.default, nil
+
+	-- 처음 사는 테두리. 테스트가 목록 순서에 묶이지 않게 "가격이 있는 첫 칸" 으로 고른다.
+	local PAID
+	for _, frame in FrameTable.list do
+		if frame.id == DEFAULT then
+			BASIC = frame
+		elseif frame.price > 0 and not PAID then
+			PAID = frame
+		end
+	end
+
+	local function giveGold(world, player, gold)
+		world.dataStores[PROGRESS] = world.dataStores[PROGRESS] or {}
+		world.dataStores[PROGRESS][("user_%d"):format(player.UserId)] = { cleared = 2, gold = gold }
+	end
+
+	local function openWardrobe(gold)
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		if gold then
+			giveGold(world, kim, gold)
+		end
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "꾸미기"))
+		world:advance(1)
+		assertNoErrors(world, "꾸미기 열기")
+		return world, lobby, kim
+	end
+
+	local function act(player, id)
+		return Screen.find(Screen.find(guiOf(player), "TCGWardrobe"), "Act_" .. id)
+	end
+
+	-- 같은 색인가. 하네스의 Color3 는 0~1 실수라 반올림해서 비교한다.
+	local function sameColor(color, rgb)
+		return math.round(color.R * 255) == rgb[1]
+			and math.round(color.G * 255) == rgb[2]
+			and math.round(color.B * 255) == rgb[3]
+	end
+
+	-- 내 손패 카드가 전부 이 테두리로 둘러져 있는가 (하이라이트가 켜진 카드는 뺀다).
+	local function handFramedWith(world, player, frame)
+		local cards = allNamedIn(guiOf(player), "Hand_")
+		if #cards == 0 then
+			return false, "손패가 없습니다"
+		end
+		for _, card in cards do
+			local stroke = card:FindFirstChildOfClass("UIStroke")
+			if stroke and stroke.Thickness < 4 then
+				if not sameColor(stroke.Color, frame.color) or stroke.Thickness ~= frame.thickness then
+					return false, ("%s 의 테두리가 %s 가 아닙니다"):format(card.Name, frame.id)
+				end
+			end
+		end
+		return true
+	end
+
+	t:it("시작 화면에서 열리고 기본 테두리를 끼고 있다", function()
+		local _, _, kim = openWardrobe()
+		local gui = guiOf(kim)
+
+		t:eq(Screen.countNamed(gui, "Frame_FRAME_"), #FrameTable.list, "테두리마다 한 칸씩 있어야 합니다")
+		t:eq(act(kim, DEFAULT).Text, "끼는 중")
+		t:falsy(act(kim, PAID.id).Active, "골드가 없으면 [사기] 가 꺼져 있어야 합니다")
+	end)
+
+	t:it("사면 바로 끼워지고 저장소까지 간다", function()
+		local world, _, kim = openWardrobe(500)
+
+		Screen.click(act(kim, PAID.id))
+		world:advance(1)
+		assertNoErrors(world, "테두리 사기")
+
+		t:eq(act(kim, PAID.id).Text, "끼는 중")
+		t:eq(act(kim, DEFAULT).Text, "끼기", "기본 테두리는 다시 낄 수 있어야 합니다")
+
+		local stored = collectionOf(world, kim)
+		t:truthy(stored and stored.cosmetics, "테두리가 컬렉션에 저장돼야 합니다")
+		t:eq(stored.cosmetics.frame, PAID.id)
+		t:eq(stored.spent, PAID.price)
+
+		local gold = Screen.find(Screen.find(guiOf(kim), "TCGWardrobe"), "Gold")
+		t:eq(gold.Text, tostring(500 - PAID.price), "잔액이 줄어 있어야 합니다")
+	end)
+
+	t:it("골드가 모자란데 리모트로 사려 해도 거부한다", function()
+		local world, lobby, kim = openWardrobe(10)
+
+		lobby.remotes.Lobby._serverSignal:Fire(kim, { kind = "buyCosmetic", id = PAID.id })
+		world:advance(1)
+		assertNoErrors(world, "모자란 골드로 테두리 사기")
+
+		t:truthy(Screen.hasText(guiOf(kim), "모자랍니다"), "왜 안 되는지 말해줘야 합니다")
+		local stored = collectionOf(world, kim)
+		t:falsy(stored and stored.cosmetics and stored.cosmetics.frame == PAID.id, "안 산 테두리가 저장되면 안 됩니다")
+	end)
+
+	t:it("안 산 테두리를 리모트로 끼려 해도 거부한다", function()
+		local world, lobby, kim = openWardrobe(1000)
+
+		lobby.remotes.Lobby._serverSignal:Fire(kim, { kind = "equipCosmetic", id = PAID.id })
+		world:advance(1)
+		assertNoErrors(world, "안 산 테두리 끼기")
+
+		t:truthy(Screen.hasText(guiOf(kim), "가지지 않은"), "왜 안 되는지 말해줘야 합니다")
+		t:eq(act(kim, DEFAULT).Text, "끼는 중")
+	end)
+
+	t:it("낀 테두리가 AI 연습의 내 손패에 둘러진다", function()
+		local world, _, kim = openWardrobe(500)
+		Screen.click(act(kim, PAID.id))
+		world:advance(1)
+
+		Screen.click(Screen.findButton(guiOf(kim), "뒤로"))
+		world:advance(1)
+		Screen.click(Screen.findButton(guiOf(kim), "AI 연습"))
+		world:advance(3)
+		assertNoErrors(world, "테두리 끼고 AI 연습")
+
+		t:truthy(handFramedWith(world, kim, PAID))
+	end)
+
+	--[[
+		테두리는 사람에 붙는다. 같은 판의 두 사람이 서로 다른 테두리로 보여야 한다 —
+		좌석이 뒤바뀌면 내 카드가 상대 테두리로 그려진다.
+	]]
+	t:it("같은 판의 두 사람은 각자 자기 테두리로 그려진다", function()
+		local world = Roblox.newWorld()
+		local lobby = world:newServer():boot()
+		local kim = lobby:addPlayer("Kim")
+		local lee = lobby:addPlayer("Lee")
+		giveGold(world, kim, 500)
+		world:advance(2)
+
+		Screen.click(Screen.findButton(guiOf(kim), "꾸미기"))
+		world:advance(1)
+		Screen.click(act(kim, PAID.id))
+		world:advance(1)
+		Screen.click(Screen.findButton(guiOf(kim), "뒤로"))
+		world:advance(1)
+
+		clickQueue(kim)
+		clickQueue(lee)
+		world:advance(6)
+		assert(passMulligan(world, kim, lee), "멀리건 관문을 통과하지 못했습니다")
+		assertNoErrors(world, "테두리 끼고 PvP")
+
+		t:truthy(handFramedWith(world, kim, PAID))
+		t:truthy(handFramedWith(world, lee, BASIC))
+	end)
+end)
+
+--==========================================================================
 -- 멀리건 관문
 --==========================================================================
 

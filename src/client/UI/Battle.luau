@@ -1992,6 +1992,8 @@ function Battle:renderField(row, state, playerId, opts)
 			selected = opts.selectedId == instance.id,
 			badge = badge,
 			shownDamage = held,
+			-- 카드를 낸 사람의 테두리. 상대 생물은 상대 테두리로 그린다 (Cosmetics)
+			frame = state.frames and state.frames[instance.controllerId],
 			onClick = function()
 				self.callbacks.fieldCard(instance.id)
 			end,
@@ -2265,6 +2267,7 @@ function Battle:renderHand(state, opts)
 				playable = playable,
 				selected = opts.selectedId == instanceId,
 				highlighted = opts.highlights.hand[instanceId],
+				frame = state.frames and state.frames[self.me],
 				onClick = function()
 					self.callbacks.handCard(instanceId)
 				end,

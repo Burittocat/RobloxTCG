@@ -9,7 +9,7 @@
 	    [ 튜토리얼  ]   코치가 붙는 한 판. 룰을 여기서 배운다
 	    [ 캠페인    ]   스테이지를 하나씩 뚫는다. 깨면 골드를 받는다
 	    [ AI 연습   ]   큐를 타지 않고 이 서버에서 바로 한 판
-	    [ 덱 편집 ][ 카드팩 ]   내 덱을 짜서 저장한다 / 골드로 팩을 사서 카드를 모은다
+	    [ 덱 편집 ][ 카드팩 ][ 꾸미기 ]   덱을 짠다 / 팩을 사서 카드를 모은다 / 카드 테두리를 산다
 
 	큐에 서면 두 버튼이 사라지고 경과 시간과 취소 버튼만 남는다. "찾는 중에도
 	연습을 누를 수 있는" 상태를 만들면 연습 도중에 매칭이 잡히는 사고가 난다.
@@ -37,6 +37,7 @@ function Home.new(parent)
 		practice = noop,
 		deck = noop,
 		shop = noop,
+		wardrobe = noop,
 	}
 
 	self.screen = "home"
@@ -167,7 +168,7 @@ function Home:build(parent)
 	end)
 
 	--[[
-		덱 편집과 카드팩은 한 줄에 나란히 둔다. 둘 다 "판 밖에서 덱을 키우는 일" 이고,
+		덱 편집 · 카드팩 · 꾸미기는 한 줄에 나란히 둔다. 셋 다 "판 밖에서 하는 일" 이고,
 		한 줄씩 쌓으면 메뉴가 길어져 큐 대기 상자와 안내 문구가 화면 아래로 밀린다.
 	]]
 	local collectionRow = new("Frame", {
@@ -183,7 +184,7 @@ function Home:build(parent)
 	self.deckButton = Widgets.button("덱 편집", {
 		Parent = collectionRow,
 		LayoutOrder = 1,
-		Size = UDim2.new(0, 155, 0, 44),
+		Size = UDim2.new(0, 100, 0, 44),
 		TextSize = Theme.text.label,
 	}, function()
 		self.callbacks.deck()
@@ -192,10 +193,19 @@ function Home:build(parent)
 	self.shopButton = Widgets.button("카드팩", {
 		Parent = collectionRow,
 		LayoutOrder = 2,
-		Size = UDim2.new(0, 155, 0, 44),
+		Size = UDim2.new(0, 100, 0, 44),
 		TextSize = Theme.text.label,
 	}, function()
 		self.callbacks.shop()
+	end)
+
+	self.wardrobeButton = Widgets.button("꾸미기", {
+		Parent = collectionRow,
+		LayoutOrder = 3,
+		Size = UDim2.new(0, 100, 0, 44),
+		TextSize = Theme.text.label,
+	}, function()
+		self.callbacks.wardrobe()
 	end)
 
 	--------------------------------------------------------------------

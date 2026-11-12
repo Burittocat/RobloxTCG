@@ -11,6 +11,8 @@
 	    })
 
 	좌석의 deck / life 는 안 주면 스타터 덱과 Config.startingLife 다.
+	좌석의 frame 은 그 사람이 낀 카드 테두리 id 다(Cosmetics). 룰 엔진에는 넘기지 않고
+	스냅샷에만 싣는다 — 겉모습이 판정에 닿는 길을 만들지 않으려는 것이다.
 
 	러너는 그 차이를 거의 모른다. 좌석에 player 가 있으면 스냅샷을 쏘고 입력을 기다리고,
 	ai 가 있으면 대신 한 수를 둔다. PvP 는 "AI 좌석이 하나도 없는 매치" 일 뿐이라
@@ -211,7 +213,23 @@ function MatchRunner:syncSeat(seatId)
 	end
 
 	local view = Rules.viewFor(self.state, seatId)
-	self.remotes.Sync:FireClient(player, Net.packView(view, self:logTail()))
+	self.remotes.Sync:FireClient(player, Net.packView(view, self:logTail(), self:frames()))
+end
+
+--[[
+	좌석마다 낀 테두리. 상대 것도 같이 보낸다 — 상대가 낸 카드는 상대 테두리로 그려야
+	"누구 카드인가" 가 테두리로도 읽힌다. 테두리는 숨길 정보가 아니다.
+
+	AI 좌석과 테두리를 안 들고 온 좌석은 빈 문자열 = 기본 테두리다.
+	나간 사람의 좌석도 테두리는 남긴다(seat.frame 은 player 를 비워도 그대로다).
+]]
+function MatchRunner:frames()
+	local out = {}
+	for seatId = 1, 2 do
+		local seat = self.seats[seatId]
+		out[seatId] = (seat and type(seat.frame) == "string") and seat.frame or ""
+	end
+	return out
 end
 
 function MatchRunner:sync()

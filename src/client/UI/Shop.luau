@@ -35,7 +35,8 @@ function Shop.new(parent)
 	local self = setmetatable({}, Shop)
 
 	local noop = function() end
-	self.callbacks = { buy = noop, back = noop }
+	self.callbacks = { buy = noop, buyRobux = noop, back = noop }
+	self.robuxProductId = 0
 
 	self:build(parent)
 	return self
@@ -132,7 +133,7 @@ function Shop:build(parent)
 		Name = "Pack",
 		Parent = column,
 		LayoutOrder = 2,
-		Size = UDim2.new(1, 0, 0, 104),
+		Size = UDim2.new(1, 0, 0, 150),
 	}, {
 		Widgets.padding(14),
 	})
@@ -171,7 +172,7 @@ function Shop:build(parent)
 		BackgroundTransparency = 1,
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, 0, 0.5, 0),
-		Size = UDim2.fromOffset(170, 76),
+		Size = UDim2.fromOffset(170, 122),
 	}, {
 		Widgets.listLayout(Enum.FillDirection.Vertical, 6, Enum.HorizontalAlignment.Right),
 	})
@@ -207,6 +208,25 @@ function Shop:build(parent)
 		TextSize = Theme.text.title,
 	}, function()
 		self.callbacks.buy()
+	end)
+
+	--[[
+		Robux 로 사기. 상품 ID 가 0 이면(아직 안 만들었다) **숨긴다** — 꺼둔 채 보이면
+		"언젠가 눌리는 버튼" 으로 읽히는데, 그건 이 화면이 아니라 운영이 정할 일이다.
+
+		누르면 Roblox 의 구매 창이 뜬다. 결제가 끝나면 서버가 영수증을 받아 팩을 넣고
+		이 화면을 다시 내려준다(Lobby:processReceipt) — 여기서는 기다리기만 한다.
+	]]
+	self.robuxButton = Widgets.button("Robux로 열기", {
+		Name = "BuyRobux",
+		Parent = side,
+		LayoutOrder = 3,
+		Visible = false,
+		Size = UDim2.fromOffset(170, 40),
+		BackgroundColor3 = Theme.color.cost,
+		TextSize = Theme.text.label,
+	}, function()
+		self.callbacks.buyRobux(self.robuxProductId)
 	end)
 
 	--------------------------------------------------------------------
@@ -357,6 +377,9 @@ function Shop:render(payload)
 
 	-- 모자라면 꺼둔다. 눌렀다가 거부당하는 것보다 "아직 못 누른다" 가 낫다(덱 편집의 저장과 같다).
 	Widgets.setEnabled(self.buyButton, price > 0 and gold >= price)
+
+	self.robuxProductId = tonumber(payload.robuxProductId) or 0
+	self.robuxButton.Visible = self.robuxProductId ~= 0
 
 	Widgets.clear(self.pulls)
 	for index, pull in payload.pulls or {} do

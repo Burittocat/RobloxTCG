@@ -15,6 +15,7 @@
 	 accessCode 가 없는 매치가 그 경우다.)
 ]]
 
+local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -25,6 +26,7 @@ local Net = require(Shared.Net)
 local Campaign = require(Shared.Campaign)
 local Collection = require(Shared.Collection)
 local Decks = require(Shared.Decks)
+local Products = require(Shared.Products)
 local Rules = require(Shared.Rules)
 
 local CampaignStore = require(script.Parent.CampaignStore)
@@ -92,6 +94,25 @@ function Lobby.new(remotes, host)
 
 	for _, player in Players:GetPlayers() do
 		self:onPlayerAdded(player)
+	end
+
+	--[[
+		Robux 결제. 콜백은 **플레이스에 하나뿐**이고, 결제한 사람이 있는 서버에서 불린다.
+		대전 서버(Arena)는 이걸 걸지 않는다 — 구매 버튼은 로비의 카드팩 화면에만 있고,
+		혹시 대전 중에 처리 못 한 영수증이 있으면 Roblox 가 로비에 돌아온 뒤 다시 보낸다.
+
+		pcall 로 감싼다. 콜백이 에러로 죽으면 Roblox 는 아무 답도 못 받은 것으로 치는데,
+		그보다 "아직 못 했다" 고 분명히 답하는 쪽이 다시 보내줄 것이 확실하다.
+	]]
+	MarketplaceService.ProcessReceipt = function(receipt)
+		local ok, decision = pcall(function()
+			return self:processReceipt(receipt)
+		end)
+		if not ok then
+			warn(("[TCG] 영수증 처리 실패: %s"):format(tostring(decision)))
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+		return decision
 	end
 
 	self.matchmaker:start()
@@ -510,7 +531,71 @@ function Lobby:openShop(player, pulls, text, failed)
 		pulls = pulls,
 		text = text,
 		failed = failed == true,
+		-- 0 이면 화면이 Robux 버튼을 숨긴다 (Products 주석)
+		robuxProductId = Products.robuxPack,
 	})
+end
+
+--[[
+	Robux 영수증 하나를 처리한다. -> Enum.ProductPurchaseDecision
+
+	답은 둘뿐이다.
+	  PurchaseGranted   줬다(또는 이미 줬다). Roblox 는 이 영수증을 다시 안 보낸다
+	  NotProcessedYet   아직 못 줬다. Roblox 가 나중에(다음 접속 등) 다시 보낸다
+
+	**저장에 성공한 뒤에만 Granted 라고 답한다.** 먼저 답하고 저장이 실패하면 돈은 나갔는데
+	카드는 없다 — 되돌릴 방법이 없다. 반대로 저장은 됐는데 답이 안 가면 같은 영수증이 또
+	오지만, 그건 영수증 기록(Collection.grantPack)이 걸러준다.
+
+	이미 처리한 영수증이면 아무것도 안 주고 Granted 라고 답한다 — NotProcessedYet 으로 답하면
+	Roblox 가 영원히 다시 보낸다.
+]]
+function Lobby:processReceipt(receipt)
+	local NotYet = Enum.ProductPurchaseDecision.NotProcessedYet
+	local Granted = Enum.ProductPurchaseDecision.PurchaseGranted
+
+	-- 우리가 모르는 상품. 상품을 늘리면 여기에 갈래가 생긴다.
+	if receipt.ProductId ~= Products.robuxPack then
+		return NotYet
+	end
+
+	-- 결제한 사람이 이 서버에 없다(그 사이에 나갔다). 저장소를 직접 고칠 수도 있지만,
+	-- 그러면 그 사람이 지금 있는 서버의 캐시와 어긋난다. 다음 접속 때 다시 온다.
+	local player = Players:GetPlayerByUserId(receipt.PlayerId)
+	if not player then
+		return NotYet
+	end
+
+	local purchaseId = tostring(receipt.PurchaseId)
+	local collection = self:collectionFor(player)
+
+	if Collection.hasReceipt(collection, purchaseId) then
+		return Granted
+	end
+
+	local rng = Rules.RNG.new(Random.new():NextInteger(1, 2147483646))
+	local updated, results = Collection.grantPack(collection, purchaseId, rng)
+	if not updated then
+		warn(("[TCG] Robux 팩을 만들지 못했습니다 (%s): %s"):format(player.Name, tostring(results)))
+		return NotYet
+	end
+
+	local ok, reason = self.collectionStore:save(player, updated)
+	if not ok then
+		warn(("[TCG] Robux 팩을 저장하지 못했습니다 — 다시 받을 때 처리합니다 (%s): %s"):format(
+			player.Name,
+			tostring(reason)
+		))
+		return NotYet
+	end
+
+	-- 카드팩 화면에 있으면 바로 펼쳐 보여준다. 다른 화면이면 카드는 이미 컬렉션에 있다.
+	local current = self.screens[player]
+	if current and current.screen == Screen.Shop then
+		self:openShop(player, results, "Robux 팩을 열었습니다", false)
+	end
+
+	return Granted
 end
 
 --[[

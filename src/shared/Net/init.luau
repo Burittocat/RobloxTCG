@@ -75,7 +75,11 @@ end
 	                          덱 편집 화면. entries 는 지금 저장된 덱, owned 는 가진 카드
 	                          (코스트 카드는 안 들어 있다 — 무한이다. Collection.owned)
 	  { screen = "shop",    gold, price, size, rares, collected, total,
-	                        pulls = { { id, rarity, kept, refund }, ... }?, text = ?, failed = ? }
+	                        pulls = { { id, rarity, kept, refund }, ... }?, text = ?, failed = ?,
+	                        robuxProductId }
+	                          robuxProductId 가 0 이면 Robux 버튼을 숨긴다(Products 주석).
+	                          Robux 결제는 이 리모트를 타지 않는다 — 클라이언트가 구매 창을 띄우고,
+	                          Roblox 가 서버에 영수증을 보내면 서버가 이 화면을 다시 내려준다
 	                          카드팩 화면. gold 는 쓸 수 있는 골드, collected/total 은 모은 정도.
 	                          pulls 는 방금 깐 팩 — **저장에 성공했을 때만** 실린다
 	  { screen = "campaign", stages = { { index, name, note, difficulty, life, gold,

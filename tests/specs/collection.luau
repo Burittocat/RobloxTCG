@@ -264,6 +264,83 @@ return function(t, ctx)
 	end)
 
 	--==================================================================
+	t:describe("Robux 팩", function()
+		t:it("골드를 쓰지 않고 한 봉을 준다", function()
+			local before = Collection.new()
+			local updated, results = Collection.grantPack(before, "purchase-1", rng(5))
+
+			t:truthy(updated)
+			t:eq(#results, Collection.Pack.size)
+			t:eq(updated.opened, 1)
+			t:truthy(updated.spent <= 0, ("골드를 썼습니다: spent %d"):format(updated.spent))
+			t:allowed(Collection.validate(updated))
+		end)
+
+		--[[
+			Roblox 는 "처리했다" 는 답을 못 받으면 같은 영수증을 다시 보낸다.
+			두 번째에 또 주면 한 번 낸 돈으로 두 봉이 나간다.
+		]]
+		t:it("같은 영수증은 두 번 주지 않는다", function()
+			local once = Collection.grantPack(Collection.new(), "purchase-1", rng(5))
+			t:truthy(Collection.hasReceipt(once, "purchase-1"))
+
+			local twice, reason = Collection.grantPack(once, "purchase-1", rng(6))
+			t:eq(twice, nil)
+			t:truthy(tostring(reason):find("이미", 1, true), tostring(reason))
+		end)
+
+		t:it("다른 영수증은 각각 준다", function()
+			local collection = Collection.new()
+			collection = Collection.grantPack(collection, "a", rng(1))
+			collection = Collection.grantPack(collection, "b", rng(2))
+			t:eq(collection.opened, 2)
+		end)
+
+		t:it("중복 환급은 골드 팩과 같이 준다 — 잔액이 늘어난다", function()
+			local full = { cards = {}, spent = 0, opened = 0 }
+			local commons, rares = Collection.pools()
+			for _, id in commons do
+				table.insert(full.cards, { id = id, count = 4 })
+			end
+			for _, id in rares do
+				table.insert(full.cards, { id = id, count = 4 })
+			end
+
+			local updated = Collection.grantPack(full, "all-dupes", rng(3))
+			local expected = Collection.Refund.Common * (Collection.Pack.size - Collection.Pack.rares)
+				+ Collection.Refund.Rare * Collection.Pack.rares
+
+			t:eq(updated.spent, -expected, "spent 가 음수로 내려가야 합니다")
+			t:eq(Collection.balance({ cleared = 0, gold = 0 }, updated), expected)
+			t:allowed(Collection.validate(updated), nil, "음수 spent 도 저장 검사를 통과해야 합니다")
+		end)
+
+		t:it("영수증은 최근 것만 들고 있는다", function()
+			local collection = Collection.new()
+			for index = 1, Collection.MaxReceipts + 5 do
+				collection = Collection.grantPack(collection, ("p%d"):format(index), rng(index))
+			end
+
+			t:eq(#collection.receipts, Collection.MaxReceipts)
+			t:falsy(Collection.hasReceipt(collection, "p1"), "가장 오래된 것은 빠져야 합니다")
+			t:truthy(Collection.hasReceipt(collection, ("p%d"):format(Collection.MaxReceipts + 5)))
+		end)
+
+		t:it("골드 팩을 사도 영수증 기록이 남는다", function()
+			-- buyPack · applyCards 가 receipts 를 빠뜨리면, 골드 팩 한 봉에 Robux 영수증 기록이
+			-- 지워져서 같은 영수증이 다시 왔을 때 또 준다.
+			local collection = Collection.grantPack(Collection.new(), "keep-me", rng(1))
+			collection = Collection.buyPack({ cleared = 5, gold = 1000 }, collection, rng(2))
+			t:truthy(Collection.hasReceipt(collection, "keep-me"))
+		end)
+
+		t:it("영수증 ID 가 없으면 주지 않는다", function()
+			t:eq(Collection.grantPack(Collection.new(), "", rng(1)), nil)
+			t:eq(Collection.grantPack(Collection.new(), nil, rng(1)), nil)
+		end)
+	end)
+
+	--==================================================================
 	t:describe("저장값 검증", function()
 		t:it("모양이 잘못된 값을 거부한다", function()
 			local function check(value, expected)
@@ -273,7 +350,10 @@ return function(t, ctx)
 
 			check("컬렉션", "테이블")
 			check({ cards = {}, opened = 0 }, "spent")
-			check({ cards = {}, spent = -1, opened = 0 }, "spent")
+			check({ cards = {}, spent = 1.5, opened = 0 }, "spent")
+			check({ cards = {}, spent = 0, opened = -1 }, "opened")
+			check({ cards = {}, spent = 0, opened = 0, receipts = "영수증" }, "receipts")
+			check({ cards = {}, spent = 0, opened = 0, receipts = { 12345 } }, "receipts")
 			check({ cards = {}, spent = 0, opened = 1.5 }, "opened")
 			check({ cards = "많이", spent = 0, opened = 0 }, "cards")
 			check({ cards = { { id = "CRE_NOPE", count = 1 } }, spent = 0, opened = 0 }, "없는 카드")

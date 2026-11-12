@@ -16,6 +16,9 @@
 	    battle         전투 화면 — 여기서 Controller:start() 가 한 판을 연다
 ]]
 
+local MarketplaceService = game:GetService("MarketplaceService")
+local Players = game:GetService("Players")
+
 local Net = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").Net)
 
 local Battle = require(script.Parent.UI.Battle)
@@ -49,6 +52,15 @@ function App.new(playerGui, remotes)
 	end
 	self.shop.callbacks.back = function()
 		self:send({ kind = "home" })
+	end
+	--[[
+		Robux 구매 창은 클라이언트가 띄운다(Roblox 가 그렇게 정했다). 무엇을 줄지는 여기서
+		아무것도 정하지 않는다 — 결제가 되면 서버가 영수증을 받아 처리하고 화면을 내려준다.
+	]]
+	self.shop.callbacks.buyRobux = function(productId)
+		if type(productId) == "number" and productId ~= 0 then
+			MarketplaceService:PromptProductPurchase(Players.LocalPlayer, productId)
+		end
 	end
 
 	--[[

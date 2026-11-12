@@ -33,6 +33,7 @@ local ENUMS = {
 	EasingDirection = { "In", "Out", "InOut" },
 	CameraType = { "Fixed", "Attach", "Watch", "Track", "Follow", "Custom", "Scriptable" },
 	CoreGuiType = { "PlayerList", "Health", "Backpack", "Chat", "All", "EmotesMenu" },
+	ProductPurchaseDecision = { "NotProcessedYet", "PurchaseGranted" },
 	Font = {
 		"Legacy",
 		"Arial",

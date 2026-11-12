@@ -29,7 +29,8 @@ src/shared/Matchmaking/  ← 짝짓기 판단. 이것도 Roblox API 를 쓰지 �
                            (만료 · 중복 · 좌석 배정. 두 큐 백엔드가 공유한다)
 src/shared/Campaign/     ← PvE 스테이지 표와 진행도 규칙. 이것도 순수 함수다
                            (해금 · 보상. 상대 덱은 엔트리 모양이라 덱 편집기와 같은 검사를 받는다)
-src/shared/Collection/   ← 가진 카드 · 카드팩 · 골드 잔액. 이것도 순수 함수다 (docs/collection.md)
+src/shared/Collection/   ← 가진 카드 · 카드팩 · 골드 잔액 · Robux 영수증. 이것도 순수 함수다 (docs/collection.md)
+src/shared/Products.luau ← Robux 상품 ID. 0 이면 버튼이 안 뜬다
 
 src/server/
   Boot.server.luau       부팅 · 공개 서버인지 예약 서버인지 판단해 분기

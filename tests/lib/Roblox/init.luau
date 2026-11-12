@@ -171,6 +171,7 @@ function Roblox.newWorld(opts)
 		subscribers = {}, -- 토픽 -> { fn }
 		reserved = {}, -- accessCode -> 예약 서버(있으면)
 		teleports = {}, -- 기록. 테스트가 들여다본다
+		purchasePrompts = {}, -- 클라이언트가 띄운 Robux 구매 창 (MarketplaceService)
 		randomCount = 0,
 		warnings = {},
 
@@ -607,6 +608,26 @@ function Server:service(name, vm)
 				end
 			end,
 		}
+	end
+
+	--[[
+		Robux 결제. 서버 하나에 서비스 하나다 — 서버가 `ProcessReceipt` 에 콜백을 꽂으면
+		테스트가 `server.marketplace.ProcessReceipt(receipt)` 로 영수증을 보낸다(진짜는
+		Roblox 가 보낸다). 클라이언트가 띄운 구매 창은 `world.purchasePrompts` 에 남는다.
+
+		흉내내지 않는 것: 구매 창 UI, 결제 실패, Roblox 의 재전송 주기. 재전송은 테스트가
+		같은 영수증을 한 번 더 보내는 것으로 흉내낸다.
+	]]
+	if name == "MarketplaceService" then
+		if not self.marketplace then
+			self.marketplace = {
+				ProcessReceipt = nil,
+				PromptProductPurchase = function(_, player, productId)
+					table.insert(world.purchasePrompts, { player = player, productId = productId, server = self })
+				end,
+			}
+		end
+		return self.marketplace
 	end
 
 	error(("game:GetService(\"%s\") 는 이 하네스가 모르는 서비스입니다"):format(tostring(name)), 2)

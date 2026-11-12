@@ -34,17 +34,19 @@ Claude Code 가 이 저장소에서 시작할 때 자동으로 읽는 파일이�
 | ~2026-09 | 룰 엔진 · AI · 전투 UI · 튜토리얼 · 덱 편집 · 빠른 대전 · 캠페인 | `docs/roadmap.md` |
 | 2026-11-12 | **카드팩 + 컬렉션** — 가진 카드로만 덱, 100 골드 5장 팩(희귀 1 확정), 중복 환급 | [`docs/collection.md`](docs/collection.md) |
 | 2026-11-12 | **PvP 승리 보상** — 25 골드, 하루 4판, 4턴 미만 판 제외 | `docs/collection.md` 의 "골드는 어디서 버나" |
+| 2026-11-12 | **Robux 로 팩 사기** — DevProduct, 영수증 중복 방지(컬렉션에 receipts 기록) | `docs/collection.md` 의 "Robux 로 팩 사기" |
 
 - 브랜치 `feature/card-packs` → **PR #1** (https://github.com/Burittocat/RobloxTCG/pull/1).
-  커밋 92c1d9e 의 CI "룰 엔진 · 빌드" 통과. 아직 main 에 안 합쳤다 — Studio 에서 화면 확인 후 머지
+  아직 main 에 안 합쳤다 — Studio 에서 화면 확인 후 머지.
+  CI: 92c1d9e(카드팩 · PvP) 통과. Robux 커밋은 푸시 후 CI 결과를 확인할 것
 - 루트 `README.md` 의 "테스트 272개" 는 이번에 늘어난 수를 아직 반영하지 않았다
 
 ## 다음 할 일
 
-1. **Robux 로 팩 사기** — DevProduct. 상품 ID 가 비어 있으면 버튼을 끈다(`Theme.image.gold` 와 같은 태도).
-   ID 는 크리에이터 대시보드에서 만들어 나중에 넣는다
+1. **사용자 몫: Robux 상품 만들기** — 크리에이터 대시보드 → Developer Products. 나온 ID 를
+   `src/shared/Products.luau` 의 `robuxPack` 에 넣으면 카드팩 화면에 버튼이 뜬다. 가격도 그때 정한다
 2. **코스메틱** — 테두리 · 스킨 · 이펙트. 카드 데이터와 분리된 레이어로
-3. 집에서: Studio 로 카드팩 화면 · 덱 편집 "덱/가진 것" 표시 확인 → PR #1 머지
+3. 집에서: Studio 로 카드팩 화면 · 덱 편집 "덱/가진 것" 표시 · Robux 테스트 구매 확인 → PR #1 머지
 
 ## 이번에 배운 함정
 
@@ -54,3 +56,8 @@ Claude Code 가 이 저장소에서 시작할 때 자동으로 읽는 파일이�
   `t:denied(validate(v), nil, "...")` 는 사유를 잃는다. 지역 변수로 받아서 넘긴다
 - PowerShell 에서 `git commit -F -` 에 here-string 을 파이프 없이 넘기면 경로로 해석된다.
   메시지는 파일로 써서 `-F <파일>`
+- 새 Roblox 서비스나 Enum 을 쓰면 **테스트 하네스에도 추가해야** 한다
+  (`tests/lib/Roblox/init.luau` 의 `Server:service`, `tests/lib/Roblox/Datatypes.luau` 의 ENUMS).
+  안 하면 스모크 테스트가 부팅에서 전부 죽는다. MarketplaceService 가 그랬다
+- 컬렉션에 칸을 늘리면 `applyCards` · `buyPack` · `grantPack` 이 새 테이블을 만들 때 그 칸을
+  옮겨 적어야 한다 — 빠뜨리면 조용히 지워진다(receipts 를 지키는 테스트가 있다)

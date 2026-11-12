@@ -8,12 +8,15 @@
 
 	컬렉션 (DataStore 에 그대로 들어가는 모양)
 
-	    { cards = { { id = "CRE_HAWK", count = 3 }, ... }, spent = 120, opened = 2 }
+	    { cards = { { id = "CRE_HAWK", count = 3 }, ... }, spent = 120, opened = 2,
+	      receipts = { "8f3c…", ... } }
 
-	  cards   가진 카드. 덱과 같은 **엔트리 모양**이다 — 사람이 읽을 수 있고, Roblox
-	          직렬화가 안전하게 다루는 모양이다. 코스트 카드는 적지 않는다(아래)
-	  spent   지금까지 팩에 쓴 골드에서 중복 환급을 뺀 값 (순지출)
-	  opened  깐 팩 수. 판정에는 안 쓴다 — 저장된 값을 보고 문제를 짚을 때 단서다
+	  cards     가진 카드. 덱과 같은 **엔트리 모양**이다 — 사람이 읽을 수 있고, Roblox
+	            직렬화가 안전하게 다루는 모양이다. 코스트 카드는 적지 않는다(아래)
+	  spent     지금까지 팩에 쓴 골드에서 중복 환급을 뺀 값 (순지출).
+	            **음수일 수 있다** — Robux 팩은 골드를 안 쓰는데 중복 환급은 준다
+	  opened    깐 팩 수. 판정에는 안 쓴다 — 저장된 값을 보고 문제를 짚을 때 단서다
+	  receipts  처리한 Robux 영수증 ID (최근 MaxReceipts 개). 없어도 된다 — 아래 "Robux 팩"
 
 	--------------------------------------------------------------------------
 	골드는 어디에 있나
@@ -178,10 +181,23 @@ function Collection.validate(value)
 		return false, "컬렉션이 테이블이 아닙니다"
 	end
 
-	for _, field in { "spent", "opened" } do
-		local number = value[field]
-		if type(number) ~= "number" or number % 1 ~= 0 or number < 0 then
-			return false, ("'%s' 가 0 이상의 정수가 아닙니다"):format(field)
+	if type(value.opened) ~= "number" or value.opened % 1 ~= 0 or value.opened < 0 then
+		return false, "'opened' 가 0 이상의 정수가 아닙니다"
+	end
+
+	-- spent 는 음수일 수 있다 (머리말 참조). 정수이기만 하면 된다.
+	if type(value.spent) ~= "number" or value.spent % 1 ~= 0 then
+		return false, "'spent' 가 정수가 아닙니다"
+	end
+
+	if value.receipts ~= nil then
+		if type(value.receipts) ~= "table" then
+			return false, "receipts 가 배열이 아닙니다"
+		end
+		for _, id in value.receipts do
+			if type(id) ~= "string" then
+				return false, "receipts 에 문자열이 아닌 값이 있습니다"
+			end
 		end
 	end
 
@@ -313,8 +329,9 @@ function Collection.applyCards(collection, cards)
 
 	return {
 		cards = toEntries(counts),
-		spent = math.max(0, collection.spent - refund),
+		spent = collection.spent - refund, -- 음수가 될 수 있다 (머리말)
 		opened = collection.opened,
+		receipts = collection.receipts,
 	},
 		results,
 		refund
@@ -338,10 +355,72 @@ function Collection.buyPack(progress, collection, rng)
 		cards = collection.cards,
 		spent = collection.spent + price,
 		opened = collection.opened + 1,
+		receipts = collection.receipts,
 	}
 
 	local updated, results = Collection.applyCards(paid, Collection.rollPack(rng))
 	return updated, results
+end
+
+--==========================================================================
+-- Robux 팩
+--==========================================================================
+
+--[[
+	Robux 결제는 **같은 영수증이 여러 번 올 수 있다.** Roblox 는 서버가 "처리했다"
+	(PurchaseGranted) 고 답할 때까지 ProcessReceipt 를 다시 부른다 — 답하기 직전에 서버가
+	죽거나, 저장은 됐는데 답이 안 갔으면 다음 접속에 같은 영수증이 또 온다. 그때 팩을 또
+	주면 한 번 낸 돈으로 두 봉이 나간다.
+
+	그래서 처리한 영수증 ID 를 **카드와 같은 저장값에** 적는다. 카드를 넣는 것과 영수증을
+	적는 것이 한 번의 쓰기라, "카드는 들어갔는데 영수증은 안 적힌" 중간이 없다.
+
+	최근 MaxReceipts 개만 들고 있는다. 끝없이 쌓으면 저장값 한도(4MB)에 언젠가 닿는다.
+	Roblox 가 다시 보내는 것은 아직 처리 안 된 영수증뿐이라, 백 건 전 것이 다시 올 일은 없다.
+]]
+Collection.MaxReceipts = 100
+
+function Collection.hasReceipt(collection, purchaseId)
+	for _, id in collection.receipts or {} do
+		if id == purchaseId then
+			return true
+		end
+	end
+	return false
+end
+
+--[[
+	Robux 로 산 팩 한 봉을 준다. -> 새 컬렉션, 결과  |  nil, reason
+
+	골드는 안 쓴다. 중복 환급은 골드 팩과 똑같이 준다 — 그래서 spent 가 음수가 될 수 있다.
+	이미 처리한 영수증이면 아무것도 안 준다(부르는 쪽은 그래도 "처리했다" 고 답해야 한다 —
+	Lobby:processReceipt).
+]]
+function Collection.grantPack(collection, purchaseId, rng)
+	if type(purchaseId) ~= "string" or purchaseId == "" then
+		return nil, "영수증 ID 가 없습니다"
+	end
+	if Collection.hasReceipt(collection, purchaseId) then
+		return nil, "이미 처리한 영수증입니다"
+	end
+
+	local receipts = {}
+	for _, id in collection.receipts or {} do
+		table.insert(receipts, id)
+	end
+	table.insert(receipts, purchaseId)
+	while #receipts > Collection.MaxReceipts do
+		table.remove(receipts, 1)
+	end
+
+	local opened = {
+		cards = collection.cards,
+		spent = collection.spent,
+		opened = collection.opened + 1,
+		receipts = receipts,
+	}
+
+	return Collection.applyCards(opened, Collection.rollPack(rng))
 end
 
 --==========================================================================

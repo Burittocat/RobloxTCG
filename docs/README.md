@@ -35,7 +35,7 @@
 | `src/client/Tutorial.luau` | [tutorial.md](tutorial.md) |
 | `src/shared/Campaign/**` · `src/server/CampaignStore.luau` · `src/client/UI/Campaign.luau` | [campaign.md](campaign.md) |
 | `src/server/DeckStore.luau` · `src/client/UI/DeckEditor.luau` | [decks.md](decks.md) |
-| `src/shared/Collection/**` · `src/server/CollectionStore.luau` · `src/server/PvpReward.luau` · `src/client/UI/Shop.luau` | [collection.md](collection.md) |
+| `src/shared/Collection/**` · `src/shared/Products.luau` · `src/server/CollectionStore.luau` · `src/server/PvpReward.luau` · `src/client/UI/Shop.luau` | [collection.md](collection.md) |
 | `src/shared/Net/**` | [architecture.md](architecture.md) |
 | `tests/**` · `.github/workflows/**` | [testing.md](testing.md) |
 | `scripts/**` | [testing.md](testing.md) · [getting-started.md](getting-started.md) |

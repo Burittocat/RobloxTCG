@@ -2495,6 +2495,106 @@ t:describe("카드팩", function()
 		local balance = tostring(130 - collectionOf(world, kim).spent)
 		t:truthy(Screen.hasText(purse, balance), ("캠페인 목록에 잔액 %s 가 떠야 합니다"):format(balance))
 	end)
+
+	--------------------------------------------------------------------
+	-- Robux 팩 (규칙은 tests/specs/collection.luau 의 "Robux 팩")
+	--------------------------------------------------------------------
+
+	--[[
+		영수증은 진짜로는 Roblox 가 보낸다. 여기서는 서버가 꽂아둔 ProcessReceipt 를
+		테스트가 직접 부른다. 상품 ID 는 설정 파일의 값을 그대로 쓴다 — 0(아직 상품 없음)
+		이어도 서버는 "그 ID 의 영수증" 으로 처리한다. 진짜 영수증에 0 이 올 일은 없다.
+	]]
+	local Products = require("../src/shared/Products")
+
+	local function receipt(lobby, player, purchaseId, productId)
+		local handler = lobby.marketplace and lobby.marketplace.ProcessReceipt
+		assert(handler, "로비가 MarketplaceService.ProcessReceipt 를 걸어야 합니다")
+		return tostring(handler({
+			PlayerId = player.UserId,
+			ProductId = productId or Products.robuxPack,
+			PurchaseId = purchaseId,
+			CurrencySpent = 99,
+		}))
+	end
+
+	local GRANTED = "Enum.ProductPurchaseDecision.PurchaseGranted"
+	local NOT_YET = "Enum.ProductPurchaseDecision.NotProcessedYet"
+
+	t:it("상품 ID 가 비어 있으면 Robux 버튼이 없다", function()
+		local _, _, kim = openShop()
+		local button = Screen.findButton(guiOf(kim), "Robux로 열기")
+
+		if Products.robuxPack == 0 then
+			t:falsy(button, "상품을 만들기 전에는 버튼이 보이면 안 됩니다")
+		else
+			t:truthy(button, "상품 ID 가 있으면 버튼이 보여야 합니다")
+		end
+	end)
+
+	t:it("영수증이 오면 팩이 들어가고 화면에 펼쳐진다", function()
+		local world, lobby, kim = openShop()
+
+		t:eq(receipt(lobby, kim, "purchase-1"), GRANTED)
+		world:advance(1)
+		assertNoErrors(world, "Robux 영수증")
+
+		t:eq(Screen.countNamed(guiOf(kim), "Pull_"), 5, "카드팩 화면에 있으면 바로 펼쳐져야 합니다")
+
+		local stored = collectionOf(world, kim)
+		t:eq(stored.opened, 1)
+		t:truthy(stored.spent <= 0, "골드를 쓰면 안 됩니다")
+		t:eq(stored.receipts and stored.receipts[1], "purchase-1", "영수증이 카드와 같이 저장돼야 합니다")
+	end)
+
+	--[[
+		Roblox 는 "처리했다" 를 못 받으면 같은 영수증을 다시 보낸다. 두 번 주면 안 되고,
+		두 번째에도 **처리했다고 답해야** 한다 — 아니면 영원히 다시 온다.
+	]]
+	t:it("같은 영수증이 다시 와도 한 번만 준다", function()
+		local world, lobby, kim = openShop()
+
+		t:eq(receipt(lobby, kim, "purchase-1"), GRANTED)
+		world:advance(1)
+		t:eq(receipt(lobby, kim, "purchase-1"), GRANTED, "다시 온 영수증에도 처리했다고 답해야 합니다")
+		world:advance(1)
+		assertNoErrors(world, "같은 영수증 두 번")
+
+		t:eq(collectionOf(world, kim).opened, 1, "팩은 한 봉만 들어가야 합니다")
+	end)
+
+	--[[
+		서버가 바뀌어도(다른 로비로 재접속) 저장소의 영수증 기록이 막아야 한다.
+		캐시만 보고 판단하면 새 서버에서 또 준다.
+	]]
+	t:it("다른 서버로 다시 와도 같은 영수증은 주지 않는다", function()
+		local world, lobby, kim = openShop()
+		t:eq(receipt(lobby, kim, "purchase-1"), GRANTED)
+		world:advance(1)
+
+		-- 같은 사람이 다른 로비로 옮겨 간다 (하네스의 텔레포트가 사람을 옮기는 방식과 같다).
+		local other = world:newServer():boot()
+		lobby:removePlayer(kim)
+		other:addPlayer(kim.Name, { player = kim })
+		world:advance(2)
+
+		t:eq(receipt(other, kim, "purchase-1"), GRANTED)
+		world:advance(1)
+		assertNoErrors(world, "다른 서버에서 같은 영수증")
+
+		t:eq(collectionOf(world, kim).opened, 1, "다른 서버에서도 한 봉만이어야 합니다")
+	end)
+
+	t:it("모르는 상품과 접속해 있지 않은 사람의 영수증은 미룬다", function()
+		local world, lobby, kim = openShop()
+
+		t:eq(receipt(lobby, kim, "other-product", Products.robuxPack + 987654), NOT_YET)
+		t:eq(receipt(lobby, { UserId = 424242 }, "someone-else"), NOT_YET, "나간 사람 것은 다음 접속에 처리합니다")
+		world:advance(1)
+		assertNoErrors(world, "미루는 영수증")
+
+		t:eq(collectionOf(world, kim).opened, 0)
+	end)
 end)
 
 --==========================================================================

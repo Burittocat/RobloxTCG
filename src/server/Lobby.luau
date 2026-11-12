@@ -7,7 +7,7 @@
 	  3. AI 연습·튜토리얼·캠페인은 큐를 타지 않고 이 자리에서 한 판 띄운다
 	  4. 덱 저장과 카드팩 — 가진 카드(CollectionStore)와 골드를 다룬다
 	  5. 꾸미기 — 카드 테두리 · 뒷면을 사고 낀다 (Cosmetics. 저장은 컬렉션과 같은 값)
-	  6. 프로필 · 순위표 — 랭크 · 전적 · 덱 · 꾸밈을 보여준다. 순위표에서 남의 프로필도 (보기만 한다)
+	  6. 프로필 · 순위표 — 랭크 · 전적 · 덱 · 꾸밈을 보여준다. 순위표 · 결과 화면에서 남의 프로필도 (보기만 한다)
 
 	PvP 매치는 여기서 굴리지 않는다. 짝이 지어지면 두 사람은 예약 서버로 텔레포트되고
 	거기서 Arena 가 판을 연다. 로비 서버가 대전까지 맡으면 인원이 많은 서버일수록
@@ -39,6 +39,7 @@ local DeckStore = require(script.Parent.DeckStore)
 local LeaderboardStore = require(script.Parent.LeaderboardStore)
 local MatchRunner = require(script.Parent.MatchRunner)
 local Matchmaker = require(script.Parent.Matchmaker)
+local PublicProfile = require(script.Parent.PublicProfile)
 local PvpReward = require(script.Parent.PvpReward)
 
 local Screen = Net.LobbyScreen
@@ -302,6 +303,8 @@ function Lobby:onMessage(player, payload)
 		self:openLeaderboard(player)
 	elseif payload.kind == "viewProfile" then
 		self:viewProfile(player, payload.userId)
+	elseif payload.kind == "foeProfile" then
+		self:foeProfile(player)
 	elseif payload.kind == "wardrobe" then
 		self:openWardrobe(player)
 	elseif payload.kind == "buyCosmetic" then
@@ -748,17 +751,14 @@ function Lobby:openProfile(player, backTo)
 end
 
 --[[
-	**다른 사람의** 프로필 — 순위표에서 이름을 누르면 온다.
+	**다른 사람의** 프로필 — 순위표에서 이름을 누르면 온다. 무엇을 보여주고 숨기는지는
+	PublicProfile 이 정한다(덱 · 골드 · MMR 은 안 나간다). 대전 서버와 같은 함수다.
 
-	보이는 것: 이름 · 티어 · 순위 · 전적 · 낀 꾸밈 · 모은 정도 · 캠페인 진도.
-	**안 보이는 것: 덱과 골드.** 덱은 대전 상대에게 전략이 그대로 새는 정보고, 골드는
-	남이 알 이유가 없다. MMR 은 내 프로필에서도 안 보인다(숨은 점수).
-
-	userId 는 클라이언트가 보낸 값이라 모양을 본다. 아무 id 나 보내도 공개 정보만 나가므로
-	막을 이유는 없지만, 요청 한도를 먹으므로 한 사람이 1초에 한 번만 연다.
-	읽기만 한다 — 남의 캐시를 만들지도, 저장값을 만들지도 않는다(CampaignStore:read).
+	userId 는 클라이언트가 보낸 값이라 모양을 본다. 한 사람이 1초에 한 번만 연다(요청 한도).
 ]]
-local LOOKUP_COOLDOWN = 1
+function Lobby:publicStores()
+	return { campaign = self.campaignStore, collection = self.collectionStore, leaderboard = self.leaderboard }
+end
 
 function Lobby:viewProfile(player, userId)
 	if self.host:runnerFor(player) then
@@ -772,33 +772,28 @@ function Lobby:viewProfile(player, userId)
 		return
 	end
 
-	local now = os.clock()
-	if self.lastLookup[player] and now - self.lastLookup[player] < LOOKUP_COOLDOWN then
+	if not PublicProfile.allow(self.lastLookup, player) then
 		return
 	end
-	self.lastLookup[player] = now
 	self.matchmaker:cancel(player)
 
-	local progress = self.campaignStore:read(userId)
-	local collection = self.collectionStore:read(userId)
-	local have, total = Collection.progress(collection)
+	self:setScreen(player, PublicProfile.build(self:publicStores(), userId, "leaderboard"))
+end
 
-	self:setScreen(player, {
-		screen = Screen.Profile,
-		mine = false,
-		backTo = "leaderboard",
-		name = self.leaderboard:nameOf(userId),
-		rankPoints = Rank.pointsOf(progress),
-		place = LeaderboardStore.placeIn(self.leaderboard:top(), userId),
-		wins = progress.rankedWins or 0,
-		losses = progress.rankedLosses or 0,
-		frame = Cosmetics.equippedFrame(collection),
-		back = Cosmetics.equippedBack(collection),
-		collected = have,
-		total = total,
-		cleared = progress.cleared or 0,
-		stages = Campaign.count(),
-	})
+--[[
+	판이 끝난 화면의 [상대 프로필] — Studio 의 같은 서버 매칭 경로.
+	(게시된 게임에서는 판이 예약 서버에서 열리므로 Arena:foeProfile 이 받는다)
+
+	**화면 상태(self.screens)를 바꾸지 않는다.** 프로필은 결과 화면 위에 겹쳐 뜨고, 뒤로를
+	누르면 클라이언트가 스스로 닫는다. 서버가 아는 화면은 여전히 전투다 — 그래야 hello 를
+	다시 받아도 판이 그대로 이어지고, [나가기] · [다시 매칭] 도 평소처럼 돈다.
+]]
+function Lobby:foeProfile(player)
+	local userId = PublicProfile.foeOf(self.host:runnerFor(player), player)
+	if not userId or not PublicProfile.allow(self.lastLookup, player) then
+		return
+	end
+	self.remotes.Lobby:FireClient(player, PublicProfile.build(self:publicStores(), userId, "battle"))
 end
 
 --==========================================================================

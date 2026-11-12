@@ -28,12 +28,14 @@ Claude Code 가 이 저장소에서 시작할 때 자동으로 읽는 파일이�
 - lune · rojo 없음(`scripts\bootstrap.cmd` 실행이 자동 권한 검사에 막혔다) → 검증은 PR CI 로 한다
 - 저장소 위치: `C:\Users\USER\RobloxTCG-repo`
 
-**또 다른 Windows (2026-11-12, `C:\Users\USER\RobloxTCG`)**
-- git · GitHub CLI 는 winget 으로 설치했다(PATH 에 있다. 새 창이 아니면
-  `$env:Path` 를 Machine+User 로 다시 읽어야 보인다)
-- 로그인은 `gh auth login --web` (일회용 코드 → github.com/login/device). Claude 세션에서
-  창을 띄우면 코드가 안 보이므로, 출력을 파일로 받아 코드를 읽어 주는 편이 낫다
-- 여기서도 `scripts\bootstrap.cmd` 가 자동 권한 검사에 막혔다 → 훅 없음 · lune 없음 → 검증은 main 푸시 CI
+**또 다른 Windows (`C:\Users\USER\RobloxTCG`) — 2026-11-13 다시 세팅**
+- 11-12 에 깔았던 git · gh 가 없어져 있었다. 2026-11-13 에 **git 만** winget 으로 다시 깔았다
+  (`winget install --id Git.Git -e`). Claude 세션의 PowerShell 은 PATH 를 못 이어받으므로
+  명령마다 `$env:Path = "C:\Users\USER\RobloxTCG\.tools;C:\Program Files\Git\cmd;C:\Program Files\Git\bin;" + $env:Path`
+- 로그인은 gh 없이 **Git Credential Manager**: `$env:GCM_INTERACTIVE='always'; git credential-manager github login`
+  → 브라우저 창. `git credential-manager github list` 가 `Burittocat` 을 보이면 된다
+- `powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1` 은 이번엔 됐다 → lune · rojo 가 `.tools\` 에,
+  훅도 켜져 있다(`core.hooksPath .githooks`). **로컬 CI(`sh scripts/ci.sh`)가 돈다**
 
 ## 지금 어디까지 왔나
 
@@ -49,6 +51,7 @@ Claude Code 가 이 저장소에서 시작할 때 자동으로 읽는 파일이�
 | 2026-11-12 | **랭크 · MMR 매칭 · 프로필** — 보이는 랭크 점수(티어 6단계) + 숨은 MMR(Elo). 짧은 판은 이긴 쪽 무기록 · 진 쪽 감점. 프로필 화면(보기만) | [`docs/rank.md`](docs/rank.md) |
 | 2026-11-13 | **골드 표기 다듬기** — 금색 동전(채운 원 + 어두운 G) · 칩 바탕/테두리 · 프로필의 골드만 금색. 세 화면이 베껴 쓰던 purse 코드를 `Widgets.goldChip` 으로 모았다 | `src/client/UI/Widgets.luau` |
 | 2026-11-12 | **순위표 · 남의 프로필** — OrderedDataStore 위 50명, 이름 누르면 그 사람 프로필(덱 · 골드 · MMR 숨김). 하네스에 OrderedDataStore · GetNameFromUserIdAsync 추가 | `docs/rank.md` 의 "순위표" |
+| 2026-11-13 | **결과 화면의 상대 프로필** — PvP 결과 상자 셋째 버튼. 남의 프로필 조립을 `PublicProfile` 로 모아 Lobby · Arena 가 같이 쓴다. 전투 화면 위에 겹치고(`backTo = "battle"`) 서버 화면 상태는 그대로 | `docs/rank.md` 의 "결과 화면의 상대 프로필" |
 
 > **순위표 커밋(6cd5c26)의 CI 는 실제로 빨간불이었고, 2026-11-13 집에서 고쳤다** — 스모크
 > 둘(`순위표가 점수 순으로…`, `이름을 누르면 그 사람의 프로필…`)이 실패했다. 원인은 기능이
@@ -62,8 +65,9 @@ Claude Code 가 이 저장소에서 시작할 때 자동으로 읽는 파일이�
 
 1. **사용자 몫: Robux 상품 만들기** — 크리에이터 대시보드 → Developer Products. 나온 ID 를
    `src/shared/Products.luau` 의 `robuxPack` 에 넣으면 카드팩 화면에 버튼이 뜬다. 가격도 그때 정한다
-2. 후보(Studio 없이 되는 것): 시즌 · 티어 보상 · 판 끝난 화면에서 상대 프로필 · 큐 인원 표시 · 재접속
-   (집에서: Studio 로 시작 화면 오른쪽 위 [순위표][프로필] 위치 · 프로필 · 순위표 배치도 본다)
+2. 후보(Studio 없이 되는 것): 시즌 · 티어 보상 · 큐 인원 표시 · 재접속
+   (집에서: Studio 로 시작 화면 오른쪽 위 [순위표][프로필] 위치 · 프로필 · 순위표 배치도 본다.
+   **결과 상자의 버튼 셋**(128px 로 좁혔다)이 글자를 자르지 않는지도)
 3. **코스메틱 나머지** — 이펙트(소환 연출). 연출이라 **집에서 Studio 로** 하는 편이 낫다.
    "스킨" 은 카드 앞면 바탕이 종류 정보라 덮지 않고 **카드 뒷면**으로 했다(2026-11-12)
 3. 집에서: Studio 로 카드팩 화면 · 덱 편집 "덱/가진 것" 표시 · PvP 보상 · Robux 테스트 구매 확인 ·

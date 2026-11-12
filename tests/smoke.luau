@@ -969,6 +969,70 @@ t:describe("같은 서버 매칭", function()
 		t:truthy(lost, "나간 사람의 진행도에도 패배가 적혀야 합니다")
 		t:eq(lost.rankedLosses, 1)
 	end)
+
+	--------------------------------------------------------------------
+	-- 결과 화면의 [상대 프로필] (src/server/PublicProfile.luau)
+	--------------------------------------------------------------------
+
+	t:it("결과 화면에서 상대 프로필을 겹쳐 보고, 뒤로 가면 결과 화면이다", function()
+		local world, _, kim, lee = matchTwo()
+
+		concede(world, kim)
+		world:advance(2)
+		assertNoErrors(world, "항복 — 상대 프로필 앞")
+
+		local open = Screen.findButton(guiOf(lee), "상대 프로필")
+		t:truthy(open, "PvP 결과 화면에 [상대 프로필] 이 있어야 합니다")
+		Screen.click(open)
+		world:advance(1)
+		assertNoErrors(world, "상대 프로필 열기")
+
+		local profile = Screen.find(guiOf(lee), "TCGProfile")
+		t:truthy(profile and profile.Enabled, "상대 프로필이 떠야 합니다")
+		t:truthy(Screen.hasText(profile, "Kim"), "방금 둔 상대의 이름")
+		t:truthy(Screen.hasText(profile, "0승 1패"), "방금 진 판까지 적힌 전적")
+		t:truthy(Screen.hasText(profile, "다른 사람의 덱은 볼 수 없습니다"))
+		t:eq(Screen.countNamed(profile, "DeckCard_"), 0, "상대 덱이 보이면 안 됩니다")
+		t:falsy(Screen.hasText(profile, "골드 "), "상대 골드는 안 보여야 합니다")
+		t:falsy(Screen.hasText(profile, "984"), "MMR 은 숨은 점수입니다")
+
+		t:truthy(Screen.find(guiOf(lee), "TCGBattle").Enabled, "전투 화면은 밑에 그대로 있어야 합니다")
+
+		Screen.click(Screen.findButton(profile, "뒤로"))
+		world:advance(1)
+		assertNoErrors(world, "상대 프로필 닫기")
+
+		t:falsy(Screen.find(guiOf(lee), "TCGProfile").Enabled, "뒤로 가면 프로필이 닫혀야 합니다")
+		t:truthy(Screen.hasText(guiOf(lee), "승리"), "결과 화면으로 돌아와야 합니다")
+		t:truthy(Screen.findButton(guiOf(lee), "다시 매칭"), "결과 화면의 버튼이 그대로여야 합니다")
+	end)
+
+	t:it("두는 중에는 상대 프로필을 주지 않는다", function()
+		local world, lobby, _, lee = matchTwo()
+
+		-- 버튼은 결과 화면에만 있지만 리모트는 손으로도 부른다
+		lobby.remotes.Lobby._serverSignal:Fire(lee, { kind = "foeProfile" })
+		world:advance(1)
+		assertNoErrors(world, "두는 중 상대 프로필")
+
+		t:falsy(Screen.find(guiOf(lee), "TCGProfile").Enabled, "판을 덮으면 안 됩니다")
+	end)
+
+	t:it("상대가 먼저 나가도 남은 사람은 상대 프로필을 볼 수 있다", function()
+		local world, _, kim, lee = matchTwo()
+
+		concede(world, kim)
+		world:advance(2)
+		Screen.click(Screen.findButton(guiOf(kim), "나가기"))
+		world:advance(1)
+
+		Screen.click(Screen.findButton(guiOf(lee), "상대 프로필"))
+		world:advance(1)
+		assertNoErrors(world, "나간 상대의 프로필")
+
+		local profile = Screen.find(guiOf(lee), "TCGProfile")
+		t:truthy(profile.Enabled and Screen.hasText(profile, "Kim"), "좌석은 나간 사람의 UserId 를 남깁니다")
+	end)
 end)
 
 --==========================================================================
@@ -1251,6 +1315,23 @@ t:describe("크로스서버 매칭", function()
 			t:falsy(teleport.data.seed, "시드가 실려 있습니다")
 			t:falsy(teleport.data.startingPlayerId, "선공은 시드에서 유도되므로 같이 새면 안 됩니다")
 		end
+	end)
+
+	t:it("대전 서버의 결과 화면에서도 상대 프로필이 뜬다", function()
+		-- 게시된 게임에서 판이 열리는 곳은 로비가 아니라 Arena 다. 같은 버튼이 거기서도 받아야 한다
+		local world, kim, lee = matchAcrossServers()
+		assert(passMulligan(world, kim, lee), "멀리건 관문을 통과하지 못했습니다")
+
+		concede(world, lee)
+		world:advance(2)
+		Screen.click(Screen.findButton(guiOf(kim), "상대 프로필"))
+		world:advance(1)
+		assertNoErrors(world, "대전 서버 상대 프로필")
+
+		local profile = Screen.find(guiOf(kim), "TCGProfile")
+		t:truthy(profile and profile.Enabled, "대전 서버에서도 상대 프로필이 떠야 합니다")
+		t:truthy(Screen.hasText(profile, "Lee"))
+		t:truthy(Screen.hasText(profile, "다른 사람의 덱은 볼 수 없습니다"))
 	end)
 
 	t:it("취소한 사람은 태우지 않는다", function()

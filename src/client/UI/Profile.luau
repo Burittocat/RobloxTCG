@@ -1,8 +1,9 @@
 --[[
 	프로필 — 랭크 · 순위 · 전적 · 지금 덱 · 낀 꾸밈 · 모은 정도.
 
-	내 것은 시작 화면 [프로필] 에서, **남의 것**은 순위표에서 이름을 눌러 연다(mine = false).
-	남의 것에는 덱과 골드가 없다 — 서버가 아예 안 보낸다(Lobby:viewProfile).
+	내 것은 시작 화면 [프로필] 에서, **남의 것**은 순위표에서 이름을 누르거나 PvP 결과 화면의
+	[상대 프로필] 로 연다(mine = false). 남의 것에는 덱과 골드가 없다 — 서버가 아예 안 보낸다
+	(PublicProfile). 결과 화면에서 열면 전투 화면 위에 겹쳐 뜬다(backTo = "battle", App:show).
 
 	**보기만 하는 화면이다.** 덱은 덱 편집에서, 꾸밈은 꾸미기에서 고친다. 여기서도 고치게
 	하면 같은 판정이 두 곳에 생긴다(Lobby:openProfile).
@@ -335,7 +336,7 @@ end
 ]]
 function Profile:render(payload)
 	local mine = payload.mine ~= false
-	self.backTo = (payload.backTo == "leaderboard") and "leaderboard" or "home"
+	self.backTo = (payload.backTo == "leaderboard" or payload.backTo == "battle") and payload.backTo or "home"
 	self.nameLabel.Text = tostring(payload.name or "")
 
 	-- 랭크 ---------------------------------------------------------------

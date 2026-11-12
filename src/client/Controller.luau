@@ -238,9 +238,14 @@ end
 
 function Controller:endActions()
 	if self.matchMode == "pvp" then
+		--[[
+			[상대 프로필] 은 사람과 둔 판에만 있다 — AI 좌석에는 볼 프로필이 없다.
+			판 밖으로 나가는 버튼이 아니라서 맨 뒤에 둔다(첫 칸은 강조색이다).
+		]]
 		return {
 			{ key = "requeue", text = "다시 매칭" },
 			{ key = "leave", text = "나가기" },
+			{ key = "foeProfile", text = "상대 프로필" },
 		}
 	end
 
@@ -815,6 +820,11 @@ function Controller:onAction(key)
 	-- (예약 서버에서는 로비로 텔레포트하는 일이라 매치 러너가 할 수 있는 일이 아니다)
 	if key == "leave" or key == "requeue" then
 		self.mode = { name = "idle" }
+		self.remotes.Lobby:FireServer({ kind = key })
+		return
+	end
+	-- 상대 프로필도 판이 아니라 로비(대전 서버면 Arena)가 받는다 — 저장소를 읽어야 해서다.
+	if key == "foeProfile" then
 		self.remotes.Lobby:FireServer({ kind = key })
 		return
 	end

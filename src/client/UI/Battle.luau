@@ -42,6 +42,9 @@ local DEFAULT_ME, DEFAULT_FOE = 1, 2
 
 local PHASE_TRACK = { Phase.Main, Phase.AttackPrep, Phase.DefensePrep }
 
+-- 결과 화면 버튼 칸 수. PvP 가 셋(다시 매칭 · 나가기 · 상대 프로필)으로 가장 많다 (Controller:endActions)
+local END_BUTTONS = 3
+
 local LOSS_REASON = {
 	LifeDepleted = "라이프 소진",
 	DeckOut = "덱 아웃",
@@ -822,7 +825,7 @@ function Battle:makeEndOverlay(parent)
 	})
 
 	self.endButtons = {}
-	for index = 1, 2 do
+	for index = 1, END_BUTTONS do
 		local button = Widgets.button("", {
 			Parent = row,
 			Visible = false,
@@ -846,10 +849,17 @@ end
 function Battle:setEndActions(actions)
 	self.endActions = actions or {}
 
+	--[[
+		상자 폭은 420 이다. 168 짜리 셋은 안 들어가므로 셋일 때만 좁힌다 —
+		둘일 때까지 좁히면 평소 결과 화면의 버튼이 괜히 작아진다.
+	]]
+	local width = (#self.endActions >= 3) and 128 or 168
+
 	for index, button in self.endButtons do
 		local action = self.endActions[index]
 		button.Visible = action ~= nil
 		button.Text = action and action.text or ""
+		button.Size = UDim2.new(0, width, 1, 0)
 	end
 end
 

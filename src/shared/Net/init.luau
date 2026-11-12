@@ -62,6 +62,8 @@ end
 	  { kind = "profile" }   내 프로필 화면을 연다 (보기만 한다)
 	  { kind = "leaderboard" }  순위표를 연다
 	  { kind = "viewProfile", userId = <숫자> }  순위표에서 누른 사람의 프로필 (덱 · 골드는 안 나간다)
+	  { kind = "foeProfile" }  PvP 결과 화면에서 방금 둔 상대의 프로필. 끝난 판에서만 받는다.
+	                         답(profile, backTo = "battle")은 화면 상태를 바꾸지 않는다 — 결과 위에 겹친다
 	  { kind = "wardrobe" }  꾸미기(카드 테두리 · 뒷면) 화면을 연다
 	  { kind = "buyCosmetic", id = <꾸밈 id> }    사고 그 종류에 바로 낀다
 	  { kind = "equipCosmetic", id = <꾸밈 id> }  가진 것으로 갈아 낀다 (종류는 id 가 정한다)
@@ -77,6 +79,7 @@ end
 	                        collected, total, cleared, stages, gold? }
 	                          프로필. mine 이 거짓이면 남의 것이라 deck · deckPlayable · gold 가 없다.
 	                          place 는 순위표 안이면 순위, 밖이면 nil. backTo 는 [뒤로] 가 보낼 kind
+	                          ("battle" 이면 보내지 않고 클라이언트가 겹친 프로필을 닫는다)
 	  { screen = "leaderboard", rows = { { place, userId, name, points }, ... },
 	                        me = { userId, name, points, place? }, size }
 	                          순위표. rows 는 1등부터. me.place 가 nil 이면 위 size 명 밖이다

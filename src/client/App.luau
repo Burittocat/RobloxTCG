@@ -13,7 +13,8 @@
 	    campaign       캠페인 스테이지 목록
 	    shop           카드팩
 	    wardrobe       꾸미기 (카드 테두리 · 뒷면)
-	    profile        프로필 (랭크 · 전적 · 덱 · 꾸밈) — 내 것, 또는 순위표에서 누른 사람
+	    profile        프로필 (랭크 · 전적 · 덱 · 꾸밈) — 내 것, 또는 순위표에서 누른 사람.
+	                   backTo = "battle" 이면 PvP 결과 화면 위에 겹친다 (화면은 전투 그대로)
 	    leaderboard    순위표
 	    deck           덱 편집
 	    battle         전투 화면 — 여기서 Controller:start() 가 한 판을 연다
@@ -57,6 +58,14 @@ function App.new(playerGui, remotes)
 
 	-- 프로필의 [뒤로] 는 온 곳으로 — 순위표에서 왔으면 순위표 (서버가 backTo 로 알려준다)
 	self.profile.callbacks.back = function(backTo)
+		--[[
+			결과 화면 위에 겹쳐 띄운 상대 프로필은 **여기서 닫는다.** 서버가 아는 화면은
+			처음부터 전투 그대로라(Lobby:foeProfile) 물어볼 것이 없다.
+		]]
+		if backTo == "battle" then
+			self.profile:setVisible(false)
+			return
+		end
 		self:send({ kind = if backTo == "leaderboard" then "leaderboard" else "home" })
 	end
 	self.leaderboard.callbacks.view = function(userId)
@@ -173,6 +182,20 @@ end
 
 function App:show(payload)
 	local screen = payload.screen
+
+	--[[
+		결과 화면의 [상대 프로필]. 전투 화면을 **그대로 둔 채** 위에 겹친다(프로필의 DisplayOrder 가
+		더 높다). self.screen 도 전투로 남긴다 — 바꾸면 다음 전투 화면 지시가 "새 판" 으로 읽혀
+		Controller:start() 가 다시 돈다. 전투 중이 아닐 때 온 것은 무시한다(늦게 도착한 응답).
+	]]
+	if screen == Screen.Profile and payload.backTo == "battle" then
+		if self.screen == Screen.Battle then
+			self.profile:setVisible(true)
+			self.profile:render(payload)
+		end
+		return
+	end
+
 	local wasBattle = (self.screen == Screen.Battle)
 	self.screen = screen
 

@@ -51,6 +51,7 @@ local CollectionStore = require(script.Parent.CollectionStore)
 local LeaderboardStore = require(script.Parent.LeaderboardStore)
 local DeckStore = require(script.Parent.DeckStore)
 local MatchRunner = require(script.Parent.MatchRunner)
+local PublicProfile = require(script.Parent.PublicProfile)
 local PvpReward = require(script.Parent.PvpReward)
 local Settings = require(script.Parent.Matchmaker.Settings)
 
@@ -73,6 +74,7 @@ function Arena.new(remotes, host)
 	self.campaignStore = CampaignStore.new() -- PvP 승리 보상을 적는다 (PvpReward)
 	self.collectionStore = CollectionStore.new() -- 낀 꾸밈만 읽는다. 여기서 사고팔지는 않는다
 	self.leaderboard = LeaderboardStore.new() -- 판이 끝나면 랭크 점수를 적는다 (PvpReward)
+	self.lastLookup = {} :: { [Player]: number } -- 상대 프로필을 연 시각 (PublicProfile.allow)
 
 	remotes.Lobby.OnServerEvent:Connect(function(player, payload)
 		local ok, err = pcall(function()
@@ -364,7 +366,23 @@ function Arena:onMessage(player, payload)
 		self:dismiss(player, nil, false)
 	elseif payload.kind == "requeue" then
 		self:dismiss(player, nil, true)
+	elseif payload.kind == "foeProfile" then
+		self:foeProfile(player)
 	end
+end
+
+--[[
+	결과 화면의 [상대 프로필]. 무엇을 보여주는지는 로비의 순위표와 같다(PublicProfile).
+	화면 상태는 그대로 전투다 — 프로필은 결과 위에 겹쳐 뜨고 클라이언트가 닫는다(Lobby:foeProfile).
+	잠시 뒤 로비로 돌려보내는 시계(onMatchFinished)는 멈추지 않는다.
+]]
+function Arena:foeProfile(player)
+	local userId = PublicProfile.foeOf(self.runner, player)
+	if not userId or not PublicProfile.allow(self.lastLookup, player) then
+		return
+	end
+	local stores = { campaign = self.campaignStore, collection = self.collectionStore, leaderboard = self.leaderboard }
+	self.remotes.Lobby:FireClient(player, PublicProfile.build(stores, userId, "battle"))
 end
 
 return Arena

@@ -121,6 +121,23 @@ MMR 은 **어느 화면에도 싣지 않는다.** 서버가 클라이언트로 �
   (`CampaignStore:read` · `CollectionStore:read`). 한 사람이 1초에 한 번만 연다
 - 프로필의 [뒤로] 는 온 곳으로(`backTo`)
 
+## 결과 화면의 상대 프로필
+
+PvP 판이 끝나면 결과 상자에 **[상대 프로필]** 이 붙는다(다시 매칭 · 나가기 · 상대 프로필).
+순위표의 남의 프로필과 **같은 값**이다 — 조립은 `src/server/PublicProfile.luau` 한 곳에서 하고,
+로비(`Lobby:viewProfile` · `Lobby:foeProfile`)와 대전 서버(`Arena:foeProfile`)가 같이 쓴다.
+두 곳이 각자 만들면 한쪽에서만 상대 덱이 새는 구멍이 생긴다.
+
+| | |
+|---|---|
+| 받는 곳 | 게시된 게임은 예약 서버의 `Arena`, Studio 같은 서버 매칭은 `Lobby` — 둘 다 `{ kind = "foeProfile" }` |
+| 상대 | 좌석의 `userId`(`PublicProfile.foeOf`). 상대가 먼저 나가도 좌석에 남아 있어 볼 수 있다 |
+| 언제 | **끝난 판에서만.** 두는 중에 보내면 무시한다 — 프로필이 판을 덮으면 안 된다 |
+| 화면 | 전투 화면 **위에 겹친다**(`backTo = "battle"`). 서버의 화면 상태는 전투 그대로라 [뒤로] 는 클라이언트가 닫는다(`App:show`) |
+| 한도 | 순위표와 같이 한 사람이 1초에 한 번(`PublicProfile.allow`) |
+
+대전 서버의 "잠시 뒤 로비로" 시계(`Settings.arenaLingerAfterMatch`)는 프로필을 보는 동안에도 멈추지 않는다.
+
 테스트 하네스에 OrderedDataStore 와 `Players:GetNameFromUserIdAsync` 를 더했다
 (`tests/lib/Roblox/init.luau` — `world.orderedStores` · `world.knownNames`).
 
@@ -128,4 +145,3 @@ MMR 은 **어느 화면에도 싣지 않는다.** 서버가 클라이언트로 �
 
 - 시즌 — 랭크 점수를 주기적으로 깎아 다시 오르게 하는 것
 - 티어별 보상
-- 대전 상대의 프로필 (판이 끝난 화면에서 바로)

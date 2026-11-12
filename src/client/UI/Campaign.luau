@@ -96,28 +96,9 @@ function Campaign:build(parent)
 		TextSize = 32,
 	})
 
-	local purse = new("Frame", {
-		Name = "Purse",
-		Parent = header,
-		BackgroundTransparency = 1,
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, 0, 0.5, 0),
-		Size = UDim2.fromOffset(160, 28),
-	}, {
-		Widgets.listLayout(Enum.FillDirection.Horizontal, 6, Enum.HorizontalAlignment.Right),
-	})
-
-	goldIcon({ Parent = purse, LayoutOrder = 1 })
-
-	self.goldLabel = Widgets.label("0", {
-		Parent = purse,
-		LayoutOrder = 2,
-		Size = UDim2.fromOffset(120, 28),
-		Font = Theme.font.bold,
-		TextSize = Theme.text.title,
-		TextColor3 = Theme.color.accent,
-		TextXAlignment = Enum.TextXAlignment.Right,
-	})
+	-- 칩의 모양과 이름(Purse · Gold)은 Widgets.goldChip 한 곳에 있다.
+	local _, goldLabel = Widgets.goldChip({ Parent = header })
+	self.goldLabel = goldLabel
 
 	--------------------------------------------------------------------
 	-- 스테이지 목록

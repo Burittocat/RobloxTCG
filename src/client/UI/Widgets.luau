@@ -151,11 +151,16 @@ function Widgets.setEnabled(button, enabled)
 end
 
 --[[
-	골드 아이콘 한 칸. 캠페인 목록과 카드팩 화면이 같은 것을 쓴다.
+	골드 동전 한 칸. 캠페인 목록 · 카드팩 · 꾸미기가 같은 것을 쓴다.
 
-	`Theme.image.gold` 가 비어 있으면 **글자로 그린다.** 에셋을 아직 안 올렸다고 화면이
+	`Theme.image.gold` 가 비어 있으면 **동전을 그린다.** 에셋을 아직 안 올렸다고 화면이
 	비면 그때까지 그 화면을 못 보게 되므로, 빈 값이 정상 경로다. ID 를 채우는 순간
 	같은 자리에 그림이 들어온다 — 이 함수 말고 고칠 곳은 없다.
+
+	예전에는 **투명한 칸에 글자 "G" 하나**였다. 어두운 바탕 위의 어두운 칸에서는 숫자
+	옆의 장식처럼 묻혀 "이게 내 골드" 로 읽히지 않았다(2026-11-13 사용자 지적).
+	지금은 **채운 원 + 그 안의 어두운 글자**다 — 원이 배경을 가리므로 무엇 위에 얹어도
+	동전으로 보인다.
 ]]
 function Widgets.goldIcon(props)
 	local merged = {
@@ -171,12 +176,79 @@ function Widgets.goldIcon(props)
 		return new("ImageLabel", merged)
 	end
 
-	merged.Font = Theme.font.bold
-	merged.Text = "G"
-	merged.TextColor3 = Theme.color.accent
-	merged.TextSize = Theme.text.label
-	merged.TextXAlignment = Enum.TextXAlignment.Center
-	return new("TextLabel", merged)
+	merged.BackgroundColor3 = Theme.color.accent
+	merged.BackgroundTransparency = 0
+	merged.BorderSizePixel = 0
+
+	return new("Frame", merged, {
+		-- CornerRadius 를 (1, 0) 으로 주면 짧은 변의 절반 — 칸이 커지든 작아지든 원이다.
+		new("UICorner", { CornerRadius = UDim.new(1, 0) }),
+		Widgets.label("G", {
+			Name = "GoldMark",
+			--[[
+				**1px 올린다.** 로블록스는 글자를 글리프가 아니라 줄 상자(line box)로
+				가운데 맞추고, 그 상자에는 g · y 처럼 밑으로 내려가는 글자 자리가 들어
+				있다. "G" 는 그 자리를 안 쓰므로 동전 안에서 아래로 내려가 보인다
+				(2026-11-13 사용자 지적). 눈으로 맞추는 값이니 고칠 곳은 이 숫자 하나다.
+			]]
+			Position = UDim2.fromOffset(0, -1),
+			Size = UDim2.fromScale(1, 1),
+			Font = Theme.font.bold,
+			-- 동전 위의 글자다. 밝은 금색 바탕이므로 글자는 가장 어두운 색이어야 읽힌다.
+			TextColor3 = Theme.color.bgDeep,
+			TextSize = Theme.text.small,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			TextYAlignment = Enum.TextYAlignment.Center,
+		}),
+	})
+end
+
+--[[
+	화면 머리의 "가진 골드" 칩. -> frame, label
+
+	캠페인 · 카드팩 · 꾸미기 셋이 같은 자리에 같은 모양으로 쓴다. 예전에는 셋이 각자
+	같은 코드를 베껴 적어뒀고, 그래서 한 곳을 고치면 둘이 뒤처졌다.
+
+	**바탕을 깐다.** 투명한 칸에 숫자만 띄워두면 어두운 배경과 한 덩어리로 보여서 어디까지가
+	내 돈인지 읽히지 않는다 — 패널 색과 금색 테두리로 한 칸을 만들면 그 자리가 생긴다.
+
+	이름 둘은 **테스트가 붙잡고 있다** — 칩은 `Purse`, 숫자 칸은 `Gold`.
+	숫자 칸의 Text 는 숫자만 둔다(테스트가 잔액과 그대로 비교한다).
+]]
+function Widgets.goldChip(props)
+	local merged = {
+		Name = "Purse",
+		BackgroundColor3 = Theme.color.panelSoft,
+		BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, 0, 0.5, 0),
+		Size = UDim2.fromOffset(152, 34),
+	}
+	for key, value in props or {} do
+		merged[key] = value
+	end
+
+	local frame = new("Frame", merged, {
+		Widgets.corner(17),
+		Widgets.stroke(Theme.color.accent, 1, 0.5),
+		Widgets.padding(0, { PaddingLeft = 12, PaddingRight = 12 }),
+		Widgets.listLayout(Enum.FillDirection.Horizontal, 7, Enum.HorizontalAlignment.Right),
+	})
+
+	Widgets.goldIcon({ Parent = frame, LayoutOrder = 1 })
+
+	local label = Widgets.label("0", {
+		Name = "Gold",
+		Parent = frame,
+		LayoutOrder = 2,
+		Size = UDim2.fromOffset(96, 24),
+		Font = Theme.font.bold,
+		TextSize = Theme.text.title,
+		TextColor3 = Theme.color.accent,
+		TextXAlignment = Enum.TextXAlignment.Right,
+	})
+
+	return frame, label
 end
 
 --[[

@@ -396,8 +396,12 @@ function Profile:render(payload)
 		self.deckNote.TextColor3 = Theme.color.textDim
 	end
 
-	-- 모은 정도 ----------------------------------------------------------
-	self.statsLabel.Text = ("모은 카드 %d / %d   ·   캠페인 %d / %d   ·   골드 %d"):format(
+	--[[
+		모은 정도. **골드만 금색으로 띄운다** — 한 줄에 셋을 흐린 글씨로 나열하면 돈이
+		얼마인지가 나머지와 같은 무게로 묻힌다(2026-11-13). 색은 Theme.color.accent
+		(247, 206, 112) 와 같은 값이다 — 리치텍스트는 Color3 를 못 받아 글자로 적는다.
+	]]
+	self.statsLabel.Text = ("모은 카드 %d / %d   ·   캠페인 %d / %d   ·   <font color='#F7CE70'>골드 %d</font>"):format(
 		tonumber(payload.collected) or 0,
 		tonumber(payload.total) or 0,
 		tonumber(payload.cleared) or 0,

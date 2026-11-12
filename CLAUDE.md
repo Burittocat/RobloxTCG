@@ -36,9 +36,8 @@ Claude Code 가 이 저장소에서 시작할 때 자동으로 읽는 파일이�
 | 2026-11-12 | **PvP 승리 보상** — 25 골드, 하루 4판, 4턴 미만 판 제외 | `docs/collection.md` 의 "골드는 어디서 버나" |
 | 2026-11-12 | **Robux 로 팩 사기** — DevProduct, 영수증 중복 방지(컬렉션에 receipts 기록) | `docs/collection.md` 의 "Robux 로 팩 사기" |
 
-- 브랜치 `feature/card-packs` → **PR #1** (https://github.com/Burittocat/RobloxTCG/pull/1).
-  아직 main 에 안 합쳤다 — Studio 에서 화면 확인 후 머지.
-  CI: 92c1d9e(카드팩 · PvP) 통과. Robux 커밋은 푸시 후 CI 결과를 확인할 것
+- **PR #1 을 main 에 머지했다**(d6dd09a, 2026-11-12). 커밋 셋 다 CI 통과.
+  사용자 요청으로 **Studio 화면 확인 전에** 머지했다 — 집에서 확인하다 문제가 나오면 main 에서 고친다
 - 루트 `README.md` 의 "테스트 272개" 는 이번에 늘어난 수를 아직 반영하지 않았다
 
 ## 다음 할 일
@@ -46,7 +45,7 @@ Claude Code 가 이 저장소에서 시작할 때 자동으로 읽는 파일이�
 1. **사용자 몫: Robux 상품 만들기** — 크리에이터 대시보드 → Developer Products. 나온 ID 를
    `src/shared/Products.luau` 의 `robuxPack` 에 넣으면 카드팩 화면에 버튼이 뜬다. 가격도 그때 정한다
 2. **코스메틱** — 테두리 · 스킨 · 이펙트. 카드 데이터와 분리된 레이어로
-3. 집에서: Studio 로 카드팩 화면 · 덱 편집 "덱/가진 것" 표시 · Robux 테스트 구매 확인 → PR #1 머지
+3. 집에서: Studio 로 카드팩 화면 · 덱 편집 "덱/가진 것" 표시 · PvP 보상 · Robux 테스트 구매 확인
 
 ## 이번에 배운 함정
 

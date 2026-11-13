@@ -51,6 +51,7 @@ Claude Code 가 이 저장소에서 시작할 때 자동으로 읽는 파일이�
 | 2026-11-12 | **랭크 · MMR 매칭 · 프로필** — 보이는 랭크 점수(티어 6단계) + 숨은 MMR(Elo). 짧은 판은 이긴 쪽 무기록 · 진 쪽 감점. 프로필 화면(보기만) | [`docs/rank.md`](docs/rank.md) |
 | 2026-11-13 | **골드 표기 다듬기** — 금색 동전(채운 원 + 어두운 G) · 칩 바탕/테두리 · 프로필의 골드만 금색. 세 화면이 베껴 쓰던 purse 코드를 `Widgets.goldChip` 으로 모았다 | `src/client/UI/Widgets.luau` |
 | 2026-11-12 | **순위표 · 남의 프로필** — OrderedDataStore 위 50명, 이름 누르면 그 사람 프로필(덱 · 골드 · MMR 숨김). 하네스에 OrderedDataStore · GetNameFromUserIdAsync 추가 | `docs/rank.md` 의 "순위표" |
+| 2026-11-13 | **밸런스 — 방패병 4코 1/6 → 2/4.** 늘어진 판(40턴+) 1000판 중 99 → 20, 덱아웃 17 → 0. `tests/balance.luau` 에 분포 · 선공 승률 · 끝난 전장 · `--stage N` 추가 | `docs/roadmap.md` 의 "밸런스" |
 | 2026-11-13 | **결과 화면의 상대 프로필** — PvP 결과 상자 셋째 버튼. 남의 프로필 조립을 `PublicProfile` 로 모아 Lobby · Arena 가 같이 쓴다. 전투 화면 위에 겹치고(`backTo = "battle"`) 서버 화면 상태는 그대로 | `docs/rank.md` 의 "결과 화면의 상대 프로필" |
 
 > **순위표 커밋(6cd5c26)의 CI 는 실제로 빨간불이었고, 2026-11-13 집에서 고쳤다** — 스모크
@@ -65,7 +66,8 @@ Claude Code 가 이 저장소에서 시작할 때 자동으로 읽는 파일이�
 
 1. **사용자 몫: Robux 상품 만들기** — 크리에이터 대시보드 → Developer Products. 나온 ID 를
    `src/shared/Products.luau` 의 `robuxPack` 에 넣으면 카드팩 화면에 버튼이 뜬다. 가격도 그때 정한다
-2. 후보(Studio 없이 되는 것): 시즌 · 티어 보상 · 재접속.
+2. 후보(Studio 없이 되는 것): **캠페인 난이도 곡선**(3번이 4 · 5번보다 어렵다 — 사용자 결정 필요,
+   `docs/roadmap.md` 의 "밸런스") · 시즌 · 티어 보상 · 재접속.
    **큐 인원 표시는 보류**(2026-11-13 사용자 결정) — 당장 다인 플레이 모드가 없고, 사람이 적을 때
    "0명 대기" 가 오히려 큐를 비운다. 동시 접속이 늘면 다시 본다(별도 카운터 필요 — `docs/roadmap.md`)
    (집에서: Studio 로 시작 화면 오른쪽 위 [순위표][프로필] 위치 · 프로필 · 순위표 배치도 본다.
@@ -92,7 +94,10 @@ Claude Code 가 이 저장소에서 시작할 때 자동으로 읽는 파일이�
 - Luau 에서 `f(g(), x)` 처럼 다중 반환 호출이 마지막 인자가 아니면 첫 값만 넘어간다 —
   `t:denied(validate(v), nil, "...")` 는 사유를 잃는다. 지역 변수로 받아서 넘긴다
 - PowerShell 에서 `git commit -F -` 에 here-string 을 파이프 없이 넘기면 경로로 해석된다.
-  메시지는 파일로 써서 `-F <파일>`
+  메시지는 파일로 써서 `-F <파일>`. **`Set-Content -Encoding utf8` 로 쓰지 않는다** — PS 5.1 은 BOM 을
+  붙여서 커밋 제목 앞에 보이지 않는 문자가 들어간다(d348df6). Write 도구나 BOM 없는 UTF8Encoding 으로 쓴다
+- 밸런스 실험으로 `Sheet.luau` 를 스크립트로 바꿨다 되돌릴 때는 `[IO.File]::WriteAllText(..., New-Object Text.UTF8Encoding $false)` —
+  역시 BOM 을 안 넣으려고
 - 새 Roblox 서비스나 Enum 을 쓰면 **테스트 하네스에도 추가해야** 한다
   (`tests/lib/Roblox/init.luau` 의 `Server:service`, `tests/lib/Roblox/Datatypes.luau` 의 ENUMS).
   안 하면 스모크 테스트가 부팅에서 전부 죽는다. MarketplaceService 가 그랬다

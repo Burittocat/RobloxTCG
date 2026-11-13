@@ -77,7 +77,7 @@ return function(t, ctx)
 				**큰 놈을 먼저 만든다.** 작은 놈이 먼저면 "번호순 배분" 이라는 잘못된 규칙도
 				같은 결과를 내서, 테스트가 아무것도 구별하지 못한다.
 			]]
-			local big = Fixture.spawn(Rules, state, 2, "CRE_BULWARK", Field) -- 1/6
+			local big = Fixture.spawn(Rules, state, 2, "CRE_BULWARK", Field) -- 2/4
 			local small = Fixture.spawn(Rules, state, 2, "CRE_SQUIRE", Field) -- 2/1
 
 			Rules.endPhase(state, 1)
@@ -88,14 +88,14 @@ return function(t, ctx)
 			Rules.endPhase(state, 2)
 
 			--[[
-				4 공격력을 1 생명력 종자에게 1, 남은 3 을 6 생명력 방벽에게 준다.
-				**배정한 순서(방벽 먼저)가 아니라 죽일 수 있는 것부터** 간다 —
-				순서대로 줬다면 방벽이 4 를 다 받고 종자는 멀쩡했을 것이다.
+				4 공격력을 1 생명력 고블린에게 1, 남은 3 을 4 생명력 방패병에게 준다.
+				**배정한 순서(방패병 먼저)가 아니라 죽일 수 있는 것부터** 간다 —
+				순서대로 줬다면 방패병이 4 를 다 받고 죽고, 고블린은 멀쩡했을 것이다.
 				(맞은 피해는 턴이 끝나면서 지워지므로 생사로 확인한다)
 			]]
 			t:eq(small.zone, Zone.Graveyard, "작은 방어자부터 죽는다")
-			t:eq(big.zone, Field, "3 피해로는 1/6 이 죽지 않는다")
-			t:eq(attacker.zone, Zone.Graveyard, "2 + 1 = 3 을 맞아 4/2 공격자가 죽는다")
+			t:eq(big.zone, Field, "3 피해로는 2/4 가 죽지 않는다")
+			t:eq(attacker.zone, Zone.Graveyard, "2 + 2 = 4 를 맞아 4/2 공격자가 죽는다")
 		end)
 
 		t:it("셋 이상도 함께 막을 수 있다", function()
@@ -193,7 +193,7 @@ return function(t, ctx)
 		t:it("전투 후 생물이 받은 피해는 턴 종료에 사라진다", function()
 			local state = Fixture.match(Rules)
 			local attacker = Fixture.spawn(Rules, state, 1, "CRE_SCOUT", Field) -- 1/2
-			local blocker = Fixture.spawn(Rules, state, 2, "CRE_BULWARK", Field) -- 1/6
+			local blocker = Fixture.spawn(Rules, state, 2, "CRE_BULWARK", Field) -- 2/4
 
 			Rules.endPhase(state, 1)
 			Rules.declareAttacker(state, 1, attacker.id, { kind = "Creature", id = blocker.id })

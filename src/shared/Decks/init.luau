@@ -137,17 +137,17 @@ function Decks.starter()
 		{ "CRE_HAWK", 3 }, -- 2코 2/1 비행
 		{ "CRE_RAIDER", 3 }, -- 3코 3/2 신속
 		{ "CRE_ARCHER", 3 }, -- 3코 4/2 원거리
-		{ "CRE_BULWARK", 2 }, -- 3코 1/6 도발
+		{ "CRE_BULWARK", 2 }, -- 4코 2/4 도발
 		{ "CRE_LANCER", 1 }, -- 4코 4/4
 		{ "CRE_BERSERKER", 1 }, -- 4코 5/3 신속
 		{ "CRE_BRUTE", 1 }, -- 5코 6/6
 
 		-- 마법
 		{ "SPL_SHOCK", 2 }, -- 1코 즉시 2피해
-		{ "SPL_SNIPE", 2 }, -- 2코 즉시 생물 2피해
+		{ "SPL_SNIPE", 2 }, -- 3코 즉시 생물 2피해
 		{ "SPL_FIREBOLT", 1 }, -- 2코 3피해
-		{ "SPL_WARCRY", 1 }, -- 1코 +2/+0 및 신속
-		{ "SPL_NEGATE", 1 }, -- 2코 즉시 무효화
+		{ "SPL_WARCRY", 1 }, -- 2코 +2/+0 및 신속
+		{ "SPL_NEGATE", 1 }, -- 3코 즉시 무효화
 		{ "SPL_ARCHIVE", 1 }, -- 4코 3장 드로우
 	})
 end
@@ -179,7 +179,7 @@ function Decks.tutorial()
 
 		{ "CRE_HAWK", 4 }, -- 2코 2/1 비행
 		{ "CRE_RAIDER", 4 }, -- 3코 3/2 신속
-		{ "CRE_BULWARK", 4 }, -- 3코 1/6 도발
+		{ "CRE_BULWARK", 4 }, -- 4코 2/4 도발
 		{ "CRE_ARCHER", 4 }, -- 3코 4/2 원거리
 		{ "SPL_SHOCK", 4 }, -- 1코 즉시시전 2피해
 	})

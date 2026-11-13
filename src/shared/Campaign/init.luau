@@ -43,8 +43,9 @@ local Campaign = {}
 	  deck        60장. 엔트리 모양이라 덱 편집기와 같은 검사를 받는다
 
 	난이도 곡선의 설계: 앞의 둘은 Easy 라 대응이 없다 — 즉시시전을 배우기 전에
-	기본 전투를 끝까지 해 보는 구간이다. 3번부터 Normal 로 올리고, 상대 라이프도
-	이때부터 30 이 된다. 마지막만 35 인데, 카운터 덱은 판을 길게 끌기 때문에
+	기본 전투를 끝까지 해 보는 구간이다. 3번부터 Normal 로 올린다. 상대 라이프는
+	3번 25(Normal 로 처음 올라가는 칸이라 덜 줬다), 4번 30 이다. 마지막만 35 인데,
+	카운터 덱은 판을 길게 끌기 때문에
 	라이프를 더 주지 않으면 "대응당하다 보니 이미 끝나 있는" 판이 된다.
 
 	플레이어 쪽 라이프는 손대지 않는다. 캠페인이 어려워야 하는 것은 상대가
@@ -97,15 +98,22 @@ Campaign.stages = {
 		name = "방벽 수비대",
 		note = "도발과 높은 생명력으로 버틴다. 때려서는 못 뚫으니 원거리로 무시하거나 제거한다.",
 		difficulty = AI.Difficulty.Normal,
-		life = 30,
+		--[[
+			2026-11-13 낮췄다 — 거석상 4 → 2(그 자리에 코스트 2), 라이프 30 → 25.
+			스타터 덱 · 보통 AI 의 도전자 승률이 51% 로, 4번(68%) · 5번(56%)보다 어려웠다.
+			지금 70% — 2번(77%)과 4번 사이. 거석상 한 장이 승률을 10% 넘게 움직이므로
+			(1장 80% · 0장 96%) 장수로만 맞추지 않고 라이프로 나머지를 맞췄다.
+			재는 법: lune run tests/balance.luau -- --games 2000 --stage 3
+		]]
+		life = 25,
 		gold = 120,
 		deck = {
-			{ id = "COST_BASIC", count = 26 },
+			{ id = "COST_BASIC", count = 28 },
 			{ id = "CRE_BULWARK", count = 4 },
 			{ id = "CRE_SENTRY", count = 4 },
 			{ id = "CRE_SKYPIERCER", count = 4 },
 			{ id = "CRE_GUARD", count = 4 },
-			{ id = "CRE_TITAN", count = 4 },
+			{ id = "CRE_TITAN", count = 2 },
 			{ id = "CRE_SCRIBE", count = 4 },
 			{ id = "SPL_BULWARK_UP", count = 4 },
 			{ id = "SPL_MEND", count = 4 },
